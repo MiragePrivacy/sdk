@@ -1,0 +1,179 @@
+/**
+ * Mock nomad node for integration testing.
+ *
+ * Implements:
+ *   GET  /attest  — returns a fixed ECIES public key
+ *   POST /signal  — decrypts the signal, then transfers tokens to the recipient
+ *
+ * Instead of bond/transfer/collect on the escrow, the mock simply sends tokens
+ * (or ETH) directly from a funded anvil account to the recipient. The SDK's
+ * pollTransferEvent will pick up the resulting Transfer event.
+ */
+
+import http from "node:http";
+import { PrivateKey, decrypt } from "eciesjs";
+import {
+  createPublicClient,
+  createWalletClient,
+  http as viemHttp,
+  erc20Abi,
+  zeroAddress,
+  type Address,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { anvilChain } from "./setup.js";
+
+// Fixed key pair — deterministic so tests can rely on the public key
+const MOCK_PRIVATE_KEY_HEX =
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const mockKey = PrivateKey.fromHex(MOCK_PRIVATE_KEY_HEX);
+const mockPublicKeyHex = mockKey.publicKey.toHex();
+
+// Use anvil account[8] as the mock node's execution wallet
+// (not used by sender or recipient in tests)
+const NODE_PRIVATE_KEY =
+  "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97" as const;
+const nodeAccount = privateKeyToAccount(NODE_PRIVATE_KEY);
+
+interface Signal {
+  escrowContract: string;
+  tokenContract: string;
+  recipient: string;
+  transferAmount: string;
+  rewardAmount: string;
+  selectorMapping: Record<string, string> | null;
+  approval: { signature: string; timestamp: number } | null;
+}
+
+function getRpcUrl(): string {
+  return process.env.RPC_URL || "http://127.0.0.1:8545";
+}
+
+async function executeTransfer(signal: Signal): Promise<void> {
+  const rpcUrl = getRpcUrl();
+  const publicClient = createPublicClient({
+    chain: anvilChain,
+    transport: viemHttp(rpcUrl),
+  });
+  const walletClient = createWalletClient({
+    account: nodeAccount,
+    chain: anvilChain,
+    transport: viemHttp(rpcUrl),
+  });
+
+  const recipient = signal.recipient as Address;
+  const amount = BigInt(signal.transferAmount);
+  const isNative =
+    signal.tokenContract === zeroAddress ||
+    signal.tokenContract === "0x0000000000000000000000000000000000000000";
+
+  if (isNative) {
+    // Send ETH directly
+    const hash = await walletClient.sendTransaction({
+      to: recipient,
+      value: amount,
+    });
+    await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`[mock-nomad] ETH transfer: ${amount} wei -> ${recipient} (${hash})`);
+  } else {
+    // Send ERC20 via transfer()
+    const tokenAddress = signal.tokenContract as Address;
+    const hash = await walletClient.writeContract({
+      address: tokenAddress,
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [recipient, amount],
+    });
+    await publicClient.waitForTransactionReceipt({ hash });
+    console.log(`[mock-nomad] ERC20 transfer: ${amount} ${tokenAddress} -> ${recipient} (${hash})`);
+  }
+}
+
+function createServer(port: number): http.Server {
+  const server = http.createServer(async (req, res) => {
+    // CORS
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/attest") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          publicKey: mockPublicKeyHex,
+          public_key: mockPublicKeyHex,
+          attestation: null,
+          isDebug: true,
+          is_debug: true,
+          chainId: 31337,
+          chain_id: 31337,
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/signal") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => {
+        body += chunk.toString();
+      });
+      req.on("end", async () => {
+        try {
+          // SDK sends JSON-encoded hex string: "\"0xabcdef...\""
+          const hexStr: string = JSON.parse(body);
+          const encryptedBytes = Buffer.from(hexStr.replace(/^0x/, ""), "hex");
+
+          // Decrypt with our private key
+          const decrypted = decrypt(MOCK_PRIVATE_KEY_HEX, encryptedBytes);
+          const signalJson = new TextDecoder().decode(decrypted);
+          const signal: Signal = JSON.parse(signalJson);
+
+          console.log("[mock-nomad] Received signal:", {
+            escrow: signal.escrowContract,
+            recipient: signal.recipient,
+            amount: signal.transferAmount,
+            token: signal.tokenContract,
+          });
+
+          // Execute the transfer
+          await executeTransfer(signal);
+
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end('"ok"');
+        } catch (err) {
+          console.error("[mock-nomad] Signal processing error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: String(err) }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end("Not found");
+  });
+
+  return server;
+}
+
+// Export for programmatic use in tests
+export { mockPublicKeyHex, MOCK_PRIVATE_KEY_HEX, createServer };
+
+// Run standalone if executed directly
+const isMain = process.argv[1]?.endsWith("mock-nomad.ts") ||
+  process.argv[1]?.endsWith("mock-nomad.js");
+
+if (isMain) {
+  const port = parseInt(process.env.NOMAD_PORT || "8000", 10);
+  const server = createServer(port);
+  server.listen(port, () => {
+    console.log(`[mock-nomad] Listening on http://127.0.0.1:${port}`);
+    console.log(`[mock-nomad] Public key: ${mockPublicKeyHex}`);
+  });
+}
