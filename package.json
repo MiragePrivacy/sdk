@@ -27,6 +27,7 @@
     "test": "vitest run --exclude 'test/integration/**'",
     "test:watch": "vitest --exclude 'test/integration/**'",
     "test:integration": "vitest run test/integration/",
+    "test:testnet": "TESTNET=tempo vitest run test/integration/",
     "test:all": "vitest run"
   },
   "peerDependencies": {

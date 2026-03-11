@@ -68,7 +68,6 @@ export async function approveAndDeploy(params: {
       abi: erc20Abi,
       functionName: "approve",
       args: [predictedEscrowAddress, totalAmount],
-      account,
       chain: walletClient.chain,
     });
 
@@ -104,7 +103,6 @@ export async function approveAndDeploy(params: {
   const value = isNativeEth ? rewardAmount + transferAmount : undefined;
 
   const deployHash = await walletClient.sendTransaction({
-    account,
     to: null,
     data: deploymentData,
     chain: walletClient.chain,
@@ -183,7 +181,6 @@ export async function deployBatched(params: {
 
   // Submit batched transaction (Tempo native multicall)
   const hash = await (walletClient as any).sendTransaction({
-    account,
     calls: [
       { data: deploymentData, value: 0n },
       { to: tokenAddress, data: approveData, value: 0n },
@@ -215,7 +212,6 @@ export async function withdrawFromEscrow(params: {
     address: escrowAddress,
     abi: escrowAbi,
     functionName: "withdraw",
-    account,
     chain: walletClient.chain,
   });
 
