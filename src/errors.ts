@@ -59,3 +59,18 @@ export class TransferTimeoutError extends MirageError {
     this.name = "TransferTimeoutError";
   }
 }
+
+export class TransferLimitError extends MirageError {
+  amountUsd: number;
+  limitUsd: number;
+
+  constructor(amountUsd: number, limitUsd: number) {
+    super(
+      "TRANSFER_LIMIT_EXCEEDED",
+      `Transfer amount $${amountUsd} exceeds network limit of $${limitUsd}`,
+    );
+    this.name = "TransferLimitError";
+    this.amountUsd = amountUsd;
+    this.limitUsd = limitUsd;
+  }
+}

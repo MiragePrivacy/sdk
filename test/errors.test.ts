@@ -5,6 +5,7 @@ import {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
+  TransferLimitError,
 } from "../src/errors.js";
 
 describe("MirageError", () => {
@@ -91,5 +92,18 @@ describe("TransferTimeoutError", () => {
     expect(err.code).toBe("TRANSFER_TIMEOUT");
     expect(err.message).toContain("60000");
     expect(err.name).toBe("TransferTimeoutError");
+  });
+});
+
+describe("TransferLimitError", () => {
+  it("includes amount and limit", () => {
+    const err = new TransferLimitError(500, 100);
+    expect(err).toBeInstanceOf(MirageError);
+    expect(err.code).toBe("TRANSFER_LIMIT_EXCEEDED");
+    expect(err.name).toBe("TransferLimitError");
+    expect(err.amountUsd).toBe(500);
+    expect(err.limitUsd).toBe(100);
+    expect(err.message).toContain("500");
+    expect(err.message).toContain("100");
   });
 });

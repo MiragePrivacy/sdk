@@ -1,7 +1,8 @@
 // Public API
 export { networks, createNetworkConfig } from "./networks.js";
-export { prepareTransfer, executeTransfer } from "./transfer.js";
+export { prepareTransfer } from "./transfer.js";
 export type { TransferParams } from "./transfer.js";
+export type { GasAnalysis } from "./internal/api.js";
 export {
   getTokenMetadata,
   getTokenBalance,
@@ -9,7 +10,7 @@ export {
   isNativeToken,
   NATIVE_TOKEN_ADDRESS,
 } from "./token.js";
-export { fetchNetworkKey, fetchApiHealth } from "./internal/api.js";
+export { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "./internal/api.js";
 
 // Errors
 export {
@@ -18,6 +19,7 @@ export {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
+  TransferLimitError,
 } from "./errors.js";
 
 // Types
@@ -29,6 +31,7 @@ export type {
   FeeEstimate,
   TransferEvent,
   TransferStep,
+  PreparedTransfer,
   NetworkKeyStatus,
   TokenMetadata,
   GasPrice,

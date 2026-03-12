@@ -81,3 +81,8 @@ export type TransferStep =
   | { step: "compliance"; approval: { signature: string; timestamp: number } }
   | { step: "signal"; hash: Hash }
   | { step: "complete"; transfer: TransferEvent };
+
+export interface PreparedTransfer {
+  fees: FeeEstimate;
+  execute(): AsyncGenerator<TransferStep>;
+}

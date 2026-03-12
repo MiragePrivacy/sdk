@@ -1,6 +1,7 @@
 import type { Address, PublicClient } from "viem";
 import { formatUnits } from "viem";
 import type { FeeEstimate, GasConstants, GasPrice, NetworkConfig } from "../types.js";
+import { MirageError } from "../errors.js";
 import { isNativeToken } from "../token.js";
 
 const UNISWAP_ROUTER_ABI = [
@@ -83,6 +84,39 @@ async function getEthToTokenRate(
   return parseFloat(formatUnits(amounts[1], tokenDecimals));
 }
 
+/**
+ * Resolve the ETH→USD price for limit checks and fee conversion.
+ * For EVM networks, uses Uniswap V2 router. Throws if no router is configured.
+ * Since supported tokens are USD stablecoins, ETH→token ≈ ETH→USD.
+ */
+export async function resolveEthPrice(
+  network: NetworkConfig,
+  publicClient: PublicClient,
+  tokenAddress: Address,
+  tokenDecimals: number,
+  ethToTokenRate?: number,
+): Promise<number> {
+  if (ethToTokenRate !== undefined) return ethToTokenRate;
+
+  if (network.kind === "tempo") return 1;
+
+  const routerAddress = network.priceUniswapRouter ?? network.uniswapRouter;
+  if (!routerAddress) {
+    throw new MirageError(
+      "MISSING_PRICE_ORACLE",
+      "No Uniswap router configured for ETH price resolution. Set network.uniswapRouter or pass ethToTokenRate.",
+    );
+  }
+
+  const priceClient = network.priceRpcUrl ? publicClient : publicClient;
+  return getEthToTokenRate(
+    network.priceTokenContract ?? tokenAddress,
+    routerAddress,
+    priceClient,
+    tokenDecimals,
+  );
+}
+
 export async function estimateFees(
   params: {
     amount: bigint;
@@ -146,23 +180,9 @@ export async function estimateFees(
     const nodeGasWei = maxFee * (gas.approve + gas.bond + gas.transfer + gas.collect);
 
     // Get ETH->token exchange rate
-    let ethToTokenRate = params.ethToTokenRate;
-    if (ethToTokenRate === undefined) {
-      const routerAddress = network.priceUniswapRouter ?? network.uniswapRouter;
-      if (routerAddress) {
-        // Use pricing-specific RPC if configured (e.g. mainnet for sepolia)
-        const priceClient = network.priceRpcUrl ? publicClient : publicClient;
-        ethToTokenRate = await getEthToTokenRate(
-          network.priceTokenContract ?? tokenAddress,
-          routerAddress,
-          priceClient,
-          tokenDecimals,
-        );
-      } else {
-        // Fallback rate when no router is configured
-        ethToTokenRate = 4500;
-      }
-    }
+    const ethToTokenRate = await resolveEthPrice(
+      network, publicClient, tokenAddress, tokenDecimals, params.ethToTokenRate,
+    );
 
     // Convert gas costs in ETH (float) to token units
     const userGasEth = Number(userGasWei) / 1e18;

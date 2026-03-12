@@ -1,16 +1,18 @@
 import type { Address, Hash, PublicClient, WalletClient } from "viem";
 import type {
-  FeeEstimate,
+  GasConstants,
   GasPrice,
   NetworkConfig,
+  PreparedTransfer,
   TransferStep,
 } from "./types.js";
-import { MirageError, TransferAbortedError } from "./errors.js";
+import { MirageError, TransferAbortedError, TransferLimitError } from "./errors.js";
 import { isNativeToken } from "./token.js";
 import { getTokenMetadata } from "./token.js";
-import { estimateFees } from "./internal/fees.js";
-import { fetchObfuscation, fetchComplianceApproval, fetchNetworkKey } from "./internal/api.js";
-import { approveAndDeploy, deployBatched, withdrawFromEscrow } from "./internal/escrow.js";
+import { estimateFees, resolveEthPrice } from "./internal/fees.js";
+import type { ObfuscationResult } from "./internal/api.js";
+import { fetchObfuscation, fetchComplianceApproval, fetchNetworkKey, fetchTransferLimit } from "./internal/api.js";
+import { approveAndDeploy, deployBatched } from "./internal/escrow.js";
 import { submitSignal } from "./internal/nomad.js";
 import { pollTransferEvent } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
@@ -32,22 +34,74 @@ export interface TransferParams {
 
 const DEFAULT_POLL_TIMEOUT = 120_000;
 
-export async function prepareTransfer(params: TransferParams): Promise<FeeEstimate> {
+async function checkTransferLimit(params: {
+  apiServer: string;
+  chainId: number;
+  amount: bigint;
+  decimals: number;
+  isNativeEth: boolean;
+  ethPriceUsd: number;
+}): Promise<void> {
+  const { apiServer, chainId, amount, decimals, isNativeEth, ethPriceUsd } = params;
+  const limit = await fetchTransferLimit(apiServer, chainId);
+  if (limit === null || limit === undefined) return;
+
+  const limitUsd = Number(limit);
+  const tokenAmount = Number(amount) / 10 ** decimals;
+  const amountUsd = isNativeEth ? tokenAmount * ethPriceUsd : tokenAmount;
+  if (amountUsd > limitUsd) {
+    throw new TransferLimitError(amountUsd, limitUsd);
+  }
+}
+
+/** Build gas overrides from API gas analysis, falling back to network defaults. */
+function buildGasOverrides(gasAnalysis?: ObfuscationResult["gasAnalysis"]): Partial<GasConstants> | undefined {
+  if (!gasAnalysis) return undefined;
+  const overrides: Partial<GasConstants> = {};
+  if (gasAnalysis.deploy !== undefined) overrides.deploy = gasAnalysis.deploy;
+  if (gasAnalysis.bond !== undefined) overrides.bond = gasAnalysis.bond;
+  if (gasAnalysis.collect !== undefined) overrides.collect = gasAnalysis.collect;
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
+export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
   const { tokenAddress, amount, network, publicClient, gasPrice } = params;
   const token = await getTokenMetadata(tokenAddress, publicClient);
+  const nativeEth = isNativeToken(tokenAddress);
+  const ethPriceUsd = await resolveEthPrice(network, publicClient, tokenAddress, token.decimals);
 
-  return estimateFees({
+  await checkTransferLimit({
+    apiServer: network.apiServer,
+    chainId: network.chainId,
+    amount,
+    decimals: token.decimals,
+    isNativeEth: nativeEth,
+    ethPriceUsd,
+  });
+
+  // Fetch obfuscation + gas analysis from API
+  const obfuscation = await fetchObfuscation(network.apiServer, nativeEth);
+  const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis);
+
+  const fees = await estimateFees({
     amount,
     tokenAddress,
     tokenDecimals: token.decimals,
     network,
     publicClient,
     gasPrice,
+    gasOverrides,
   });
+
+  return {
+    fees,
+    execute: () => executeTransfer(params, obfuscation),
+  };
 }
 
-export async function* executeTransfer(
+async function* executeTransfer(
   params: TransferParams,
+  cachedObfuscation: ObfuscationResult,
 ): AsyncGenerator<TransferStep> {
   const {
     tokenAddress,
@@ -72,6 +126,16 @@ export async function* executeTransfer(
   const account = getAccount(walletClient);
   const isNativeEth = isNativeToken(tokenAddress);
   const token = await getTokenMetadata(tokenAddress, publicClient);
+  const ethPriceUsd = await resolveEthPrice(network, publicClient, tokenAddress, token.decimals);
+
+  await checkTransferLimit({
+    apiServer: network.apiServer,
+    chainId: network.chainId,
+    amount,
+    decimals: token.decimals,
+    isNativeEth,
+    ethPriceUsd,
+  });
 
   let escrowAddress = params.escrowAddress;
   let deployHash: Hash | undefined;
@@ -82,8 +146,9 @@ export async function* executeTransfer(
     // --- Obfuscation + Fee estimation ---
     checkAbort(abortSignal);
 
-    const obfuscation = await fetchObfuscation(network.apiServer, isNativeEth);
+    const obfuscation = cachedObfuscation;
     selectorMapping = obfuscation.selectorMapping;
+    const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis);
 
     const fees = await estimateFees({
       amount,
@@ -92,6 +157,7 @@ export async function* executeTransfer(
       network,
       publicClient,
       gasPrice,
+      gasOverrides,
     });
 
     yield { step: "fees", fees };
@@ -162,9 +228,6 @@ export async function* executeTransfer(
       throw new MirageError("MISSING_DEPLOY_HASH", "Deploy tx hash required for compliance");
     }
 
-    // For resume, compliance may have already been obtained — caller should
-    // resume from signal step. But if they pass escrowAddress with compliance
-    // enabled, we need the deploy hash. This is a limitation of the resume flow.
     if (txHash) {
       const approval = await fetchComplianceApproval(network.apiServer, {
         txHash,
@@ -186,6 +249,7 @@ export async function* executeTransfer(
 
   // Compute reward for signal (same as during fee estimation)
   // For resume, caller must ensure amount matches original funding
+  const gasOverrides = buildGasOverrides(cachedObfuscation?.gasAnalysis);
   const fees = await estimateFees({
     amount,
     tokenAddress,
@@ -193,6 +257,7 @@ export async function* executeTransfer(
     network,
     publicClient,
     gasPrice,
+    gasOverrides,
   });
   const rewardAmount = fees.nodeFee + fees.platformFee;
 

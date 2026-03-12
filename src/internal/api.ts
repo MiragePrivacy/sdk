@@ -13,11 +13,23 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface GasAnalysis {
+  /** Estimated gas for deploying the obfuscated escrow contract. */
+  deploy?: bigint;
+  /** Estimated gas for the bond function. */
+  bond?: bigint;
+  /** Estimated gas for the collect function. */
+  collect?: bigint;
+  /** Estimated gas for the fund function (batched flow). */
+  fund?: bigint;
+}
+
 export interface ObfuscationResult {
   obfuscatedBytecode: `0x${string}`;
   selectorMapping?: Record<string, string>;
   originalSize: number;
   obfuscatedSize: number;
+  gasAnalysis?: GasAnalysis;
 }
 
 export async function fetchObfuscation(
@@ -36,6 +48,16 @@ export async function fetchObfuscation(
     selector_mapping?: Record<string, string>;
     original_size: number;
     obfuscated_size: number;
+    gas_analysis?: {
+      obfuscated_gas_estimate?: number | null;
+      original_gas_estimate?: number | null;
+      gas_overhead_percentage?: number | null;
+      function_gas?: {
+        bond?: number | null;
+        collect?: number | null;
+        fund?: number | null;
+      } | null;
+    } | null;
   }>(`${apiServer}/obfuscate_escrow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,11 +69,23 @@ export async function fetchObfuscation(
 
   const bytecode = res.obfuscated_bytecode.trim();
 
+  let gasAnalysis: GasAnalysis | undefined;
+  if (res.gas_analysis) {
+    const ga = res.gas_analysis;
+    const fg = ga.function_gas;
+    gasAnalysis = {};
+    if (ga.obfuscated_gas_estimate != null) gasAnalysis.deploy = BigInt(ga.obfuscated_gas_estimate);
+    if (fg?.bond != null) gasAnalysis.bond = BigInt(fg.bond);
+    if (fg?.collect != null) gasAnalysis.collect = BigInt(fg.collect);
+    if (fg?.fund != null) gasAnalysis.fund = BigInt(fg.fund);
+  }
+
   return {
     obfuscatedBytecode: (bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`) as `0x${string}`,
     selectorMapping: res.selector_mapping,
     originalSize: res.original_size,
     obfuscatedSize: res.obfuscated_size,
+    gasAnalysis,
   };
 }
 
@@ -144,4 +178,16 @@ export async function fetchApiHealth(
     version: res.version,
     maxTransferUsd,
   };
+}
+
+/**
+ * Fetch the maximum transfer limit (USD) for a specific network.
+ * Returns null if no limit is set, undefined if limits are unavailable.
+ */
+export async function fetchTransferLimit(
+  apiServer: string,
+  chainId: number,
+): Promise<string | null | undefined> {
+  const health = await fetchApiHealth(apiServer);
+  return health.maxTransferUsd?.[String(chainId)];
 }
