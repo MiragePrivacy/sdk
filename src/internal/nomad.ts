@@ -27,6 +27,7 @@ export interface SignalParams {
   selectorMapping?: Record<string, string>;
   complianceSignature?: string;
   complianceTimestamp?: number;
+  deployedAt?: number;
   nomadUrl: string;
   networkKey: NetworkKeyStatus;
 }
@@ -41,6 +42,7 @@ export async function submitSignal(params: SignalParams): Promise<string> {
     selectorMapping,
     complianceSignature,
     complianceTimestamp,
+    deployedAt,
     nomadUrl,
     networkKey,
   } = params;
@@ -51,6 +53,7 @@ export async function submitSignal(params: SignalParams): Promise<string> {
     recipient: recipientAddress,
     transferAmount: transferAmount.toString(),
     rewardAmount: rewardAmount.toString(),
+    deployedAt: deployedAt ?? null,
     selectorMapping: selectorMapping ?? null,
     approval: complianceSignature
       ? { signature: complianceSignature, timestamp: complianceTimestamp }

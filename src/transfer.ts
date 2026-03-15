@@ -140,6 +140,7 @@ async function* executeTransfer(
   let escrowAddress = params.escrowAddress;
   let deployHash: Hash | undefined;
   let selectorMapping: Record<string, string> | undefined;
+  let deployedAt: number | undefined;
   const isResume = !!escrowAddress;
 
   if (!isResume) {
@@ -186,6 +187,7 @@ async function* executeTransfer(
 
       escrowAddress = result.escrowAddress;
       deployHash = result.hash;
+      deployedAt = Date.now();
       yield { step: "deploy", hash: result.hash, escrowAddress };
     } else {
       // Ethereum: approve predicted address → deploy (constructor pulls via transferFrom)
@@ -209,6 +211,7 @@ async function* executeTransfer(
 
       escrowAddress = result.deployResult.escrowAddress;
       deployHash = result.deployResult.hash;
+      deployedAt = Date.now();
       yield { step: "deploy", hash: result.deployResult.hash, escrowAddress };
     }
   }
@@ -270,6 +273,7 @@ async function* executeTransfer(
     selectorMapping,
     complianceSignature,
     complianceTimestamp,
+    deployedAt,
     nomadUrl: network.nomadUrl,
     networkKey,
   });
