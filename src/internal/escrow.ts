@@ -3,6 +3,7 @@ import {
   type Hash,
   type PublicClient,
   type WalletClient,
+  decodeErrorResult,
   encodeAbiParameters,
   encodeFunctionData,
   erc20Abi,
@@ -16,9 +17,36 @@ import { ContractError } from "../errors.js";
 import type { NetworkConfig } from "../types.js";
 
 const escrowAbi = parseAbi([
-  "function withdraw() external",
+  "function cancelAndWithdraw() external",
   "function fund(uint256 _currentRewardAmount, uint256 _currentPaymentAmount) external",
 ]);
+
+const CANCEL_ABI = [
+  {
+    name: "cancelAndWithdraw",
+    type: "function" as const,
+    stateMutability: "nonpayable" as const,
+    inputs: [],
+    outputs: [],
+  },
+  { name: "OnlyDeployer", type: "error" as const, inputs: [] },
+  { name: "NotFunded", type: "error" as const, inputs: [] },
+  { name: "BondActive", type: "error" as const, inputs: [] },
+  { name: "CancellationRequested", type: "error" as const, inputs: [] },
+  { name: "NoWithdrawableFunds", type: "error" as const, inputs: [] },
+  { name: "TokenTransferFailed", type: "error" as const, inputs: [] },
+  { name: "ETHTransferFailed", type: "error" as const, inputs: [] },
+] as const;
+
+const CANCEL_REASON_MESSAGES: Record<string, string> = {
+  BondActive: "a node has already bonded",
+  NotFunded: "escrow is not funded",
+  OnlyDeployer: "only the deployer can cancel",
+  NoWithdrawableFunds: "no funds to withdraw",
+  CancellationRequested: "cancellation already requested",
+  TokenTransferFailed: "token transfer back to deployer failed",
+  ETHTransferFailed: "ETH transfer back to deployer failed",
+};
 
 export function predictContractAddress(
   deployerAddress: Address,
@@ -221,20 +249,48 @@ export async function withdrawFromEscrow(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
+  selectorMapping?: Record<string, string>;
 }): Promise<Hash> {
-  const { escrowAddress, walletClient, publicClient, account } = params;
+  const { escrowAddress, walletClient, publicClient, account, selectorMapping } = params;
 
-  const hash = await walletClient.writeContract({
-    address: escrowAddress,
-    abi: escrowAbi,
-    functionName: "withdraw",
+  const standardData = encodeFunctionData({
+    abi: CANCEL_ABI,
+    functionName: "cancelAndWithdraw",
+    args: [],
+  });
+  const obfuscatedSelector = selectorMapping?.[standardData.slice(0, 10)];
+  const data = obfuscatedSelector
+    ? (`${obfuscatedSelector}${standardData.slice(10)}` as `0x${string}`)
+    : standardData;
+
+  const hash = await walletClient.sendTransaction({
+    account,
+    to: escrowAddress,
+    data,
     chain: walletClient.chain,
+    gas: 500_000n,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") {
-    throw new ContractError("Escrow withdrawal failed", { txHash: hash });
+  if (receipt.status === "success") return hash;
+
+  let reason = "unknown reason";
+  try {
+    await publicClient.call({ to: escrowAddress, data, account });
+  } catch (simError) {
+    const err = simError as { data?: `0x${string}`; cause?: { data?: `0x${string}` } };
+    const revertData = err?.data ?? err?.cause?.data;
+    if (revertData) {
+      try {
+        reason = decodeErrorResult({ abi: CANCEL_ABI, data: revertData }).errorName;
+      } catch {
+        reason = revertData;
+      }
+    }
   }
 
-  return hash;
+  throw new ContractError(
+    `cancelAndWithdraw reverted: ${CANCEL_REASON_MESSAGES[reason] ?? reason}`,
+    { txHash: hash },
+  );
 }
