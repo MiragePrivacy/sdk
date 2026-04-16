@@ -89,7 +89,7 @@ export async function approveAndDeploy(params: {
     isNativeEth, walletClient, publicClient, account,
   } = params;
 
-  const nonce = await publicClient.getTransactionCount({ address: account });
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
 
   let approveHash: Hash | null = null;
   let approveGasUsed: bigint | null = null;
@@ -186,7 +186,7 @@ export async function deployBatched(params: {
     walletClient, publicClient, account,
   } = params;
 
-  const nonce = await publicClient.getTransactionCount({ address: account });
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce);
 
   // 1. Deploy with 0 amounts (constructor skips transferFrom)
