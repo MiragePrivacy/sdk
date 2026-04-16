@@ -235,6 +235,8 @@ async function* executeTransfer(
       const approval = await fetchComplianceApproval(network.apiServer, {
         txHash,
         chainId: network.chainId,
+        seed: cachedObfuscation.seed,
+        nativeEth: isNativeEth,
         accessToken,
       });
 

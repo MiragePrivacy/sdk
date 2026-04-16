@@ -30,6 +30,7 @@ export interface ObfuscationResult {
   originalSize: number;
   obfuscatedSize: number;
   gasAnalysis?: GasAnalysis;
+  seed: string;
 }
 
 export async function fetchObfuscation(
@@ -86,6 +87,7 @@ export async function fetchObfuscation(
     originalSize: res.original_size,
     obfuscatedSize: res.obfuscated_size,
     gasAnalysis,
+    seed,
   };
 }
 
@@ -100,12 +102,16 @@ export async function fetchComplianceApproval(
   params: {
     txHash: string;
     chainId: number;
+    seed: string;
+    nativeEth: boolean;
     accessToken?: string;
   },
 ): Promise<ComplianceApproval> {
   const body: Record<string, unknown> = {
     tx_hash: params.txHash,
     chain_id: params.chainId,
+    seed: params.seed,
+    native_eth: params.nativeEth,
   };
   if (params.accessToken) {
     body.access_token = params.accessToken;
