@@ -39,7 +39,7 @@ describe("networks", () => {
     expect(eth.gas.approve).toBe(46_686n);
     expect(eth.gas.deploy).toBe(2_167_182n);
     expect(eth.gas.bond).toBe(109_816n);
-    expect(eth.gas.transfer).toBe(34_836n);
+    expect(eth.gas.fund).toBe(120_000n);
     expect(eth.gas.collect).toBe(862_813n);
   });
 
@@ -48,7 +48,7 @@ describe("networks", () => {
     expect(tempo.gas.approve).toBe(279_126n);
     expect(tempo.gas.deploy).toBe(11_748_263n);
     expect(tempo.gas.bond).toBe(825_039n);
-    expect(tempo.gas.transfer).toBe(310_574n);
+    expect(tempo.gas.fund).toBe(310_574n);
     expect(tempo.gas.collect).toBe(932_363n);
   });
 });
@@ -80,7 +80,7 @@ describe("createNetworkConfig", () => {
     expect(config.gas.approve).toBe(60_000n);
     expect(config.gas.deploy).toBe(networks.ethereum.gas.deploy);
     expect(config.gas.bond).toBe(networks.ethereum.gas.bond);
-    expect(config.gas.transfer).toBe(networks.ethereum.gas.transfer);
+    expect(config.gas.fund).toBe(networks.ethereum.gas.fund);
     expect(config.gas.collect).toBe(networks.ethereum.gas.collect);
   });
 

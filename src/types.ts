@@ -7,7 +7,7 @@ export interface GasConstants {
   approve: bigint;
   deploy: bigint;
   bond: bigint;
-  transfer: bigint;
+  fund: bigint;
   collect: bigint;
 }
 

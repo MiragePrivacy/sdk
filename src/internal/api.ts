@@ -18,9 +18,13 @@ export interface GasAnalysis {
   deploy?: bigint;
   /** Estimated gas for the bond function. */
   bond?: bigint;
-  /** Estimated gas for the collect function. */
+  /** Estimated gas for the collect function (fallback when no variant matches). */
   collect?: bigint;
-  /** Estimated gas for the fund function (batched flow). */
+  /** Collect gas for standard EVM networks. */
+  collectStandard?: bigint;
+  /** Collect gas for tempo. */
+  collectTempo?: bigint;
+  /** Estimated gas for the fund function. */
   fund?: bigint;
 }
 
@@ -57,6 +61,10 @@ export async function fetchObfuscation(
         bond?: number | null;
         collect?: number | null;
         fund?: number | null;
+        collect_variants?: {
+          standard?: number | null;
+          tempo?: number | null;
+        } | null;
       } | null;
     } | null;
   }>(`${apiServer}/obfuscate_escrow`, {
@@ -79,6 +87,8 @@ export async function fetchObfuscation(
     if (fg?.bond != null) gasAnalysis.bond = BigInt(fg.bond);
     if (fg?.collect != null) gasAnalysis.collect = BigInt(fg.collect);
     if (fg?.fund != null) gasAnalysis.fund = BigInt(fg.fund);
+    if (fg?.collect_variants?.standard != null) gasAnalysis.collectStandard = BigInt(fg.collect_variants.standard);
+    if (fg?.collect_variants?.tempo != null) gasAnalysis.collectTempo = BigInt(fg.collect_variants.tempo);
   }
 
   return {
