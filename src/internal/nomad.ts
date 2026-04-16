@@ -28,6 +28,9 @@ export interface SignalParams {
   complianceSignature?: string;
   complianceTimestamp?: number;
   deployedAt?: number;
+  userApproveGas?: bigint;
+  userDeployGas?: bigint;
+  userGasPrice?: bigint;
   nomadUrl: string;
   networkKey: NetworkKeyStatus;
 }
@@ -43,6 +46,9 @@ export async function submitSignal(params: SignalParams): Promise<string> {
     complianceSignature,
     complianceTimestamp,
     deployedAt,
+    userApproveGas,
+    userDeployGas,
+    userGasPrice,
     nomadUrl,
     networkKey,
   } = params;
@@ -58,6 +64,9 @@ export async function submitSignal(params: SignalParams): Promise<string> {
     approval: complianceSignature
       ? { signature: complianceSignature, timestamp: complianceTimestamp }
       : null,
+    userApproveGas: userApproveGas !== undefined ? Number(userApproveGas) : null,
+    userDeployGas: userDeployGas !== undefined ? Number(userDeployGas) : null,
+    userGasPrice: userGasPrice !== undefined ? Number(userGasPrice) : null,
   };
 
   const signalJson = JSON.stringify(signal);

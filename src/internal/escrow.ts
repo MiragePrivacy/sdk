@@ -32,6 +32,8 @@ export function predictContractAddress(
 export interface DeployResult {
   hash: Hash;
   escrowAddress: Address;
+  deployGasUsed: bigint;
+  deployEffectiveGasPrice: bigint;
 }
 
 // Ethereum: approve predicted escrow → deploy (constructor does transferFrom)
@@ -48,7 +50,11 @@ export async function approveAndDeploy(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
-}): Promise<{ approveHash: Hash | null; deployResult: DeployResult }> {
+}): Promise<{
+  approveHash: Hash | null;
+  approveGasUsed: bigint | null;
+  deployResult: DeployResult;
+}> {
   const {
     bytecode, tokenAddress, recipientAddress,
     transferAmount, rewardAmount, totalAmount,
@@ -58,6 +64,7 @@ export async function approveAndDeploy(params: {
   const nonce = await publicClient.getTransactionCount({ address: account });
 
   let approveHash: Hash | null = null;
+  let approveGasUsed: bigint | null = null;
 
   if (!isNativeEth) {
     // Approve uses nonce N, deploy uses nonce N+1
@@ -75,6 +82,7 @@ export async function approveAndDeploy(params: {
     if (approveReceipt.status !== "success") {
       throw new ContractError("Token approval failed", { txHash: approveHash });
     }
+    approveGasUsed = approveReceipt.gasUsed;
   }
 
   // Build constructor args
@@ -121,7 +129,13 @@ export async function approveAndDeploy(params: {
 
   return {
     approveHash,
-    deployResult: { hash: deployHash, escrowAddress },
+    approveGasUsed,
+    deployResult: {
+      hash: deployHash,
+      escrowAddress,
+      deployGasUsed: deployReceipt.gasUsed,
+      deployEffectiveGasPrice: deployReceipt.effectiveGasPrice,
+    },
   };
 }
 
@@ -197,6 +211,8 @@ export async function deployBatched(params: {
   return {
     hash,
     escrowAddress: receipt.contractAddress ?? predictedEscrowAddress,
+    deployGasUsed: receipt.gasUsed,
+    deployEffectiveGasPrice: receipt.effectiveGasPrice,
   };
 }
 

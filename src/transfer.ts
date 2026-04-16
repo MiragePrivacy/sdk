@@ -141,6 +141,9 @@ async function* executeTransfer(
   let deployHash: Hash | undefined;
   let selectorMapping: Record<string, string> | undefined;
   let deployedAt: number | undefined;
+  let userApproveGas: bigint | undefined;
+  let userDeployGas: bigint | undefined;
+  let userGasPrice: bigint | undefined;
   const isResume = !!escrowAddress;
 
   if (!isResume) {
@@ -188,6 +191,8 @@ async function* executeTransfer(
       escrowAddress = result.escrowAddress;
       deployHash = result.hash;
       deployedAt = Date.now();
+      userDeployGas = result.deployGasUsed;
+      userGasPrice = result.deployEffectiveGasPrice;
       yield { step: "deploy", hash: result.hash, escrowAddress };
     } else {
       // Ethereum: approve predicted address → deploy (constructor pulls via transferFrom)
@@ -212,6 +217,9 @@ async function* executeTransfer(
       escrowAddress = result.deployResult.escrowAddress;
       deployHash = result.deployResult.hash;
       deployedAt = Date.now();
+      userApproveGas = result.approveGasUsed ?? undefined;
+      userDeployGas = result.deployResult.deployGasUsed;
+      userGasPrice = result.deployResult.deployEffectiveGasPrice;
       yield { step: "deploy", hash: result.deployResult.hash, escrowAddress };
     }
   }
@@ -276,6 +284,9 @@ async function* executeTransfer(
     complianceSignature,
     complianceTimestamp,
     deployedAt,
+    userApproveGas,
+    userDeployGas,
+    userGasPrice,
     nomadUrl: network.nomadUrl,
     networkKey,
   });
