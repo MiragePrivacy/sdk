@@ -17,6 +17,7 @@ vi.mock("../src/internal/api.js", async (importOriginal) => {
       originalSize: 1,
       obfuscatedSize: 1,
       gasAnalysis: undefined,
+      seed: "0".repeat(64),
     }),
   };
 });

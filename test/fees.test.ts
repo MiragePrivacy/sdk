@@ -34,7 +34,7 @@ describe("estimateFees", () => {
       expect(fees.isNativeEth).toBe(true);
     });
 
-    it("uses bond+transfer+collect for node gas (no approve)", async () => {
+    it("uses bond+fund+collect for node gas (no approve)", async () => {
       const gasPrice = 50_000_000_000n;
       const gas = networks.ethereum.gas;
       const fees = await estimateFees({
@@ -46,8 +46,7 @@ describe("estimateFees", () => {
         gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
       });
 
-      // Node gas for native: bond + transfer + collect (no approve)
-      const expectedNodeGas = gasPrice * (gas.bond + gas.transfer + gas.collect);
+      const expectedNodeGas = gasPrice * (gas.bond + gas.fund + gas.collect);
       const nodeFeeBase = 500_000_000_000_000n; // 0.0005 ETH
       expect(fees.nodeFee).toBe(nodeFeeBase + expectedNodeGas);
     });
@@ -86,7 +85,7 @@ describe("estimateFees", () => {
       expect(fees.platformFee).toBe(50_000n);
     });
 
-    it("includes approve in both user and node gas", async () => {
+    it("user gas is approve+deploy, node gas is bond+fund+collect", async () => {
       const gasPrice = 30_000_000_000n;
       const gas = networks.ethereum.gas;
       const ethToTokenRate = 4500;
@@ -101,14 +100,12 @@ describe("estimateFees", () => {
         ethToTokenRate,
       });
 
-      // User gas: approve + deploy
       const userGasWei = gasPrice * (gas.approve + gas.deploy);
       const userGasEth = Number(userGasWei) / 1e18;
       const expectedNetworkFee = BigInt(Math.ceil(userGasEth * ethToTokenRate * 1e6));
       expect(fees.networkFee).toBe(expectedNetworkFee);
 
-      // Node gas: approve + bond + transfer + collect
-      const nodeGasWei = gasPrice * (gas.approve + gas.bond + gas.transfer + gas.collect);
+      const nodeGasWei = gasPrice * (gas.bond + gas.fund + gas.collect);
       const nodeGasEth = Number(nodeGasWei) / 1e18;
       const expectedNodeGasFee = BigInt(Math.ceil(nodeGasEth * ethToTokenRate * 1e6));
       const nodeFeeBase = 2_000000n; // $2 in 6-decimal token units
@@ -156,7 +153,7 @@ describe("estimateFees", () => {
       expect(fees.networkFee).toBe(expectedNetworkFee);
     });
 
-    it("uses approve+bond+transfer+collect for node gas", async () => {
+    it("uses bond+fund+collect for node gas", async () => {
       const gas = networks.tempo.gas;
       const tempoGasPrice = 10n * 1_000_000_000n;
 
@@ -168,7 +165,7 @@ describe("estimateFees", () => {
         publicClient: mockPublicClient(),
       });
 
-      const nodeGasWei = tempoGasPrice * (gas.approve + gas.bond + gas.transfer + gas.collect);
+      const nodeGasWei = tempoGasPrice * (gas.bond + gas.fund + gas.collect);
       const expectedNodeGasFee = nodeGasWei / (10n ** 12n);
       const nodeFeeBase = (networks.tempo.nodeFeeUsd * 10n ** 6n) / 10n ** 6n; // 200000n
       expect(fees.nodeFee).toBe(nodeFeeBase + expectedNodeGasFee);

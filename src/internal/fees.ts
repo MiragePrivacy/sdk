@@ -143,10 +143,10 @@ export async function estimateFees(
     const gweiToWei = 1_000_000_000n;
     const tempoGasPrice = tempoBaseFeeGwei * gweiToWei;
 
-    // User pays: deploy only (approve is batched)
+    // User pays: deploy only (approve + fund are batched with it)
     const userGasWei = tempoGasPrice * gas.deploy;
-    // Node pays: approve + bond + transfer + collect
-    const nodeGasWei = tempoGasPrice * (gas.approve + gas.bond + gas.transfer + gas.collect);
+    // Node pays: bond + fund + collect
+    const nodeGasWei = tempoGasPrice * (gas.bond + gas.fund + gas.collect);
 
     // Tempo native token is stablecoin with 18 decimals, token is 6 decimals
     // Convert from 18-decimal gas cost to token-decimal cost
@@ -161,8 +161,8 @@ export async function estimateFees(
 
     // User pays: deploy only (no approval for native ETH)
     const userGasWei = maxFee * gas.deploy;
-    // Node pays: bond + transfer + collect (no approve for native)
-    const nodeGasWei = maxFee * (gas.bond + gas.transfer + gas.collect);
+    // Node pays: bond + fund + collect
+    const nodeGasWei = maxFee * (gas.bond + gas.fund + gas.collect);
 
     networkFee = userGasWei;
 
@@ -176,8 +176,8 @@ export async function estimateFees(
 
     // User pays: approve + deploy
     const userGasWei = maxFee * (gas.approve + gas.deploy);
-    // Node pays: approve + bond + transfer + collect
-    const nodeGasWei = maxFee * (gas.approve + gas.bond + gas.transfer + gas.collect);
+    // Node pays: bond + fund + collect
+    const nodeGasWei = maxFee * (gas.bond + gas.fund + gas.collect);
 
     // Get ETH->token exchange rate
     const ethToTokenRate = await resolveEthPrice(

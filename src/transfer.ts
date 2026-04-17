@@ -55,12 +55,20 @@ async function checkTransferLimit(params: {
 }
 
 /** Build gas overrides from API gas analysis, falling back to network defaults. */
-function buildGasOverrides(gasAnalysis?: ObfuscationResult["gasAnalysis"]): Partial<GasConstants> | undefined {
+function buildGasOverrides(
+  gasAnalysis: ObfuscationResult["gasAnalysis"] | undefined,
+  networkKind: NetworkConfig["kind"],
+): Partial<GasConstants> | undefined {
   if (!gasAnalysis) return undefined;
   const overrides: Partial<GasConstants> = {};
   if (gasAnalysis.deploy !== undefined) overrides.deploy = gasAnalysis.deploy;
   if (gasAnalysis.bond !== undefined) overrides.bond = gasAnalysis.bond;
-  if (gasAnalysis.collect !== undefined) overrides.collect = gasAnalysis.collect;
+  if (gasAnalysis.fund !== undefined) overrides.fund = gasAnalysis.fund;
+  const collect =
+    networkKind === "tempo"
+      ? gasAnalysis.collectTempo ?? gasAnalysis.collect
+      : gasAnalysis.collectStandard ?? gasAnalysis.collect;
+  if (collect !== undefined) overrides.collect = collect;
   return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
 
@@ -81,7 +89,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
 
   // Fetch obfuscation + gas analysis from API
   const obfuscation = await fetchObfuscation(network.apiServer, nativeEth);
-  const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis);
+  const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis, network.kind);
 
   const fees = await estimateFees({
     amount,
@@ -141,6 +149,9 @@ async function* executeTransfer(
   let deployHash: Hash | undefined;
   let selectorMapping: Record<string, string> | undefined;
   let deployedAt: number | undefined;
+  let userApproveGas: bigint | undefined;
+  let userDeployGas: bigint | undefined;
+  let userGasPrice: bigint | undefined;
   const isResume = !!escrowAddress;
 
   if (!isResume) {
@@ -149,7 +160,7 @@ async function* executeTransfer(
 
     const obfuscation = cachedObfuscation;
     selectorMapping = obfuscation.selectorMapping;
-    const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis);
+    const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis, network.kind);
 
     const fees = await estimateFees({
       amount,
@@ -188,6 +199,8 @@ async function* executeTransfer(
       escrowAddress = result.escrowAddress;
       deployHash = result.hash;
       deployedAt = Date.now();
+      userDeployGas = result.deployGasUsed;
+      userGasPrice = result.deployEffectiveGasPrice;
       yield { step: "deploy", hash: result.hash, escrowAddress };
     } else {
       // Ethereum: approve predicted address → deploy (constructor pulls via transferFrom)
@@ -212,6 +225,9 @@ async function* executeTransfer(
       escrowAddress = result.deployResult.escrowAddress;
       deployHash = result.deployResult.hash;
       deployedAt = Date.now();
+      userApproveGas = result.approveGasUsed ?? undefined;
+      userDeployGas = result.deployResult.deployGasUsed;
+      userGasPrice = result.deployResult.deployEffectiveGasPrice;
       yield { step: "deploy", hash: result.deployResult.hash, escrowAddress };
     }
   }
@@ -235,6 +251,8 @@ async function* executeTransfer(
       const approval = await fetchComplianceApproval(network.apiServer, {
         txHash,
         chainId: network.chainId,
+        seed: cachedObfuscation.seed,
+        nativeEth: isNativeEth,
         accessToken,
       });
 
@@ -252,7 +270,7 @@ async function* executeTransfer(
 
   // Compute reward for signal (same as during fee estimation)
   // For resume, caller must ensure amount matches original funding
-  const gasOverrides = buildGasOverrides(cachedObfuscation?.gasAnalysis);
+  const gasOverrides = buildGasOverrides(cachedObfuscation?.gasAnalysis, network.kind);
   const fees = await estimateFees({
     amount,
     tokenAddress,
@@ -274,6 +292,9 @@ async function* executeTransfer(
     complianceSignature,
     complianceTimestamp,
     deployedAt,
+    userApproveGas,
+    userDeployGas,
+    userGasPrice,
     nomadUrl: network.nomadUrl,
     networkKey,
   });

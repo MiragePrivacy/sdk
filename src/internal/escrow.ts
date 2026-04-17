@@ -3,6 +3,7 @@ import {
   type Hash,
   type PublicClient,
   type WalletClient,
+  decodeErrorResult,
   encodeAbiParameters,
   encodeFunctionData,
   erc20Abi,
@@ -16,9 +17,36 @@ import { ContractError } from "../errors.js";
 import type { NetworkConfig } from "../types.js";
 
 const escrowAbi = parseAbi([
-  "function withdraw() external",
+  "function cancelAndWithdraw() external",
   "function fund(uint256 _currentRewardAmount, uint256 _currentPaymentAmount) external",
 ]);
+
+const CANCEL_ABI = [
+  {
+    name: "cancelAndWithdraw",
+    type: "function" as const,
+    stateMutability: "nonpayable" as const,
+    inputs: [],
+    outputs: [],
+  },
+  { name: "OnlyDeployer", type: "error" as const, inputs: [] },
+  { name: "NotFunded", type: "error" as const, inputs: [] },
+  { name: "BondActive", type: "error" as const, inputs: [] },
+  { name: "CancellationRequested", type: "error" as const, inputs: [] },
+  { name: "NoWithdrawableFunds", type: "error" as const, inputs: [] },
+  { name: "TokenTransferFailed", type: "error" as const, inputs: [] },
+  { name: "ETHTransferFailed", type: "error" as const, inputs: [] },
+] as const;
+
+const CANCEL_REASON_MESSAGES: Record<string, string> = {
+  BondActive: "a node has already bonded",
+  NotFunded: "escrow is not funded",
+  OnlyDeployer: "only the deployer can cancel",
+  NoWithdrawableFunds: "no funds to withdraw",
+  CancellationRequested: "cancellation already requested",
+  TokenTransferFailed: "token transfer back to deployer failed",
+  ETHTransferFailed: "ETH transfer back to deployer failed",
+};
 
 export function predictContractAddress(
   deployerAddress: Address,
@@ -32,6 +60,8 @@ export function predictContractAddress(
 export interface DeployResult {
   hash: Hash;
   escrowAddress: Address;
+  deployGasUsed: bigint;
+  deployEffectiveGasPrice: bigint;
 }
 
 // Ethereum: approve predicted escrow → deploy (constructor does transferFrom)
@@ -48,16 +78,21 @@ export async function approveAndDeploy(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
-}): Promise<{ approveHash: Hash | null; deployResult: DeployResult }> {
+}): Promise<{
+  approveHash: Hash | null;
+  approveGasUsed: bigint | null;
+  deployResult: DeployResult;
+}> {
   const {
     bytecode, tokenAddress, recipientAddress,
     transferAmount, rewardAmount, totalAmount,
     isNativeEth, walletClient, publicClient, account,
   } = params;
 
-  const nonce = await publicClient.getTransactionCount({ address: account });
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
 
   let approveHash: Hash | null = null;
+  let approveGasUsed: bigint | null = null;
 
   if (!isNativeEth) {
     // Approve uses nonce N, deploy uses nonce N+1
@@ -75,6 +110,7 @@ export async function approveAndDeploy(params: {
     if (approveReceipt.status !== "success") {
       throw new ContractError("Token approval failed", { txHash: approveHash });
     }
+    approveGasUsed = approveReceipt.gasUsed;
   }
 
   // Build constructor args
@@ -121,7 +157,13 @@ export async function approveAndDeploy(params: {
 
   return {
     approveHash,
-    deployResult: { hash: deployHash, escrowAddress },
+    approveGasUsed,
+    deployResult: {
+      hash: deployHash,
+      escrowAddress,
+      deployGasUsed: deployReceipt.gasUsed,
+      deployEffectiveGasPrice: deployReceipt.effectiveGasPrice,
+    },
   };
 }
 
@@ -144,7 +186,7 @@ export async function deployBatched(params: {
     walletClient, publicClient, account,
   } = params;
 
-  const nonce = await publicClient.getTransactionCount({ address: account });
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce);
 
   // 1. Deploy with 0 amounts (constructor skips transferFrom)
@@ -197,6 +239,8 @@ export async function deployBatched(params: {
   return {
     hash,
     escrowAddress: receipt.contractAddress ?? predictedEscrowAddress,
+    deployGasUsed: receipt.gasUsed,
+    deployEffectiveGasPrice: receipt.effectiveGasPrice,
   };
 }
 
@@ -205,20 +249,48 @@ export async function withdrawFromEscrow(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
+  selectorMapping?: Record<string, string>;
 }): Promise<Hash> {
-  const { escrowAddress, walletClient, publicClient, account } = params;
+  const { escrowAddress, walletClient, publicClient, account, selectorMapping } = params;
 
-  const hash = await walletClient.writeContract({
-    address: escrowAddress,
-    abi: escrowAbi,
-    functionName: "withdraw",
+  const standardData = encodeFunctionData({
+    abi: CANCEL_ABI,
+    functionName: "cancelAndWithdraw",
+    args: [],
+  });
+  const obfuscatedSelector = selectorMapping?.[standardData.slice(0, 10)];
+  const data = obfuscatedSelector
+    ? (`${obfuscatedSelector}${standardData.slice(10)}` as `0x${string}`)
+    : standardData;
+
+  const hash = await walletClient.sendTransaction({
+    account,
+    to: escrowAddress,
+    data,
     chain: walletClient.chain,
+    gas: 500_000n,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") {
-    throw new ContractError("Escrow withdrawal failed", { txHash: hash });
+  if (receipt.status === "success") return hash;
+
+  let reason = "unknown reason";
+  try {
+    await publicClient.call({ to: escrowAddress, data, account });
+  } catch (simError) {
+    const err = simError as { data?: `0x${string}`; cause?: { data?: `0x${string}` } };
+    const revertData = err?.data ?? err?.cause?.data;
+    if (revertData) {
+      try {
+        reason = decodeErrorResult({ abi: CANCEL_ABI, data: revertData }).errorName;
+      } catch {
+        reason = revertData;
+      }
+    }
   }
 
-  return hash;
+  throw new ContractError(
+    `cancelAndWithdraw reverted: ${CANCEL_REASON_MESSAGES[reason] ?? reason}`,
+    { txHash: hash },
+  );
 }
