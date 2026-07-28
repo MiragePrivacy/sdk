@@ -34,6 +34,7 @@
     "viem": "^2.0.0"
   },
   "dependencies": {
+    "@noble/curves": "^2.2.0",
     "eciesjs": "^0.4.0"
   },
   "devDependencies": {

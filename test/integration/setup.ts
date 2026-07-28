@@ -150,9 +150,11 @@ export function getNetwork(): NetworkConfig {
     nomadUrl: NOMAD_URL,
     apiServer: API_URL,
     enableCompliance: false,
-    enableBatch: false,
+    enableAtomicBatch: false,
     nodeFeeUsd: 2_000000n,
     platformFeeRate: 50n,
+    // Anvil has no Uniswap deployment; price the local chain directly.
+    ethToTokenRate: 4500,
   });
 }
 

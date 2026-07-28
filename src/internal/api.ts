@@ -1,13 +1,25 @@
-import type { Address } from "viem";
 import { ApiError } from "../errors.js";
-import type { NetworkKeyStatus } from "../types.js";
+import type { EscrowKind, NetworkKeyStatus } from "../types.js";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
 
   if (!res.ok) {
-    const body = await res.json().catch(() => res.text().catch(() => undefined));
-    throw new ApiError(res.status, `API request failed: ${res.status} ${res.statusText}`, body);
+    const raw = await res.text().catch(() => "");
+    let body: unknown = raw || undefined;
+    let detail = "";
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; details?: string };
+      body = parsed;
+      detail = parsed.error ?? parsed.details ?? "";
+    } catch {
+      detail = raw;
+    }
+    throw new ApiError(
+      res.status,
+      detail || `API request failed: ${res.status} ${res.statusText}`,
+      body,
+    );
   }
 
   return res.json() as Promise<T>;
@@ -39,7 +51,7 @@ export interface ObfuscationResult {
 
 export async function fetchObfuscation(
   apiServer: string,
-  nativeEth: boolean,
+  escrowType: EscrowKind,
 ): Promise<ObfuscationResult> {
   // Generate random 32-byte seed
   const seedBytes = new Uint8Array(32);
@@ -72,7 +84,7 @@ export async function fetchObfuscation(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       options: { shuffle: false, seed },
-      native_eth: nativeEth,
+      escrow_type: escrowType,
     }),
   });
 
@@ -87,8 +99,10 @@ export async function fetchObfuscation(
     if (fg?.bond != null) gasAnalysis.bond = BigInt(fg.bond);
     if (fg?.collect != null) gasAnalysis.collect = BigInt(fg.collect);
     if (fg?.fund != null) gasAnalysis.fund = BigInt(fg.fund);
-    if (fg?.collect_variants?.standard != null) gasAnalysis.collectStandard = BigInt(fg.collect_variants.standard);
-    if (fg?.collect_variants?.tempo != null) gasAnalysis.collectTempo = BigInt(fg.collect_variants.tempo);
+    if (fg?.collect_variants?.standard != null)
+      gasAnalysis.collectStandard = BigInt(fg.collect_variants.standard);
+    if (fg?.collect_variants?.tempo != null)
+      gasAnalysis.collectTempo = BigInt(fg.collect_variants.tempo);
   }
 
   return {
@@ -107,13 +121,23 @@ export interface ComplianceApproval {
   escrowAddress: string;
 }
 
+/**
+ * Compliance approvals are rejected by the node once stale, so a resumed or
+ * retried signal must re-request one.
+ */
+export const APPROVAL_MAX_AGE_SECS = 300;
+
+export function isApprovalStale(timestamp: number, nowSecs = Date.now() / 1000): boolean {
+  return nowSecs - timestamp >= APPROVAL_MAX_AGE_SECS;
+}
+
 export async function fetchComplianceApproval(
   apiServer: string,
   params: {
     txHash: string;
     chainId: number;
     seed: string;
-    nativeEth: boolean;
+    escrowType: EscrowKind;
     accessToken?: string;
   },
 ): Promise<ComplianceApproval> {
@@ -121,7 +145,7 @@ export async function fetchComplianceApproval(
     tx_hash: params.txHash,
     chain_id: params.chainId,
     seed: params.seed,
-    native_eth: params.nativeEth,
+    escrow_type: params.escrowType,
   };
   if (params.accessToken) {
     body.access_token = params.accessToken;
@@ -144,9 +168,16 @@ export async function fetchComplianceApproval(
   };
 }
 
+/** True when a compliance rejection indicates whitelist verification is needed. */
+export function isWhitelistRejection(error: unknown): boolean {
+  return error instanceof ApiError && error.statusCode === 403 && /whitelist/i.test(error.message);
+}
+
 export async function fetchNetworkKey(nomadUrl: string): Promise<NetworkKeyStatus> {
   const res = await request<{
-    publicKey: string;
+    // Current nodes nest the key and chain id inside a hash-committed payload.
+    payload?: { publicKey?: string; chainId?: number } | null;
+    publicKey?: string;
     public_key?: string;
     attestation: unknown | null;
     isDebug?: boolean;
@@ -157,43 +188,76 @@ export async function fetchNetworkKey(nomadUrl: string): Promise<NetworkKeyStatu
     mrsigner?: string;
   }>(`${nomadUrl}/attest`);
 
+  const publicKey = res.payload?.publicKey ?? res.publicKey ?? res.public_key ?? "";
+  if (!publicKey) {
+    throw new ApiError(200, "Attestation response missing enclave public key", res);
+  }
+
   return {
-    publicKey: res.publicKey ?? res.public_key ?? "",
+    publicKey,
     attested: res.attestation !== null && res.attestation !== undefined,
     debug: res.isDebug ?? res.is_debug ?? false,
-    chainId: Number(res.chainId ?? res.chain_id ?? 0),
+    chainId: Number(res.payload?.chainId ?? res.chainId ?? res.chain_id ?? 0),
     mrenclave: res.mrenclave,
     mrsigner: res.mrsigner,
   };
 }
 
-export async function fetchApiHealth(
-  apiServer: string,
-): Promise<{
+export interface ApiHealth {
   status: string;
   version?: string;
+  /** Per-chain maximum transfer size in USD, keyed by chain id. */
   maxTransferUsd?: Record<string, string | null>;
-}> {
+  /** Per-chain USD threshold above which whitelist verification is required. */
+  whitelistRequiredUsd?: Record<string, string | null>;
+}
+
+function parseUsdByChain(
+  raw: Record<string, number | null> | undefined,
+): Record<string, string | null> | undefined {
+  if (!raw) return undefined;
+  const out: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!/^\d+$/.test(key)) continue;
+    out[key] = typeof value === "number" ? String(value) : null;
+  }
+  return out;
+}
+
+export async function fetchApiHealth(apiServer: string): Promise<ApiHealth> {
   const res = await request<{
     status: string;
     version?: string;
     max_tx_usd?: Record<string, number | null>;
+    whitelist_required_usd?: Record<string, number | null>;
   }>(`${apiServer}/`);
-
-  // Convert numeric values to strings for JSON serialization safety
-  let maxTransferUsd: Record<string, string | null> | undefined;
-  if (res.max_tx_usd) {
-    maxTransferUsd = {};
-    for (const [key, value] of Object.entries(res.max_tx_usd)) {
-      maxTransferUsd[key] = value !== null ? String(value) : null;
-    }
-  }
 
   return {
     status: res.status,
     version: res.version,
-    maxTransferUsd,
+    maxTransferUsd: parseUsdByChain(res.max_tx_usd),
+    whitelistRequiredUsd: parseUsdByChain(res.whitelist_required_usd),
   };
+}
+
+/**
+ * Fetch limits with retries. A transient failure would otherwise leave both
+ * thresholds empty, which fails open: the whitelist gate cannot trigger and
+ * transfers proceed until the backend rejects them.
+ */
+export async function fetchLimits(apiServer: string, retries = 3): Promise<ApiHealth> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fetchApiHealth(apiServer);
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -206,4 +270,76 @@ export async function fetchTransferLimit(
 ): Promise<string | null | undefined> {
   const health = await fetchApiHealth(apiServer);
   return health.maxTransferUsd?.[String(chainId)];
+}
+
+export interface GasHistoryAverages {
+  /** Mean of the daily average max fee per gas, one vote per day. */
+  maxFeePerGas: bigint;
+  /** Days with a usable sample. */
+  sampledDays: number;
+  /** Window the server aggregated over. */
+  windowDays: number;
+}
+
+/**
+ * Historical gas averages, for callers surfacing an "elevated gas" indicator.
+ * Not used for execution pricing, which reads live gas from the chain.
+ */
+export async function fetchGasHistoryAverages(
+  apiServer: string,
+  chainId: number,
+): Promise<GasHistoryAverages | null> {
+  let res: {
+    window_days: number;
+    buckets: Array<{ max_fee_per_gas_wei: string | null }>;
+  };
+
+  try {
+    res = await request(`${apiServer}/gas/history/averages?chain_id=${chainId}`);
+  } catch {
+    return null;
+  }
+
+  let sum = 0n;
+  let sampledDays = 0;
+  for (const bucket of res.buckets ?? []) {
+    if (!bucket.max_fee_per_gas_wei) continue;
+    sum += BigInt(bucket.max_fee_per_gas_wei);
+    sampledDays += 1;
+  }
+
+  if (sampledDays === 0) return null;
+
+  return {
+    maxFeePerGas: sum / BigInt(sampledDays),
+    sampledDays,
+    windowDays: res.window_days,
+  };
+}
+
+/**
+ * Check whether an identifier is whitelisted. The value is hashed client-side
+ * and the hash itself becomes the access token passed to compliance.
+ */
+export async function checkWhitelist(
+  apiServer: string,
+  email: string,
+): Promise<{ whitelisted: boolean; accessToken?: string }> {
+  // The backend stores normalized values, so normalize before hashing.
+  const normalized = email.trim().toLowerCase();
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+  const hash = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const res = await request<{ whitelisted: boolean }>(`${apiServer}/whitelist`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: hash, hashed: true }),
+  });
+
+  return {
+    whitelisted: res.whitelisted,
+    accessToken: res.whitelisted ? hash : undefined,
+  };
 }

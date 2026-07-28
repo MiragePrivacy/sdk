@@ -1,31 +1,61 @@
 import type { Address, Hash, PublicClient, WalletClient } from "viem";
 import type {
+  EscrowKind,
+  FeeEstimate,
   GasConstants,
   GasPrice,
   NetworkConfig,
   PreparedTransfer,
+  TransferEvent,
+  TransferRow,
+  TransferSecrets,
   TransferStep,
 } from "./types.js";
-import { MirageError, TransferAbortedError, TransferLimitError } from "./errors.js";
-import { isNativeToken } from "./token.js";
-import { getTokenMetadata } from "./token.js";
+import {
+  MirageError,
+  MissingBlindingScalarError,
+  TransferLimitError,
+  WhitelistRequiredError,
+} from "./errors.js";
+import { isNativeToken, getTokenMetadata } from "./token.js";
 import { estimateFees, resolveEthPrice } from "./internal/fees.js";
-import type { ObfuscationResult } from "./internal/api.js";
-import { fetchObfuscation, fetchComplianceApproval, fetchNetworkKey, fetchTransferLimit } from "./internal/api.js";
-import { approveAndDeploy, deployBatched } from "./internal/escrow.js";
+import type { ApiHealth, ObfuscationResult } from "./internal/api.js";
+import {
+  fetchObfuscation,
+  fetchComplianceApproval,
+  fetchNetworkKey,
+  fetchLimits,
+  isApprovalStale,
+  isWhitelistRejection,
+} from "./internal/api.js";
+import {
+  approveAndDeploy,
+  deployAtomicBatch,
+  deriveEscrowKind,
+  pickRewardToken,
+} from "./internal/escrow.js";
+import { deriveBlindedSigner } from "./internal/bond.js";
 import { submitSignal } from "./internal/nomad.js";
-import { pollTransferEvent } from "./internal/poll.js";
+import { pollTransfers } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
 import { getAccount, assertAccountUnchanged } from "./internal/account.js";
 
 export interface TransferParams {
-  tokenAddress: Address;
-  recipientAddress: Address;
-  amount: bigint;
+  /** Single-recipient form. Mutually exclusive with `transfers`. */
+  tokenAddress?: Address;
+  recipientAddress?: Address;
+  amount?: bigint;
+  /** Multi-recipient form. Deploys one batch escrow for all rows. */
+  transfers?: TransferRow[];
   walletClient: WalletClient;
   publicClient: PublicClient;
   network: NetworkConfig;
-  escrowAddress?: Address;
+  /**
+   * Resume a transfer whose escrow is already deployed. Must carry the
+   * blinding scalar for non-batch escrows, which only the deploying device
+   * holds.
+   */
+  resume?: TransferSecrets;
   accessToken?: string;
   gasPrice?: GasPrice;
   abortSignal?: AbortSignal;
@@ -34,24 +64,79 @@ export interface TransferParams {
 
 const DEFAULT_POLL_TIMEOUT = 120_000;
 
-async function checkTransferLimit(params: {
-  apiServer: string;
-  chainId: number;
-  amount: bigint;
-  decimals: number;
-  isNativeEth: boolean;
-  ethPriceUsd: number;
-}): Promise<void> {
-  const { apiServer, chainId, amount, decimals, isNativeEth, ethPriceUsd } = params;
-  const limit = await fetchTransferLimit(apiServer, chainId);
-  if (limit === null || limit === undefined) return;
+/** Normalize either input form into rows. */
+function resolveRows(params: TransferParams): TransferRow[] {
+  if (params.transfers?.length) return params.transfers;
 
-  const limitUsd = Number(limit);
-  const tokenAmount = Number(amount) / 10 ** decimals;
-  const amountUsd = isNativeEth ? tokenAmount * ethPriceUsd : tokenAmount;
-  if (amountUsd > limitUsd) {
-    throw new TransferLimitError(amountUsd, limitUsd);
+  const { tokenAddress, recipientAddress, amount } = params;
+  if (!tokenAddress || !recipientAddress || amount === undefined) {
+    throw new MirageError(
+      "INVALID_PARAMS",
+      "Provide either transfers[] or tokenAddress + recipientAddress + amount",
+    );
   }
+  return [{ tokenAddress, recipientAddress, amount }];
+}
+
+/** USD value of a row. ERC20 stablecoins are treated as 1:1. */
+function rowValueUsd(row: TransferRow, decimals: number, ethPriceUsd: number): number {
+  const tokenAmount = Number(row.amount) / 10 ** decimals;
+  return isNativeToken(row.tokenAddress) ? tokenAmount * ethPriceUsd : tokenAmount;
+}
+
+/** Restate an amount in another token's decimals without losing precision. */
+function scaleAmount(amount: bigint, from: number, to: number): bigint {
+  if (from === to) return amount;
+  return from < to
+    ? amount * 10n ** BigInt(to - from)
+    : amount / 10n ** BigInt(from - to);
+}
+
+/** Convert a native ETH amount to its USD-equivalent stablecoin units. */
+function applyEthPrice(amount: bigint, ethPriceUsd: number): bigint {
+  // Carry the price at 6 decimals so fractional dollars survive the bigint math.
+  return (amount * BigInt(Math.round(ethPriceUsd * 1e6))) / 1_000_000n;
+}
+
+/**
+ * Limits and whitelist thresholds apply per transfer, not to the batch total:
+ * ten transfers under the limit are allowed even if their sum exceeds it.
+ */
+function checkLimits(params: {
+  health: ApiHealth;
+  chainId: number;
+  rows: TransferRow[];
+  decimals: number[];
+  ethPriceUsd: number;
+  hasAccessToken: boolean;
+}): void {
+  const { health, chainId, rows, decimals, ethPriceUsd, hasAccessToken } = params;
+  const key = String(chainId);
+  const limit = health.maxTransferUsd?.[key];
+  const threshold = health.whitelistRequiredUsd?.[key];
+
+  rows.forEach((row, i) => {
+    const isNative = isNativeToken(row.tokenAddress);
+    // A native row cannot be evaluated without a price; block rather than
+    // silently letting it through.
+    if (isNative && (!ethPriceUsd || ethPriceUsd <= 0)) {
+      throw new MirageError(
+        "MISSING_ETH_PRICE",
+        "ETH price unavailable; cannot evaluate transfer limits for native ETH",
+        { meta: { rowIndex: i } },
+      );
+    }
+
+    const amountUsd = rowValueUsd(row, decimals[i], ethPriceUsd);
+
+    if (limit != null && amountUsd > Number(limit)) {
+      throw new TransferLimitError(amountUsd, Number(limit), i);
+    }
+
+    if (threshold != null && amountUsd > Number(threshold) && !hasAccessToken) {
+      throw new WhitelistRequiredError(amountUsd, Number(threshold));
+    }
+  });
 }
 
 /** Build gas overrides from API gas analysis, falling back to network defaults. */
@@ -66,170 +151,197 @@ function buildGasOverrides(
   if (gasAnalysis.fund !== undefined) overrides.fund = gasAnalysis.fund;
   const collect =
     networkKind === "tempo"
-      ? gasAnalysis.collectTempo ?? gasAnalysis.collect
-      : gasAnalysis.collectStandard ?? gasAnalysis.collect;
+      ? (gasAnalysis.collectTempo ?? gasAnalysis.collect)
+      : (gasAnalysis.collectStandard ?? gasAnalysis.collect);
   if (collect !== undefined) overrides.collect = collect;
   return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
 
-export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
-  const { tokenAddress, amount, network, publicClient, gasPrice } = params;
-  const token = await getTokenMetadata(tokenAddress, publicClient);
-  const nativeEth = isNativeToken(tokenAddress);
-  const ethPriceUsd = await resolveEthPrice(network, publicClient, tokenAddress, token.decimals);
+interface TransferContext {
+  rows: TransferRow[];
+  escrowType: EscrowKind;
+  rewardToken: Address;
+  rewardDecimals: number;
+  decimals: number[];
+  ethPriceUsd: number;
+  fees: FeeEstimate;
+  obfuscation?: ObfuscationResult;
+}
 
-  await checkTransferLimit({
-    apiServer: network.apiServer,
+async function buildContext(
+  params: TransferParams,
+  options: { skipObfuscation?: boolean } = {},
+): Promise<TransferContext> {
+  const { network, publicClient, gasPrice, accessToken } = params;
+  const rows = resolveRows(params);
+  const escrowType = params.resume?.escrowType ?? deriveEscrowKind(rows);
+  const rewardToken = pickRewardToken(rows);
+
+  const metadata = await Promise.all(
+    rows.map((row) => getTokenMetadata(row.tokenAddress, publicClient)),
+  );
+  const decimals = metadata.map((m) => m.decimals);
+  const rewardDecimals =
+    metadata.find((m) => m.address.toLowerCase() === rewardToken.toLowerCase())?.decimals ??
+    decimals[0];
+
+  const ethPriceUsd = await resolveEthPrice(network, publicClient, rewardToken, rewardDecimals);
+
+  const health = await fetchLimits(network.apiServer);
+  checkLimits({
+    health,
     chainId: network.chainId,
-    amount,
-    decimals: token.decimals,
-    isNativeEth: nativeEth,
+    rows,
+    decimals,
     ethPriceUsd,
+    hasAccessToken: !!accessToken,
   });
 
-  // Fetch obfuscation + gas analysis from API
-  const obfuscation = await fetchObfuscation(network.apiServer, nativeEth);
-  const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis, network.kind);
+  const obfuscation = options.skipObfuscation
+    ? undefined
+    : await fetchObfuscation(network.apiServer, escrowType);
+
+  // Platform fee is charged on the whole batch, normalized to the reward asset.
+  // Scale in bigint: converting via float loses precision at 18 decimals.
+  const platformFeeBase = rows.reduce((sum, row, i) => {
+    const scaled = scaleAmount(row.amount, decimals[i], rewardDecimals);
+    return sum + (isNativeToken(row.tokenAddress) ? applyEthPrice(scaled, ethPriceUsd) : scaled);
+  }, 0n);
 
   const fees = await estimateFees({
-    amount,
-    tokenAddress,
-    tokenDecimals: token.decimals,
+    transfers: rows,
+    escrowType,
+    tokenDecimals: rewardDecimals,
     network,
     publicClient,
     gasPrice,
-    gasOverrides,
+    gasOverrides: buildGasOverrides(obfuscation?.gasAnalysis, network.kind),
+    ethToTokenRate: isNativeToken(rewardToken) ? undefined : ethPriceUsd,
+    platformFeeBase,
   });
 
+  return { rows, escrowType, rewardToken, rewardDecimals, decimals, ethPriceUsd, fees, obfuscation };
+}
+
+export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
+  const context = await buildContext(params);
   return {
-    fees,
-    execute: () => executeTransfer(params, obfuscation),
+    fees: context.fees,
+    execute: () => executeTransfer(params, context),
   };
 }
 
 async function* executeTransfer(
   params: TransferParams,
-  cachedObfuscation: ObfuscationResult,
+  cached?: TransferContext,
 ): AsyncGenerator<TransferStep> {
   const {
-    tokenAddress,
-    recipientAddress,
-    amount,
     walletClient,
     publicClient,
     network,
     accessToken,
-    gasPrice,
     abortSignal,
+    resume,
     pollTimeout = DEFAULT_POLL_TIMEOUT,
   } = params;
 
-  if (network.enableCompliance && !accessToken) {
-    throw new MirageError(
-      "MISSING_ACCESS_TOKEN",
-      "accessToken is required when network.enableCompliance is true",
-    );
+  const account = getAccount(walletClient);
+  const context = cached ?? (await buildContext(params, { skipObfuscation: !!resume }));
+  const { rows, escrowType, rewardToken, fees } = context;
+
+  // Without the scalar the node cannot be authorized to bond, so fail before
+  // touching the chain rather than after funds are committed.
+  if (resume && escrowType !== "batch" && !resume.blindingScalar) {
+    throw new MissingBlindingScalarError(resume.escrowAddress);
   }
 
-  const account = getAccount(walletClient);
-  const isNativeEth = isNativeToken(tokenAddress);
-  const token = await getTokenMetadata(tokenAddress, publicClient);
-  const ethPriceUsd = await resolveEthPrice(network, publicClient, tokenAddress, token.decimals);
+  yield { step: "fees", fees };
 
-  await checkTransferLimit({
-    apiServer: network.apiServer,
-    chainId: network.chainId,
-    amount,
-    decimals: token.decimals,
-    isNativeEth,
-    ethPriceUsd,
-  });
-
-  let escrowAddress = params.escrowAddress;
-  let deployHash: Hash | undefined;
-  let selectorMapping: Record<string, string> | undefined;
-  let deployedAt: number | undefined;
+  let escrowAddress = resume?.escrowAddress;
+  let deployHash = resume?.deployHash;
+  let selectorMapping = resume?.selectorMapping;
+  let seed = resume?.seed;
+  let blindingScalar = resume?.blindingScalar;
+  let deployedAt = resume?.deployedAt;
   let userApproveGas: bigint | undefined;
   let userDeployGas: bigint | undefined;
   let userGasPrice: bigint | undefined;
-  const isResume = !!escrowAddress;
 
-  if (!isResume) {
-    // --- Obfuscation + Fee estimation ---
-    checkAbort(abortSignal);
-
-    const obfuscation = cachedObfuscation;
-    selectorMapping = obfuscation.selectorMapping;
-    const gasOverrides = buildGasOverrides(obfuscation.gasAnalysis, network.kind);
-
-    const fees = await estimateFees({
-      amount,
-      tokenAddress,
-      tokenDecimals: token.decimals,
-      network,
-      publicClient,
-      gasPrice,
-      gasOverrides,
-    });
-
-    yield { step: "fees", fees };
-
-    // Compute reward = totalFee - networkFee (what the node gets)
-    const rewardAmount = fees.nodeFee + fees.platformFee;
-
-    // --- Approve + Deploy ---
+  if (!resume) {
     checkAbort(abortSignal);
     assertAccountUnchanged(walletClient, account);
 
-    if (network.enableBatch) {
-      // Tempo: deploy + approve + fund in single batched tx
-      const result = await deployBatched({
-        bytecode: obfuscation.obfuscatedBytecode,
-        selectorMapping,
-        tokenAddress,
-        recipientAddress,
-        transferAmount: amount,
-        rewardAmount,
-        totalAmount: fees.totalAmount,
-        walletClient,
-        publicClient,
-        account,
-      });
+    const obfuscation = context.obfuscation;
+    if (!obfuscation) {
+      throw new MirageError("MISSING_OBFUSCATION", "Escrow bytecode was not fetched");
+    }
+    selectorMapping = obfuscation.selectorMapping;
+    seed = obfuscation.seed;
 
+    // Batch escrows have no bond pot and no blinded signer.
+    let blindedSigner: Address | undefined;
+    if (escrowType !== "batch") {
+      const networkKey = await fetchNetworkKey(network.nomadUrl);
+      const blinded = deriveBlindedSigner(networkKey.publicKey);
+      blindedSigner = blinded.blindedSigner;
+      blindingScalar = blinded.blindingScalar;
+    }
+
+    const deployArgs = {
+      bytecode: obfuscation.obfuscatedBytecode,
+      escrowType,
+      transfers: rows,
+      rewardAmount: fees.rewardAmount,
+      blindedSigner,
+      bondPot: fees.bondPot,
+      walletClient,
+      publicClient,
+      account,
+    };
+
+    if (network.enableAtomicBatch) {
+      const result = await deployAtomicBatch({ ...deployArgs, selectorMapping });
       escrowAddress = result.escrowAddress;
       deployHash = result.hash;
-      deployedAt = Date.now();
       userDeployGas = result.deployGasUsed;
       userGasPrice = result.deployEffectiveGasPrice;
-      yield { step: "deploy", hash: result.hash, escrowAddress };
     } else {
-      // Ethereum: approve predicted address → deploy (constructor pulls via transferFrom)
+      const approvalSteps: TransferStep[] = [];
       const result = await approveAndDeploy({
-        bytecode: obfuscation.obfuscatedBytecode,
-        selectorMapping,
-        tokenAddress,
-        recipientAddress,
-        transferAmount: amount,
-        rewardAmount,
-        totalAmount: fees.totalAmount,
-        isNativeEth,
-        walletClient,
-        publicClient,
-        account,
+        ...deployArgs,
+        onApproval: ({ hash, tokenAddress, index, total }) => {
+          approvalSteps.push({ step: "approve", hash, tokenAddress, index, total });
+        },
       });
 
-      if (result.approveHash) {
-        yield { step: "approve", hash: result.approveHash };
+      for (const approval of approvalSteps) {
+        yield approval;
       }
 
       escrowAddress = result.deployResult.escrowAddress;
       deployHash = result.deployResult.hash;
-      deployedAt = Date.now();
-      userApproveGas = result.approveGasUsed ?? undefined;
+      userApproveGas = result.approveGasUsed || undefined;
       userDeployGas = result.deployResult.deployGasUsed;
       userGasPrice = result.deployResult.deployEffectiveGasPrice;
-      yield { step: "deploy", hash: result.deployResult.hash, escrowAddress };
     }
+
+    deployedAt = Date.now();
+
+    yield {
+      step: "deploy",
+      hash: deployHash,
+      escrowAddress,
+      escrowType,
+      secrets: {
+        escrowAddress,
+        escrowType,
+        blindingScalar,
+        seed: seed!,
+        selectorMapping,
+        deployHash,
+        deployedAt,
+      },
+    };
   }
 
   const escrow = escrowAddress!;
@@ -238,27 +350,30 @@ async function* executeTransfer(
   let complianceSignature: string | undefined;
   let complianceTimestamp: number | undefined;
 
-  if (network.enableCompliance) {
+  if (network.enableCompliance && deployHash && seed) {
     checkAbort(abortSignal, { escrowAddress: escrow });
     assertAccountUnchanged(walletClient, account, escrow);
 
-    const txHash = deployHash;
-    if (!txHash && !isResume) {
-      throw new MirageError("MISSING_DEPLOY_HASH", "Deploy tx hash required for compliance");
-    }
-
-    if (txHash) {
+    try {
       const approval = await fetchComplianceApproval(network.apiServer, {
-        txHash,
+        txHash: deployHash,
         chainId: network.chainId,
-        seed: cachedObfuscation.seed,
-        nativeEth: isNativeEth,
+        seed,
+        escrowType,
         accessToken,
       });
 
       complianceSignature = approval.signature;
       complianceTimestamp = approval.timestamp;
-      yield { step: "compliance", approval: { signature: approval.signature, timestamp: approval.timestamp } };
+      yield {
+        step: "compliance",
+        approval: { signature: approval.signature, timestamp: approval.timestamp },
+      };
+    } catch (error) {
+      if (isWhitelistRejection(error)) {
+        throw new WhitelistRequiredError(0, 0);
+      }
+      throw error;
     }
   }
 
@@ -266,28 +381,29 @@ async function* executeTransfer(
   checkAbort(abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
 
-  const networkKey = await fetchNetworkKey(network.nomadUrl);
+  // Approvals expire, so a slow deploy or a resumed transfer needs a fresh one.
+  if (complianceTimestamp !== undefined && isApprovalStale(complianceTimestamp)) {
+    const refreshed = await fetchComplianceApproval(network.apiServer, {
+      txHash: deployHash!,
+      chainId: network.chainId,
+      seed: seed!,
+      escrowType,
+      accessToken,
+    });
+    complianceSignature = refreshed.signature;
+    complianceTimestamp = refreshed.timestamp;
+  }
 
-  // Compute reward for signal (same as during fee estimation)
-  // For resume, caller must ensure amount matches original funding
-  const gasOverrides = buildGasOverrides(cachedObfuscation?.gasAnalysis, network.kind);
-  const fees = await estimateFees({
-    amount,
-    tokenAddress,
-    tokenDecimals: token.decimals,
-    network,
-    publicClient,
-    gasPrice,
-    gasOverrides,
-  });
-  const rewardAmount = fees.nodeFee + fees.platformFee;
+  const networkKey = await fetchNetworkKey(network.nomadUrl);
+  const fromBlock = await publicClient.getBlockNumber();
 
   const signalResponse = await submitSignal({
     escrowAddress: escrow,
-    recipientAddress,
-    transferAmount: amount,
-    rewardAmount,
-    tokenAddress,
+    escrowType,
+    tokenAddress: rewardToken,
+    transfers: rows,
+    rewardAmount: fees.rewardAmount,
+    blindingScalar,
     selectorMapping,
     complianceSignature,
     complianceTimestamp,
@@ -299,18 +415,29 @@ async function* executeTransfer(
     networkKey,
   });
 
-  yield { step: "signal", hash: signalResponse as `0x${string}` };
+  yield { step: "signal", response: signalResponse };
 
-  // --- Poll for completion ---
-  const transfer = await pollTransferEvent({
-    recipientAddress,
-    tokenAddress,
-    expectedAmount: amount,
+  // --- Poll for delivery, emitting each recipient as it lands ---
+  const completed: TransferEvent[] = [];
+
+  for await (const delivered of pollTransfers({
+    transfers: rows,
     publicClient,
-    isNativeEth,
     timeout: pollTimeout,
+    fromBlock,
     signal: abortSignal,
-  });
+  })) {
+    completed.push(delivered.transfer);
+    yield {
+      step: "transfer",
+      transfer: delivered.transfer,
+      row: delivered.row,
+      index: delivered.index,
+      total: rows.length,
+    };
+  }
 
-  yield { step: "complete", transfer };
+  yield { step: "complete", transfers: completed };
 }
+
+export { executeTransfer };

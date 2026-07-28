@@ -3,8 +3,22 @@ import type { Address, Hash } from "viem";
 export type NetworkId = "sepolia" | "tempo" | "ethereum";
 export type NetworkKind = "ethereum" | "tempo";
 
+/**
+ * Escrow variant. Determines the deployed bytecode, constructor shape, and is
+ * cross-validated by the node against the signal's reward token.
+ */
+export type EscrowKind = "erc20" | "native" | "batch";
+
 export interface GasConstants {
   approve: bigint;
+  deploy: bigint;
+  bond: bigint;
+  fund: bigint;
+  collect: bigint;
+}
+
+/** Gas constants for the native ETH escrow variant. */
+export interface NativeGasConstants {
   deploy: bigint;
   bond: bigint;
   fund: bigint;
@@ -19,10 +33,21 @@ export interface NetworkConfig {
   nomadUrl: string;
   apiServer: string;
   enableCompliance: boolean;
-  enableBatch: boolean;
+  /** Submit approve + deploy + fund as a single native-multicall tx (tempo). */
+  enableAtomicBatch: boolean;
   nodeFeeUsd: bigint;
+  /** Base node fee for native ETH transfers, in wei. */
+  nodeFeeWei: bigint;
   platformFeeRate: bigint;
   gas: GasConstants;
+  nativeGas: NativeGasConstants;
+  /** Multiplier applied to bond + collect gas when sizing the bond pot (x100). */
+  bondPotMarginBps: bigint;
+  /**
+   * Fixed ETH->token rate, bypassing the on-chain oracle. Intended for local
+   * chains and tests where no Uniswap deployment exists.
+   */
+  ethToTokenRate?: number;
   // Uniswap V2 router address for ETH->token price conversion (EVM ERC20 fees)
   uniswapRouter?: Address;
   // WETH address override (normally fetched from router)
@@ -40,6 +65,21 @@ export interface FeeEstimate {
   nodeFee: bigint;
   platformFee: bigint;
   totalFee: bigint;
+  /**
+   * ETH the wallet fronts as msg.value at deploy to fund the node's bond and
+   * collect transactions. Always wei, on both native and ERC20 escrows. Zero
+   * for batch escrows. Refundable surplus, not a fee, so it is excluded from
+   * totalFee but included in totalAmount.
+   */
+  bondPot: bigint;
+  /**
+   * Amount pulled by the escrow: transferAmount + nodeFee + platformFee.
+   * Excludes networkFee, which the wallet pays as gas on its own txs.
+   */
+  escrowAmount: bigint;
+  /** Paid to the node for executing the transfer: nodeFee + platformFee. */
+  rewardAmount: bigint;
+  /** Total leaving the wallet, including the bond pot. */
   totalAmount: bigint;
   decimals: number;
   isNativeEth: boolean;
@@ -74,13 +114,53 @@ export interface GasPrice {
   maxPriorityFeePerGas: bigint;
 }
 
+/** A single recipient row. A plain transfer is internally a one-row batch. */
+export interface TransferRow {
+  tokenAddress: Address;
+  recipientAddress: Address;
+  amount: bigint;
+}
+
+/**
+ * Secret material required to complete a deployed escrow. The blinding scalar
+ * never leaves the device in shareable form: without it the node cannot be
+ * authorized to bond, so a resumed transfer must supply the original value.
+ */
+export interface TransferSecrets {
+  escrowAddress: Address;
+  escrowType: EscrowKind;
+  /** Per-escrow secp256k1 blinding scalar. Absent for batch escrows. */
+  blindingScalar?: `0x${string}`;
+  seed: string;
+  selectorMapping?: Record<string, string>;
+  deployHash: Hash;
+  deployedAt: number;
+}
+
 export type TransferStep =
   | { step: "fees"; fees: FeeEstimate }
-  | { step: "approve"; hash: Hash }
-  | { step: "deploy"; hash: Hash; escrowAddress: Address }
+  /** Emitted once per distinct ERC20 requiring an allowance. */
+  | { step: "approve"; hash: Hash; tokenAddress: Address; index: number; total: number }
+  | {
+      step: "deploy";
+      hash: Hash;
+      escrowAddress: Address;
+      escrowType: EscrowKind;
+      /** Retain to resume this transfer later; never log or share. */
+      secrets: TransferSecrets;
+    }
   | { step: "compliance"; approval: { signature: string; timestamp: number } }
-  | { step: "signal"; hash: Hash }
-  | { step: "complete"; transfer: TransferEvent };
+  | { step: "signal"; response: string }
+  /** Emitted incrementally as each recipient's delivery lands on chain. */
+  | {
+      step: "transfer";
+      transfer: TransferEvent;
+      row: TransferRow;
+      index: number;
+      total: number;
+    }
+  /** All recipients delivered. */
+  | { step: "complete"; transfers: TransferEvent[] };
 
 export interface PreparedTransfer {
   fees: FeeEstimate;

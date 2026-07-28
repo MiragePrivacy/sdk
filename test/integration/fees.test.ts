@@ -8,6 +8,8 @@ import {
   getNetwork,
   startAnvil,
   stopAnvil,
+  startMockApi,
+  stopMockApi,
   getTusdcAddress,
   isTestnet,
   TOKEN_ADDRESS,
@@ -17,16 +19,21 @@ import { parseUnits } from "viem";
 describe("Fee estimation", () => {
   beforeAll(async () => {
     await startAnvil();
+    // Fee estimation reads limits and gas analysis from the API server.
+    await startMockApi();
   }, 120_000);
 
-  afterAll(() => { stopAnvil(); });
+  afterAll(async () => {
+    await stopMockApi();
+    stopAnvil();
+  });
 
   it("estimates fees for native transfer", async () => {
     const publicClient = getPublicClient();
     const walletClient = getWalletClient();
     const network = getNetwork();
 
-    const fees = await prepareTransfer({
+    const { fees } = await prepareTransfer({
       tokenAddress: NATIVE_TOKEN_ADDRESS,
       recipientAddress: ACCOUNTS.recipient.address,
       amount: parseUnits("0.01", 18),
@@ -47,7 +54,9 @@ describe("Fee estimation", () => {
     expect(fees.nodeFee).toBeGreaterThan(0n);
     expect(fees.platformFee).toBeGreaterThanOrEqual(0n);
     expect(fees.totalFee).toBe(fees.networkFee + fees.nodeFee + fees.platformFee);
-    expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee);
+    // Native escrows front the bond pot on top of the transfer and fees.
+    expect(fees.bondPot).toBeGreaterThan(0n);
+    expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee + fees.bondPot);
     expect(fees.decimals).toBe(18);
   });
 
@@ -62,7 +71,7 @@ describe("Fee estimation", () => {
     const walletClient = getWalletClient();
     const network = getNetwork();
 
-    const fees = await prepareTransfer({
+    const { fees } = await prepareTransfer({
       tokenAddress,
       recipientAddress: ACCOUNTS.recipient.address,
       amount: parseUnits("10", 6),

@@ -2,8 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { estimateFees } from "../src/internal/fees.js";
 import { networks } from "../src/networks.js";
 import { NATIVE_TOKEN_ADDRESS } from "../src/token.js";
+import type { TransferRow } from "../src/types.js";
 
 const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
+const USDT_ADDRESS = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as const;
+const RECIPIENT = "0x0000000000000000000000000000000000000001" as const;
 
 function mockPublicClient(maxFeePerGas = 30_000_000_000n) {
   return {
@@ -15,46 +18,65 @@ function mockPublicClient(maxFeePerGas = 30_000_000_000n) {
   } as any;
 }
 
+function row(tokenAddress: string, amount: bigint, recipient: string = RECIPIENT): TransferRow {
+  return {
+    tokenAddress: tokenAddress as `0x${string}`,
+    recipientAddress: recipient as `0x${string}`,
+    amount,
+  };
+}
+
 describe("estimateFees", () => {
   describe("native ETH on ethereum", () => {
+    const gasPrice = 50_000_000_000n;
+    const nativeGas = networks.ethereum.nativeGas;
+
     it("uses deploy-only for user gas (no approve)", async () => {
-      const gasPrice = 50_000_000_000n; // 50 gwei
       const fees = await estimateFees({
-        amount: 1_000_000_000_000_000_000n, // 1 ETH
-        tokenAddress: NATIVE_TOKEN_ADDRESS,
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
         tokenDecimals: 18,
         network: networks.ethereum,
         publicClient: mockPublicClient(),
         gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
       });
 
-      // networkFee = gasPrice * deploy (no approve for native)
-      const expectedNetworkFee = gasPrice * networks.ethereum.gas.deploy;
-      expect(fees.networkFee).toBe(expectedNetworkFee);
+      expect(fees.networkFee).toBe(gasPrice * nativeGas.deploy);
       expect(fees.isNativeEth).toBe(true);
     });
 
-    it("uses bond+fund+collect for node gas (no approve)", async () => {
-      const gasPrice = 50_000_000_000n;
-      const gas = networks.ethereum.gas;
+    it("bills only fund gas to the node, since the bond pot covers bond and collect", async () => {
       const fees = await estimateFees({
-        amount: 1_000_000_000_000_000_000n,
-        tokenAddress: NATIVE_TOKEN_ADDRESS,
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
         tokenDecimals: 18,
         network: networks.ethereum,
         publicClient: mockPublicClient(),
         gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
       });
 
-      const expectedNodeGas = gasPrice * (gas.bond + gas.fund + gas.collect);
-      const nodeFeeBase = 500_000_000_000_000n; // 0.0005 ETH
-      expect(fees.nodeFee).toBe(nodeFeeBase + expectedNodeGas);
+      const nodeFeeBase = networks.ethereum.nodeFeeWei;
+      expect(fees.nodeFee).toBe(nodeFeeBase + gasPrice * nativeGas.fund);
     });
 
-    it("calculates correct totals", async () => {
+    it("sizes the bond pot from bond + collect with margin", async () => {
       const fees = await estimateFees({
-        amount: 1_000_000_000_000_000_000n,
-        tokenAddress: NATIVE_TOKEN_ADDRESS,
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
+        tokenDecimals: 18,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+      });
+
+      const units = ((nativeGas.bond + nativeGas.collect) * 150n + 99n) / 100n;
+      expect(fees.bondPot).toBe(units * gasPrice);
+    });
+
+    it("excludes the bond pot from totalFee but includes it in totalAmount", async () => {
+      const fees = await estimateFees({
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
         tokenDecimals: 18,
         network: networks.ethereum,
         publicClient: mockPublicClient(),
@@ -63,36 +85,35 @@ describe("estimateFees", () => {
 
       expect(fees.transferAmount).toBe(1_000_000_000_000_000_000n);
       expect(fees.totalFee).toBe(fees.networkFee + fees.nodeFee + fees.platformFee);
-      expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee);
+      expect(fees.bondPot).toBeGreaterThan(0n);
+      expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee + fees.bondPot);
       expect(fees.decimals).toBe(18);
+    });
+
+    it("keeps reward = totalFee - networkFee", async () => {
+      const fees = await estimateFees({
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
+        tokenDecimals: 18,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: 30_000_000_000n, maxPriorityFeePerGas: 2_000_000_000n },
+      });
+
+      expect(fees.rewardAmount).toBe(fees.totalFee - fees.networkFee);
+      expect(fees.rewardAmount).toBe(fees.nodeFee + fees.platformFee);
     });
   });
 
   describe("ERC20 on ethereum", () => {
+    const gasPrice = 30_000_000_000n;
+    const gas = networks.ethereum.gas;
+    const ethToTokenRate = 4500;
+
     it("calculates platform fee at 0.5%", async () => {
-      const amount = 10_000_000n; // 10 USDC (6 decimals)
       const fees = await estimateFees({
-        amount,
-        tokenAddress: USDC_ADDRESS,
-        tokenDecimals: 6,
-        network: networks.ethereum,
-        publicClient: mockPublicClient(),
-        gasPrice: { maxFeePerGas: 30_000_000_000n, maxPriorityFeePerGas: 2_000_000_000n },
-        ethToTokenRate: 4500,
-      });
-
-      // 0.5% of 10_000_000 = 50_000
-      expect(fees.platformFee).toBe(50_000n);
-    });
-
-    it("user gas is approve+deploy, node gas is bond+fund+collect", async () => {
-      const gasPrice = 30_000_000_000n;
-      const gas = networks.ethereum.gas;
-      const ethToTokenRate = 4500;
-
-      const fees = await estimateFees({
-        amount: 10_000_000n,
-        tokenAddress: USDC_ADDRESS,
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
         tokenDecimals: 6,
         network: networks.ethereum,
         publicClient: mockPublicClient(),
@@ -100,17 +121,130 @@ describe("estimateFees", () => {
         ethToTokenRate,
       });
 
-      const userGasWei = gasPrice * (gas.approve + gas.deploy);
-      const userGasEth = Number(userGasWei) / 1e18;
-      const expectedNetworkFee = BigInt(Math.ceil(userGasEth * ethToTokenRate * 1e6));
-      expect(fees.networkFee).toBe(expectedNetworkFee);
+      expect(fees.platformFee).toBe(50_000n);
+    });
 
-      const nodeGasWei = gasPrice * (gas.bond + gas.fund + gas.collect);
-      const nodeGasEth = Number(nodeGasWei) / 1e18;
-      const expectedNodeGasFee = BigInt(Math.ceil(nodeGasEth * ethToTokenRate * 1e6));
-      const nodeFeeBase = 2_000000n; // $2 in 6-decimal token units
-      expect(fees.nodeFee).toBe(nodeFeeBase + expectedNodeGasFee);
+    it("user gas is approve+deploy, node gas is fund only", async () => {
+      const fees = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      const toToken = (wei: bigint) =>
+        BigInt(Math.ceil((Number(wei) / 1e18) * ethToTokenRate * 1e6));
+
+      expect(fees.networkFee).toBe(toToken(gasPrice * (gas.approve + gas.deploy)));
+      expect(fees.nodeFee).toBe(2_000000n + toToken(gasPrice * gas.fund));
       expect(fees.isNativeEth).toBe(false);
+    });
+
+    it("denominates the bond pot in wei, not token units", async () => {
+      const fees = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      const units = ((gas.bond + gas.collect) * 150n + 99n) / 100n;
+      expect(fees.bondPot).toBe(units * gasPrice);
+      // An ERC20 transfer's token total must not absorb the ETH pot.
+      expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee);
+    });
+
+    it("scales approve gas with the number of distinct ERC20s", async () => {
+      const single = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      const mixed = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n), row(USDT_ADDRESS, 10_000_000n)],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      expect(mixed.networkFee).toBeGreaterThan(single.networkFee);
+    });
+
+    it("charges the escrow the payment plus reward, excluding the network fee", async () => {
+      const fees = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      expect(fees.escrowAmount).toBe(fees.transferAmount + fees.rewardAmount);
+      expect(fees.escrowAmount).toBe(fees.totalAmount - fees.networkFee);
+    });
+  });
+
+  describe("batch", () => {
+    it("bills bond + fund + collect to the node and takes no bond pot", async () => {
+      const gasPrice = 30_000_000_000n;
+      const gas = networks.ethereum.gas;
+
+      const fees = await estimateFees({
+        transfers: [
+          row(USDC_ADDRESS, 10_000_000n, "0x0000000000000000000000000000000000000001"),
+          row(USDC_ADDRESS, 20_000_000n, "0x0000000000000000000000000000000000000002"),
+        ],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate: 4500,
+      });
+
+      const toToken = (wei: bigint) => BigInt(Math.ceil((Number(wei) / 1e18) * 4500 * 1e6));
+
+      expect(fees.bondPot).toBe(0n);
+      expect(fees.nodeFee).toBe(
+        2_000000n + toToken(gasPrice * (gas.bond + gas.fund + gas.collect)),
+      );
+      // transferAmount aggregates the rows sharing the reward asset.
+      expect(fees.transferAmount).toBe(30_000_000n);
+    });
+
+    it("charges the platform fee on the whole batch when a base is supplied", async () => {
+      const fees = await estimateFees({
+        transfers: [
+          row(USDC_ADDRESS, 10_000_000n, "0x0000000000000000000000000000000000000001"),
+          row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n, "0x0000000000000000000000000000000000000002"),
+        ],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: 30_000_000_000n, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate: 4500,
+        // $10 USDC + $4500 ETH
+        platformFeeBase: 4_510_000_000n,
+      });
+
+      expect(fees.platformFee).toBe((4_510_000_000n * 50n) / 10_000n);
     });
   });
 
@@ -118,15 +252,14 @@ describe("estimateFees", () => {
     it("uses fixed 10 gwei gas price", async () => {
       const client = mockPublicClient();
       const fees = await estimateFees({
-        amount: 10_000_000n, // 10 USDC
-        tokenAddress: USDC_ADDRESS,
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
         tokenDecimals: 6,
         network: networks.tempo,
         publicClient: client,
-        ethToTokenRate: 1, // doesn't matter for tempo
+        ethToTokenRate: 1,
       });
 
-      // Should not call any RPC for gas price
       expect(client.getFeeHistory).not.toHaveBeenCalled();
       expect(client.getBlock).not.toHaveBeenCalled();
       expect(client.getGasPrice).not.toHaveBeenCalled();
@@ -137,38 +270,32 @@ describe("estimateFees", () => {
 
     it("uses deploy-only for user gas (approve is batched)", async () => {
       const gas = networks.tempo.gas;
-      const tempoGasPrice = 10n * 1_000_000_000n; // 10 gwei in wei
+      const tempoGasPrice = 10n * 1_000_000_000n;
 
       const fees = await estimateFees({
-        amount: 10_000_000n,
-        tokenAddress: USDC_ADDRESS,
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
         tokenDecimals: 6,
         network: networks.tempo,
         publicClient: mockPublicClient(),
       });
 
-      // User gas: deploy only (18-decimal wei → 6-decimal token)
-      const userGasWei = tempoGasPrice * gas.deploy;
-      const expectedNetworkFee = userGasWei / (10n ** 12n);
-      expect(fees.networkFee).toBe(expectedNetworkFee);
+      expect(fees.networkFee).toBe((tempoGasPrice * gas.deploy) / 10n ** 12n);
     });
 
-    it("uses bond+fund+collect for node gas", async () => {
+    it("bills only fund gas to the node for single escrows", async () => {
       const gas = networks.tempo.gas;
       const tempoGasPrice = 10n * 1_000_000_000n;
 
       const fees = await estimateFees({
-        amount: 10_000_000n,
-        tokenAddress: USDC_ADDRESS,
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
         tokenDecimals: 6,
         network: networks.tempo,
         publicClient: mockPublicClient(),
       });
 
-      const nodeGasWei = tempoGasPrice * (gas.bond + gas.fund + gas.collect);
-      const expectedNodeGasFee = nodeGasWei / (10n ** 12n);
-      const nodeFeeBase = (networks.tempo.nodeFeeUsd * 10n ** 6n) / 10n ** 6n; // 200000n
-      expect(fees.nodeFee).toBe(nodeFeeBase + expectedNodeGasFee);
+      expect(fees.nodeFee).toBe(200000n + (tempoGasPrice * gas.fund) / 10n ** 12n);
     });
   });
 
@@ -176,8 +303,8 @@ describe("estimateFees", () => {
     it("uses gasPrice override when provided", async () => {
       const client = mockPublicClient();
       await estimateFees({
-        amount: 1_000_000_000_000_000_000n,
-        tokenAddress: NATIVE_TOKEN_ADDRESS,
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
         tokenDecimals: 18,
         network: networks.ethereum,
         publicClient: client,
@@ -193,8 +320,8 @@ describe("estimateFees", () => {
       const gasPrice = 30_000_000_000n;
       const customDeploy = 500_000n;
       const fees = await estimateFees({
-        amount: 1_000_000_000_000_000_000n,
-        tokenAddress: NATIVE_TOKEN_ADDRESS,
+        transfers: [row(NATIVE_TOKEN_ADDRESS, 1_000_000_000_000_000_000n)],
+        escrowType: "native",
         tokenDecimals: 18,
         network: networks.ethereum,
         publicClient: mockPublicClient(),
@@ -202,9 +329,7 @@ describe("estimateFees", () => {
         gasOverrides: { deploy: customDeploy },
       });
 
-      // Network fee for native: gasPrice * deploy (overridden)
-      const expectedNetworkFee = gasPrice * customDeploy;
-      expect(fees.networkFee).toBe(expectedNetworkFee);
+      expect(fees.networkFee).toBe(gasPrice * customDeploy);
     });
   });
 });

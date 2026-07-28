@@ -1,8 +1,18 @@
 import type { Address, PublicClient } from "viem";
 import { formatUnits } from "viem";
-import type { FeeEstimate, GasConstants, GasPrice, NetworkConfig } from "../types.js";
+import type {
+  EscrowKind,
+  FeeEstimate,
+  GasConstants,
+  GasPrice,
+  NativeGasConstants,
+  NetworkConfig,
+  TransferRow,
+} from "../types.js";
 import { MirageError } from "../errors.js";
 import { isNativeToken } from "../token.js";
+import { computeBondPot } from "./bond.js";
+import { pickRewardToken } from "./escrow.js";
 
 const UNISWAP_ROUTER_ABI = [
   {
@@ -24,7 +34,7 @@ const UNISWAP_ROUTER_ABI = [
   },
 ] as const;
 
-async function resolveGasPrice(
+export async function resolveGasPrice(
   publicClient: PublicClient,
   gasPrice?: GasPrice,
 ): Promise<bigint> {
@@ -65,29 +75,26 @@ async function getEthToTokenRate(
   publicClient: PublicClient,
   tokenDecimals: number,
 ): Promise<number> {
-  const wethAddress = await publicClient.readContract({
+  const wethAddress = (await publicClient.readContract({
     address: routerAddress,
     abi: UNISWAP_ROUTER_ABI,
     functionName: "WETH",
-  }) as Address;
+  })) as Address;
 
-  const amountIn = 10n ** 18n; // 1 ETH
-  const path = [wethAddress, tokenAddress];
-
-  const amounts = await publicClient.readContract({
+  const amounts = (await publicClient.readContract({
     address: routerAddress,
     abi: UNISWAP_ROUTER_ABI,
     functionName: "getAmountsOut",
-    args: [amountIn, path],
-  }) as bigint[];
+    args: [10n ** 18n, [wethAddress, tokenAddress]],
+  })) as bigint[];
 
   return parseFloat(formatUnits(amounts[1], tokenDecimals));
 }
 
 /**
- * Resolve the ETH→USD price for limit checks and fee conversion.
+ * Resolve the ETH->USD price for limit checks and fee conversion.
  * For EVM networks, uses Uniswap V2 router. Throws if no router is configured.
- * Since supported tokens are USD stablecoins, ETH→token ≈ ETH→USD.
+ * Since supported tokens are USD stablecoins, ETH->token is ETH->USD.
  */
 export async function resolveEthPrice(
   network: NetworkConfig,
@@ -97,6 +104,7 @@ export async function resolveEthPrice(
   ethToTokenRate?: number,
 ): Promise<number> {
   if (ethToTokenRate !== undefined) return ethToTokenRate;
+  if (network.ethToTokenRate !== undefined) return network.ethToTokenRate;
 
   if (network.kind === "tempo") return 1;
 
@@ -108,109 +116,156 @@ export async function resolveEthPrice(
     );
   }
 
-  const priceClient = network.priceRpcUrl ? publicClient : publicClient;
   return getEthToTokenRate(
     network.priceTokenContract ?? tokenAddress,
     routerAddress,
-    priceClient,
+    publicClient,
     tokenDecimals,
   );
 }
 
-export async function estimateFees(
-  params: {
-    amount: bigint;
-    tokenAddress: Address;
-    tokenDecimals: number;
-    network: NetworkConfig;
-    publicClient: PublicClient;
-    gasPrice?: GasPrice;
-    gasOverrides?: Partial<GasConstants>;
-    ethToTokenRate?: number;
-  },
-): Promise<FeeEstimate> {
-  const { amount, tokenAddress, tokenDecimals, network, publicClient, gasPrice, gasOverrides } = params;
-  const nativeEth = isNativeToken(tokenAddress);
+/**
+ * Gas the node is reimbursed for through the reward. Single escrows exclude
+ * bond and collect because the on-chain bond pot funds those directly;
+ * including them would bill the user twice.
+ */
+function nodeGasUnits(
+  escrowType: EscrowKind,
+  gas: GasConstants | NativeGasConstants,
+): bigint {
+  return escrowType === "batch" ? gas.bond + gas.fund + gas.collect : gas.fund;
+}
+
+export interface EstimateFeesParams {
+  transfers: TransferRow[];
+  escrowType: EscrowKind;
+  /** Decimals of the reward asset, which all fee amounts are denominated in. */
+  tokenDecimals: number;
+  network: NetworkConfig;
+  publicClient: PublicClient;
+  gasPrice?: GasPrice;
+  gasOverrides?: Partial<GasConstants>;
+  ethToTokenRate?: number;
+  /**
+   * Total batch value in USD-equivalent reward-token units, used for the
+   * platform fee. Defaults to the sum of rows sharing the reward asset.
+   */
+  platformFeeBase?: bigint;
+}
+
+export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstimate> {
+  const {
+    transfers,
+    escrowType,
+    tokenDecimals,
+    network,
+    publicClient,
+    gasPrice,
+    gasOverrides,
+    platformFeeBase,
+  } = params;
+
+  const rewardToken = pickRewardToken(transfers);
+  const nativeEth = isNativeToken(rewardToken);
 
   const gas: GasConstants = { ...network.gas, ...gasOverrides };
+  const nativeGas: NativeGasConstants = {
+    deploy: gasOverrides?.deploy ?? network.nativeGas.deploy,
+    bond: gasOverrides?.bond ?? network.nativeGas.bond,
+    fund: gasOverrides?.fund ?? network.nativeGas.fund,
+    collect: gasOverrides?.collect ?? network.nativeGas.collect,
+  };
+
+  // Amount denominated in the reward asset, which the escrow pulls.
+  const rewardAssetAmount = transfers.reduce(
+    (sum, t) => (t.tokenAddress === rewardToken ? sum + t.amount : sum),
+    0n,
+  );
+
+  // One approval per distinct ERC20; the reward folds into an existing bucket.
+  const approvalCount = new Set(
+    transfers.filter((t) => !isNativeToken(t.tokenAddress)).map((t) => t.tokenAddress.toLowerCase()),
+  ).size;
 
   let networkFee: bigint;
   let nodeFee: bigint;
+  let bondPot = 0n;
 
   if (network.kind === "tempo") {
-    // Tempo: fixed 10 gwei base fee, stablecoin native token
-    const tempoBaseFeeGwei = 10n;
-    const gweiToWei = 1_000_000_000n;
-    const tempoGasPrice = tempoBaseFeeGwei * gweiToWei;
+    // Tempo: fixed base fee, stablecoin native token, no price conversion.
+    const tempoGasPrice = 10n * 1_000_000_000n;
 
-    // User pays: deploy only (approve + fund are batched with it)
+    // User pays deploy only; approve and fund are batched with it.
     const userGasWei = tempoGasPrice * gas.deploy;
-    // Node pays: bond + fund + collect
-    const nodeGasWei = tempoGasPrice * (gas.bond + gas.fund + gas.collect);
+    const nodeGasWei = tempoGasPrice * nodeGasUnits(escrowType, gas);
 
-    // Tempo native token is stablecoin with 18 decimals, token is 6 decimals
-    // Convert from 18-decimal gas cost to token-decimal cost
-    networkFee = userGasWei / (10n ** (18n - BigInt(tokenDecimals)));
-    const nodeGasFee = nodeGasWei / (10n ** (18n - BigInt(tokenDecimals)));
-
+    const scale = 10n ** (18n - BigInt(tokenDecimals));
+    networkFee = userGasWei / scale;
     const nodeFeeBase = (network.nodeFeeUsd * 10n ** BigInt(tokenDecimals)) / 10n ** 6n;
-    nodeFee = nodeFeeBase + nodeGasFee;
+    nodeFee = nodeFeeBase + nodeGasWei / scale;
   } else if (nativeEth) {
-    // Native ETH on EVM: gas costs are in wei, same unit as transfer
+    // Native ETH: gas costs are already in the transfer's unit.
     const maxFee = await resolveGasPrice(publicClient, gasPrice);
 
-    // User pays: deploy only (no approval for native ETH)
-    const userGasWei = maxFee * gas.deploy;
-    // Node pays: bond + fund + collect
-    const nodeGasWei = maxFee * (gas.bond + gas.fund + gas.collect);
-
-    networkFee = userGasWei;
-
-    // nodeFeeBase for native ETH: use a fixed ETH amount
-    // NODE_FEE_ETH = 0.0005 ETH = 500_000_000_000_000 wei
-    const nodeFeeBase = 500_000_000_000_000n;
-    nodeFee = nodeFeeBase + nodeGasWei;
+    networkFee = maxFee * nativeGas.deploy;
+    nodeFee = network.nodeFeeWei + maxFee * nodeGasUnits(escrowType, nativeGas);
+    bondPot = computeBondPot({
+      escrowType,
+      gas,
+      nativeGas,
+      maxFeePerGas: maxFee,
+      marginBps: network.bondPotMarginBps,
+    });
   } else {
-    // ERC20 on EVM: convert gas costs from ETH to token units
+    // ERC20 on EVM: convert gas costs from ETH to token units.
     const maxFee = await resolveGasPrice(publicClient, gasPrice);
 
-    // User pays: approve + deploy
-    const userGasWei = maxFee * (gas.approve + gas.deploy);
-    // Node pays: bond + fund + collect
-    const nodeGasWei = maxFee * (gas.bond + gas.fund + gas.collect);
+    const userGasWei = maxFee * (gas.approve * BigInt(Math.max(1, approvalCount)) + gas.deploy);
+    const nodeGasWei = maxFee * nodeGasUnits(escrowType, gas);
+    const bondPotWei = computeBondPot({
+      escrowType,
+      gas,
+      nativeGas,
+      maxFeePerGas: maxFee,
+      marginBps: network.bondPotMarginBps,
+    });
 
-    // Get ETH->token exchange rate
     const ethToTokenRate = await resolveEthPrice(
-      network, publicClient, tokenAddress, tokenDecimals, params.ethToTokenRate,
+      network,
+      publicClient,
+      rewardToken,
+      tokenDecimals,
+      params.ethToTokenRate,
     );
 
-    // Convert gas costs in ETH (float) to token units
-    const userGasEth = Number(userGasWei) / 1e18;
-    const nodeGasEth = Number(nodeGasWei) / 1e18;
+    const toTokenUnits = (wei: bigint) =>
+      BigInt(Math.ceil((Number(wei) / 1e18) * ethToTokenRate * 10 ** tokenDecimals));
 
-    const networkFeeFloat = userGasEth * ethToTokenRate;
-    const nodeGasFeeFloat = nodeGasEth * ethToTokenRate;
-
-    networkFee = BigInt(Math.ceil(networkFeeFloat * 10 ** tokenDecimals));
-    const nodeGasFee = BigInt(Math.ceil(nodeGasFeeFloat * 10 ** tokenDecimals));
-
+    networkFee = toTokenUnits(userGasWei);
     const nodeFeeBase = (network.nodeFeeUsd * 10n ** BigInt(tokenDecimals)) / 10n ** 6n;
-    nodeFee = nodeFeeBase + nodeGasFee;
+    nodeFee = nodeFeeBase + toTokenUnits(nodeGasWei);
+    // The pot is paid in ETH, so it stays in wei rather than token units.
+    bondPot = bondPotWei;
   }
 
-  // Platform fee: percentage of transfer amount
-  const platformFee = (amount * network.platformFeeRate) / 10_000n;
+  const platformFee = ((platformFeeBase ?? rewardAssetAmount) * network.platformFeeRate) / 10_000n;
 
-  const totalFee = networkFee + nodeFee + platformFee;
-  const totalAmount = amount + totalFee;
+  const rewardAmount = nodeFee + platformFee;
+  const totalFee = networkFee + rewardAmount;
+  // The escrow pulls the payment plus the reward; the network fee is paid as
+  // gas on the wallet's own transactions, so it is not approved or funded.
+  const escrowAmount = rewardAssetAmount + rewardAmount;
 
   return {
-    transferAmount: amount,
+    transferAmount: rewardAssetAmount,
     networkFee,
     nodeFee,
     platformFee,
     totalFee,
-    totalAmount,
+    bondPot,
+    escrowAmount,
+    rewardAmount,
+    totalAmount: rewardAssetAmount + totalFee + (nativeEth ? bondPot : 0n),
     decimals: tokenDecimals,
     isNativeEth: nativeEth,
   };

@@ -12,7 +12,7 @@ describe("networks", () => {
     const eth = networks.ethereum;
     expect(eth.kind).toBe("ethereum");
     expect(eth.chainId).toBe(1);
-    expect(eth.enableBatch).toBe(false);
+    expect(eth.enableAtomicBatch).toBe(false);
     expect(eth.enableCompliance).toBe(true);
     expect(eth.platformFeeRate).toBe(50n);
     expect(eth.nodeFeeUsd).toBe(2_000000n);
@@ -29,7 +29,7 @@ describe("networks", () => {
     const tempo = networks.tempo;
     expect(tempo.kind).toBe("tempo");
     expect(tempo.chainId).toBe(42431);
-    expect(tempo.enableBatch).toBe(true);
+    expect(tempo.enableAtomicBatch).toBe(true);
     expect(tempo.enableCompliance).toBe(false);
     expect(tempo.nodeFeeUsd).toBe(200000n);
   });
@@ -40,7 +40,20 @@ describe("networks", () => {
     expect(eth.gas.deploy).toBe(2_167_182n);
     expect(eth.gas.bond).toBe(109_816n);
     expect(eth.gas.fund).toBe(120_000n);
-    expect(eth.gas.collect).toBe(862_813n);
+    expect(eth.gas.collect).toBe(250_000n);
+  });
+
+  it("has native gas constants distinct from erc20", () => {
+    const eth = networks.ethereum;
+    expect(eth.nativeGas.deploy).toBe(1_924_115n);
+    expect(eth.nativeGas.bond).toBe(92_366n);
+    expect(eth.nativeGas.collect).toBe(250_000n);
+    expect(eth.nativeGas.deploy).not.toBe(eth.gas.deploy);
+  });
+
+  it("has a bond pot margin", () => {
+    expect(networks.ethereum.bondPotMarginBps).toBe(150n);
+    expect(networks.ethereum.nodeFeeWei).toBe(500_000_000_000_000n);
   });
 
   it("has correct tempo gas constants", () => {
@@ -104,5 +117,13 @@ describe("createNetworkConfig", () => {
     const originalApprove = custom.gas.approve;
     createNetworkConfig(custom, { gas: { approve: 999n } });
     expect(custom.gas.approve).toBe(originalApprove);
+  });
+
+  it("deep-merges nativeGas independently of gas", () => {
+    const config = createNetworkConfig("ethereum", { nativeGas: { deploy: 111n } });
+    expect(config.nativeGas.deploy).toBe(111n);
+    expect(config.nativeGas.bond).toBe(networks.ethereum.nativeGas.bond);
+    expect(config.gas.deploy).toBe(networks.ethereum.gas.deploy);
+    expect(networks.ethereum.nativeGas.deploy).toBe(1_924_115n);
   });
 });

@@ -35,12 +35,22 @@ const NODE_PRIVATE_KEY =
   "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97" as const;
 const nodeAccount = privateKeyToAccount(NODE_PRIVATE_KEY);
 
+interface SignalTransfer {
+  asset: string;
+  recipient: string;
+  amount: string;
+}
+
 interface Signal {
+  escrowType: "erc20" | "native" | "batch";
   escrowContract: string;
   tokenContract: string;
   recipient: string;
   transferAmount: string;
+  transfers: SignalTransfer[];
+  totalTransferAmount: string;
   rewardAmount: string;
+  blindingScalar?: string;
   selectorMapping: Record<string, string> | null;
   approval: { signature: string; timestamp: number } | null;
 }
@@ -61,31 +71,37 @@ async function executeTransfer(signal: Signal): Promise<void> {
     transport: viemHttp(rpcUrl),
   });
 
-  const recipient = signal.recipient as Address;
-  const amount = BigInt(signal.transferAmount);
-  const isNative =
-    signal.tokenContract === zeroAddress ||
-    signal.tokenContract === "0x0000000000000000000000000000000000000000";
+  // The node delivers one transaction per recipient, so a batch lands
+  // incrementally rather than all at once.
+  const rows: SignalTransfer[] = signal.transfers?.length
+    ? signal.transfers
+    : [
+        {
+          asset: signal.tokenContract,
+          recipient: signal.recipient,
+          amount: signal.transferAmount,
+        },
+      ];
 
-  if (isNative) {
-    // Send ETH directly
-    const hash = await walletClient.sendTransaction({
-      to: recipient,
-      value: amount,
-    });
-    await publicClient.waitForTransactionReceipt({ hash });
-    console.log(`[mock-nomad] ETH transfer: ${amount} wei -> ${recipient} (${hash})`);
-  } else {
-    // Send ERC20 via transfer()
-    const tokenAddress = signal.tokenContract as Address;
-    const hash = await walletClient.writeContract({
-      address: tokenAddress,
-      abi: erc20Abi,
-      functionName: "transfer",
-      args: [recipient, amount],
-    });
-    await publicClient.waitForTransactionReceipt({ hash });
-    console.log(`[mock-nomad] ERC20 transfer: ${amount} ${tokenAddress} -> ${recipient} (${hash})`);
+  for (const row of rows) {
+    const recipient = row.recipient as Address;
+    const amount = BigInt(row.amount);
+    const isNative = row.asset === zeroAddress;
+
+    if (isNative) {
+      const hash = await walletClient.sendTransaction({ to: recipient, value: amount });
+      await publicClient.waitForTransactionReceipt({ hash });
+      console.log(`[mock-nomad] ETH transfer: ${amount} wei -> ${recipient} (${hash})`);
+    } else {
+      const hash = await walletClient.writeContract({
+        address: row.asset as Address,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [recipient, amount],
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      console.log(`[mock-nomad] ERC20 transfer: ${amount} ${row.asset} -> ${recipient} (${hash})`);
+    }
   }
 }
 
@@ -106,13 +122,10 @@ function createServer(port: number): http.Server {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
-          publicKey: mockPublicKeyHex,
-          public_key: mockPublicKeyHex,
+          // Current nodes nest these in a hash-committed payload.
+          payload: { publicKey: mockPublicKeyHex, chainId: 31337 },
           attestation: null,
           isDebug: true,
-          is_debug: true,
-          chainId: 31337,
-          chain_id: 31337,
         }),
       );
       return;
@@ -134,10 +147,14 @@ function createServer(port: number): http.Server {
           const signalJson = new TextDecoder().decode(decrypted);
           const signal: Signal = JSON.parse(signalJson);
 
+          if (signal.escrowType !== "batch" && !signal.blindingScalar) {
+            throw new Error("missing field blindingScalar");
+          }
+
           console.log("[mock-nomad] Received signal:", {
             escrow: signal.escrowContract,
-            recipient: signal.recipient,
-            amount: signal.transferAmount,
+            escrowType: signal.escrowType,
+            rows: signal.transfers?.length ?? 1,
             token: signal.tokenContract,
           });
 
