@@ -25,7 +25,6 @@ import {
   fetchComplianceApproval,
   fetchNetworkKey,
   fetchLimits,
-  isApprovalStale,
   isWhitelistRejection,
 } from "./internal/api.js";
 import {
@@ -166,6 +165,9 @@ interface TransferContext {
   ethPriceUsd: number;
   fees: FeeEstimate;
   obfuscation?: ObfuscationResult;
+  /** Largest single row in USD, for reporting a server-side whitelist refusal. */
+  maxRowUsd: number;
+  whitelistThresholdUsd?: number;
 }
 
 async function buildContext(
@@ -220,7 +222,20 @@ async function buildContext(
     platformFeeBase,
   });
 
-  return { rows, escrowType, rewardToken, rewardDecimals, decimals, ethPriceUsd, fees, obfuscation };
+  const threshold = health.whitelistRequiredUsd?.[String(network.chainId)];
+
+  return {
+    rows,
+    escrowType,
+    rewardToken,
+    rewardDecimals,
+    decimals,
+    ethPriceUsd,
+    fees,
+    obfuscation,
+    maxRowUsd: Math.max(...rows.map((row, i) => rowValueUsd(row, decimals[i], ethPriceUsd))),
+    whitelistThresholdUsd: threshold != null ? Number(threshold) : undefined,
+  };
 }
 
 export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
@@ -312,6 +327,12 @@ async function* executeTransfer(
         onApproval: ({ hash, tokenAddress, index, total }) => {
           approvalSteps.push({ step: "approve", hash, tokenAddress, index, total });
         },
+        // Honor a cancel between approvals rather than signing the whole
+        // sequence once started.
+        onAbortCheck: () => {
+          checkAbort(abortSignal);
+          assertAccountUnchanged(walletClient, account);
+        },
       });
 
       for (const approval of approvalSteps) {
@@ -350,7 +371,17 @@ async function* executeTransfer(
   let complianceSignature: string | undefined;
   let complianceTimestamp: number | undefined;
 
-  if (network.enableCompliance && deployHash && seed) {
+  if (network.enableCompliance) {
+    if (!deployHash || !seed) {
+      // Both come from the deploy step or from resume.secrets. Without them
+      // the signal would go out unapproved on a compliance-required network.
+      throw new MirageError(
+        "MISSING_COMPLIANCE_INPUTS",
+        "Compliance requires the deploy tx hash and obfuscation seed",
+        { meta: { escrowAddress: escrow } },
+      );
+    }
+
     checkAbort(abortSignal, { escrowAddress: escrow });
     assertAccountUnchanged(walletClient, account, escrow);
 
@@ -371,7 +402,12 @@ async function* executeTransfer(
       };
     } catch (error) {
       if (isWhitelistRejection(error)) {
-        throw new WhitelistRequiredError(0, 0);
+        // The escrow is already funded at this point, so report the real
+        // figures rather than placeholders.
+        throw new WhitelistRequiredError(
+          context.maxRowUsd,
+          context.whitelistThresholdUsd ?? context.maxRowUsd,
+        );
       }
       throw error;
     }
@@ -380,19 +416,6 @@ async function* executeTransfer(
   // --- Signal ---
   checkAbort(abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
-
-  // Approvals expire, so a slow deploy or a resumed transfer needs a fresh one.
-  if (complianceTimestamp !== undefined && isApprovalStale(complianceTimestamp)) {
-    const refreshed = await fetchComplianceApproval(network.apiServer, {
-      txHash: deployHash!,
-      chainId: network.chainId,
-      seed: seed!,
-      escrowType,
-      accessToken,
-    });
-    complianceSignature = refreshed.signature;
-    complianceTimestamp = refreshed.timestamp;
-  }
 
   const networkKey = await fetchNetworkKey(network.nomadUrl);
   const fromBlock = await publicClient.getBlockNumber();

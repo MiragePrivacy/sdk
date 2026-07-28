@@ -156,7 +156,8 @@ describe("estimateFees", () => {
 
       const units = ((gas.bond + gas.collect) * 150n + 99n) / 100n;
       expect(fees.bondPot).toBe(units * gasPrice);
-      // An ERC20 transfer's token total must not absorb the ETH pot.
+      // The pot is ETH while the transfer is a token, so folding it into a
+      // token total would be meaningless; callers reserve it separately.
       expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee);
     });
 
@@ -182,6 +183,43 @@ describe("estimateFees", () => {
       });
 
       expect(mixed.networkFee).toBeGreaterThan(single.networkFee);
+    });
+
+    it("aggregates the reward asset case-insensitively", async () => {
+      const fees = await estimateFees({
+        transfers: [
+          row(USDC_ADDRESS, 10_000_000n, "0x0000000000000000000000000000000000000001"),
+          // Same token, different casing: must not be treated as another asset,
+          // or the amount pulled would fall short of the approved allowance.
+          row(USDC_ADDRESS.toLowerCase(), 20_000_000n, "0x0000000000000000000000000000000000000002"),
+        ],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      expect(fees.transferAmount).toBe(30_000_000n);
+      expect(fees.escrowAmount).toBe(30_000_000n + fees.rewardAmount);
+    });
+
+    it("charges no approve gas to an all-native batch", async () => {
+      const fees = await estimateFees({
+        transfers: [
+          row(NATIVE_TOKEN_ADDRESS, 1_000n, "0x0000000000000000000000000000000000000001"),
+          row(NATIVE_TOKEN_ADDRESS, 2_000n, "0x0000000000000000000000000000000000000002"),
+        ],
+        escrowType: "batch",
+        tokenDecimals: 18,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+      });
+
+      // Native rows need no allowances, so only deploy gas applies.
+      expect(fees.networkFee).toBe(gasPrice * networks.ethereum.nativeGas.deploy);
     });
 
     it("charges the escrow the payment plus reward, excluding the network fee", async () => {
@@ -296,6 +334,40 @@ describe("estimateFees", () => {
       });
 
       expect(fees.nodeFee).toBe(200000n + (tempoGasPrice * gas.fund) / 10n ** 12n);
+    });
+
+    it("funds a bond pot so bond and collect gas is not left unpaid", async () => {
+      const gas = networks.tempo.gas;
+      const tempoGasPrice = 10n * 1_000_000_000n;
+
+      const fees = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n)],
+        escrowType: "erc20",
+        tokenDecimals: 6,
+        network: networks.tempo,
+        publicClient: mockPublicClient(),
+      });
+
+      // Node gas excludes bond + collect, so a pot must cover them.
+      const units = ((gas.bond + gas.collect) * 150n + 99n) / 100n;
+      expect(fees.bondPot).toBe((units * tempoGasPrice) / 10n ** 12n);
+      // Tempo's gas token is the stablecoin, so the pot shares the transfer unit.
+      expect(fees.totalAmount).toBe(fees.transferAmount + fees.totalFee + fees.bondPot);
+    });
+
+    it("takes no bond pot for batch escrows", async () => {
+      const fees = await estimateFees({
+        transfers: [
+          row(USDC_ADDRESS, 10_000_000n, "0x0000000000000000000000000000000000000001"),
+          row(USDC_ADDRESS, 20_000_000n, "0x0000000000000000000000000000000000000002"),
+        ],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.tempo,
+        publicClient: mockPublicClient(),
+      });
+
+      expect(fees.bondPot).toBe(0n);
     });
   });
 

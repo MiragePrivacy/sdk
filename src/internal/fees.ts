@@ -176,9 +176,12 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
     collect: gasOverrides?.collect ?? network.nativeGas.collect,
   };
 
-  // Amount denominated in the reward asset, which the escrow pulls.
+  // Amount denominated in the reward asset, which the escrow pulls. Compared
+  // case-insensitively so a mixed-case duplicate is not treated as a separate
+  // asset, which would under-count against the approved allowance.
+  const rewardTokenKey = rewardToken.toLowerCase();
   const rewardAssetAmount = transfers.reduce(
-    (sum, t) => (t.tokenAddress === rewardToken ? sum + t.amount : sum),
+    (sum, t) => (t.tokenAddress.toLowerCase() === rewardTokenKey ? sum + t.amount : sum),
     0n,
   );
 
@@ -194,15 +197,27 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
   if (network.kind === "tempo") {
     // Tempo: fixed base fee, stablecoin native token, no price conversion.
     const tempoGasPrice = 10n * 1_000_000_000n;
+    const tempoGas = nativeEth ? nativeGas : gas;
 
     // User pays deploy only; approve and fund are batched with it.
-    const userGasWei = tempoGasPrice * gas.deploy;
-    const nodeGasWei = tempoGasPrice * nodeGasUnits(escrowType, gas);
+    const userGasWei = tempoGasPrice * tempoGas.deploy;
+    const nodeGasWei = tempoGasPrice * nodeGasUnits(escrowType, tempoGas);
 
     const scale = 10n ** (18n - BigInt(tokenDecimals));
     networkFee = userGasWei / scale;
     const nodeFeeBase = (network.nodeFeeUsd * 10n ** BigInt(tokenDecimals)) / 10n ** 6n;
     nodeFee = nodeFeeBase + nodeGasWei / scale;
+    // Single escrows still fund bond and collect through the pot; without it
+    // that gas would be reimbursed by nobody. Tempo's native token is the
+    // stablecoin, so the pot is already in token units.
+    bondPot =
+      computeBondPot({
+        escrowType,
+        gas,
+        nativeGas,
+        maxFeePerGas: tempoGasPrice,
+        marginBps: network.bondPotMarginBps,
+      }) / scale;
   } else if (nativeEth) {
     // Native ETH: gas costs are already in the transfer's unit.
     const maxFee = await resolveGasPrice(publicClient, gasPrice);
@@ -220,7 +235,9 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
     // ERC20 on EVM: convert gas costs from ETH to token units.
     const maxFee = await resolveGasPrice(publicClient, gasPrice);
 
-    const userGasWei = maxFee * (gas.approve * BigInt(Math.max(1, approvalCount)) + gas.deploy);
+    // Approve gas scales with the distinct ERC20 count; an all-native batch
+    // needs no allowances at all.
+    const userGasWei = maxFee * (gas.approve * BigInt(approvalCount) + gas.deploy);
     const nodeGasWei = maxFee * nodeGasUnits(escrowType, gas);
     const bondPotWei = computeBondPot({
       escrowType,
@@ -256,6 +273,12 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
   // gas on the wallet's own transactions, so it is not approved or funded.
   const escrowAmount = rewardAssetAmount + rewardAmount;
 
+  // The pot shares the transfer's unit only when the escrow's own asset is the
+  // chain's gas token. For an ERC20 escrow on an EVM chain the pot is ETH and
+  // the transfer is a token, so folding it into a token total would be
+  // meaningless; callers reserve it separately via bondPot.
+  const potInTransferUnits = nativeEth || network.kind === "tempo";
+
   return {
     transferAmount: rewardAssetAmount,
     networkFee,
@@ -265,7 +288,7 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
     bondPot,
     escrowAmount,
     rewardAmount,
-    totalAmount: rewardAssetAmount + totalFee + (nativeEth ? bondPot : 0n),
+    totalAmount: rewardAssetAmount + totalFee + (potInTransferUnits ? bondPot : 0n),
     decimals: tokenDecimals,
     isNativeEth: nativeEth,
   };

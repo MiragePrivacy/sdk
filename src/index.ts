@@ -16,6 +16,8 @@ export {
   fetchTransferLimit,
   fetchGasHistoryAverages,
   checkWhitelist,
+  isApprovalStale,
+  APPROVAL_MAX_AGE_SECS,
 } from "./internal/api.js";
 
 // Errors

@@ -107,6 +107,16 @@ describe("submitSignal", () => {
     expect(captured.payload!.totalTransferAmount).toBe("150");
   });
 
+  it("sums matching rows case-insensitively", async () => {
+    await submitSignal({
+      ...baseParams,
+      escrowType: "batch",
+      transfers: [row(USDC, 100n, R1), row(USDC.toLowerCase(), 50n, R2)],
+    });
+
+    expect(captured.payload!.totalTransferAmount).toBe("150");
+  });
+
   it("rejects a single escrow without a scalar before any network call", async () => {
     await expect(
       submitSignal({

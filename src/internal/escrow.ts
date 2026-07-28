@@ -59,9 +59,11 @@ const BATCH_TRANSFER_COMPONENTS = [
 ] as const;
 
 export function predictContractAddress(deployerAddress: Address, nonce: number): Address {
-  const rlpEncoded = toRlp([deployerAddress, toHex(nonce)]);
-  const hash = keccak256(rlpEncoded);
-  return getAddress(`0x${hash.slice(26)}` as Address);
+  // RLP encodes zero as the empty string, not as a zero byte, so nonce 0 must
+  // not go through toHex. Getting this wrong only shows up on an account's
+  // very first transaction.
+  const rlpEncoded = toRlp([deployerAddress, nonce === 0 ? "0x" : toHex(nonce)]);
+  return getAddress(`0x${keccak256(rlpEncoded).slice(26)}` as Address);
 }
 
 /**
@@ -121,8 +123,12 @@ export function buildApprovalBuckets(
 }
 
 /**
- * Approve a spender, resetting to zero first when required. USDT and similar
- * tokens revert on a non-zero to non-zero allowance change.
+ * Approve a spender for exactly one transaction.
+ *
+ * Each escrow is deployed to a fresh CREATE address that has never held an
+ * allowance, so there is nothing to reset: the zero-to-nonzero path is the
+ * only one USDT-style tokens require. Sending a second transaction here would
+ * also shift the deploy nonce and invalidate the predicted address.
  */
 async function approveToken(params: {
   tokenAddress: Address;
@@ -133,32 +139,6 @@ async function approveToken(params: {
   account: Address;
 }): Promise<{ hash: Hash; gasUsed: bigint }> {
   const { tokenAddress, spender, amount, walletClient, publicClient, account } = params;
-
-  const current = await publicClient.readContract({
-    address: tokenAddress,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: [account, spender],
-  });
-
-  let resetGas = 0n;
-  if (current > 0n && current < amount) {
-    const resetHash = await walletClient.writeContract({
-      address: tokenAddress,
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [spender, 0n],
-      chain: walletClient.chain,
-      account,
-    });
-    const resetReceipt = await publicClient.waitForTransactionReceipt({ hash: resetHash });
-    if (resetReceipt.status !== "success") {
-      throw new ContractError("Allowance reset failed", { txHash: resetHash });
-    }
-    resetGas = resetReceipt.gasUsed;
-  } else if (current >= amount) {
-    return { hash: "0x" as Hash, gasUsed: 0n };
-  }
 
   const hash = await walletClient.writeContract({
     address: tokenAddress,
@@ -174,7 +154,7 @@ async function approveToken(params: {
     throw new ContractError("Token approval failed", { txHash: hash });
   }
 
-  return { hash, gasUsed: receipt.gasUsed + resetGas };
+  return { hash, gasUsed: receipt.gasUsed };
 }
 
 function encodeConstructorArgs(params: {
@@ -283,6 +263,8 @@ export async function approveAndDeploy(params: {
   publicClient: PublicClient;
   account: Address;
   onApproval?: (approval: { hash: Hash; tokenAddress: Address; index: number; total: number }) => void;
+  /** Invoked before each approval so a cancel is honored mid-sequence. */
+  onAbortCheck?: () => void;
 }): Promise<ApproveAndDeployResult> {
   const {
     bytecode,
@@ -295,11 +277,14 @@ export async function approveAndDeploy(params: {
     publicClient,
     account,
     onApproval,
+    onAbortCheck,
   } = params;
 
   const rewardToken = pickRewardToken(transfers);
   const buckets = buildApprovalBuckets(transfers, rewardAmount);
 
+  // One approval per distinct ERC20, so with K buckets the deploy lands at
+  // nonce N+K. Every approval targets that address.
   const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
 
@@ -307,6 +292,7 @@ export async function approveAndDeploy(params: {
   let approveGasUsed = 0n;
 
   for (const [index, bucket] of buckets.entries()) {
+    onAbortCheck?.();
     const { hash, gasUsed } = await approveToken({
       tokenAddress: bucket.tokenAddress,
       spender: predictedEscrowAddress,
@@ -316,10 +302,8 @@ export async function approveAndDeploy(params: {
       account,
     });
     approveGasUsed += gasUsed;
-    if (hash !== "0x") {
-      approvals.push({ hash, tokenAddress: bucket.tokenAddress, gasUsed });
-      onApproval?.({ hash, tokenAddress: bucket.tokenAddress, index, total: buckets.length });
-    }
+    approvals.push({ hash, tokenAddress: bucket.tokenAddress, gasUsed });
+    onApproval?.({ hash, tokenAddress: bucket.tokenAddress, index, total: buckets.length });
   }
 
   const constructorArgs = encodeConstructorArgs({
@@ -344,14 +328,22 @@ export async function approveAndDeploy(params: {
     throw new ContractError("Escrow deployment failed", { txHash: deployHash });
   }
 
+  // The allowances were granted to the predicted address, so a mismatch means
+  // the escrow was funded at an address the caller would never learn about.
+  const deployed = deployReceipt.contractAddress;
+  if (deployed && getAddress(deployed) !== predictedEscrowAddress) {
+    throw new ContractError(
+      `Escrow deployed to ${deployed} but ${predictedEscrowAddress} was predicted`,
+      { txHash: deployHash },
+    );
+  }
+
   return {
     approvals,
     approveGasUsed,
     deployResult: {
       hash: deployHash,
-      // receipt.contractAddress is unreliable on some chains; prefer the
-      // CREATE-predicted address.
-      escrowAddress: predictedEscrowAddress ?? deployReceipt.contractAddress,
+      escrowAddress: predictedEscrowAddress,
       deployGasUsed: deployReceipt.gasUsed,
       deployEffectiveGasPrice: deployReceipt.effectiveGasPrice,
     },
@@ -389,7 +381,9 @@ export async function deployAtomicBatch(params: {
   } = params;
 
   const rewardToken = pickRewardToken(transfers);
-  const nonce = await publicClient.getTransactionCount({ address: account });
+  // Must include pending txs: a stale nonce predicts an address that will hold
+  // no funds.
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce);
 
   // Deploy with a zero reward so the constructor skips funding.

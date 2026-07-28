@@ -66,9 +66,11 @@ export async function submitSignal(params: SignalParams): Promise<string> {
 
   const first = transfers[0];
   // The node sums only rows sharing the first row's asset; mixed-asset batches
-  // deliberately under-report here.
+  // deliberately under-report here. Compared case-insensitively so a
+  // mixed-case duplicate of the same token still counts.
+  const firstAssetKey = first.tokenAddress.toLowerCase();
   const totalTransferAmount = transfers.reduce(
-    (sum, t) => (t.tokenAddress === first.tokenAddress ? sum + t.amount : sum),
+    (sum, t) => (t.tokenAddress.toLowerCase() === firstAssetKey ? sum + t.amount : sum),
     0n,
   );
 

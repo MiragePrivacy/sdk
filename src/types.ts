@@ -66,10 +66,14 @@ export interface FeeEstimate {
   platformFee: bigint;
   totalFee: bigint;
   /**
-   * ETH the wallet fronts as msg.value at deploy to fund the node's bond and
-   * collect transactions. Always wei, on both native and ERC20 escrows. Zero
-   * for batch escrows. Refundable surplus, not a fee, so it is excluded from
-   * totalFee but included in totalAmount.
+   * Gas-token amount the wallet fronts as msg.value at deploy to fund the
+   * node's bond and collect transactions. Zero for batch escrows. Refundable
+   * surplus rather than a fee, so it is excluded from totalFee.
+   *
+   * Denominated in the chain's gas token: wei on EVM (including for ERC20
+   * escrows, which pay it in ETH), token units on tempo. It is only included
+   * in totalAmount when that matches the transfer's own unit, so an ERC20
+   * transfer on EVM must reserve this separately.
    */
   bondPot: bigint;
   /**
