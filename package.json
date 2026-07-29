@@ -35,6 +35,8 @@
   },
   "dependencies": {
     "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@phala/dcap-qvl": "^0.6.1",
     "eciesjs": "^0.4.0"
   },
   "devDependencies": {

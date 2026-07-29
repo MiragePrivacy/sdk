@@ -51,6 +51,18 @@ interface NetworkConfig {
   // Multiplier applied to bond + collect gas when sizing the bond pot (x100).
   bondPotMarginBps: bigint;
 
+  // Verify the enclave's SGX quote before encrypting a signal to its key.
+  // Strongly recommended in production. Pin the measurements to a known build,
+  // otherwise any Intel-signed enclave would be accepted.
+  attestation?: {
+    required: boolean;
+    expectedMrEnclave?: string[];
+    expectedMrSigner?: string[];
+    allowedTcbStatus?: TcbStatus[];
+    allowDebug?: boolean;
+    maxAgeSecs?: number;
+  };
+
   // Fixed ETH->token rate, bypassing the on-chain oracle. For local chains.
   ethToTokenRate?: number;
 }
@@ -342,9 +354,36 @@ const NATIVE_TOKEN_ADDRESS: Address;
 ```ts
 // SGX attestation status. Reads publicKey and chainId from the node's
 // hash-committed `payload` object, falling back to the legacy flat fields.
+//
+// Pass `{ verify: true }` (or VerifyAttestationOptions) to verify the quote
+// against Intel's root CA and bind it to the served payload. Without this the
+// public key is only asserted by whatever host answered the request. When
+// verifying, the returned key and chainId come from the attested payload
+// rather than the response's top-level fields.
 async function fetchNetworkKey(
   nomadUrl: string,
+  options?: { verify?: boolean | VerifyAttestationOptions },
 ): Promise<NetworkKeyStatus>;
+
+// Verify a quote and its payload commitment directly.
+// Checks, in order: Intel signature chain, TCB status, enclave measurements,
+// the payload hash committed in the report data, debug mode, global-key flag,
+// and report age.
+async function verifyAttestation(
+  attestation: { quote: string; collateral: unknown },
+  payload: AttestationPayload,
+  options?: VerifyAttestationOptions,
+): Promise<AttestationVerification>;
+
+interface VerifyAttestationOptions {
+  expectedMrEnclave?: string[];   // pin the enclave measurement
+  expectedMrSigner?: string[];    // pin the signing identity
+  allowedTcbStatus?: TcbStatus[]; // default: UpToDate, SWHardeningNeeded
+  allowDebug?: boolean;           // never enable against production nodes
+  requireGlobal?: boolean;        // default true
+  maxAgeSecs?: number;            // default 86_400; 0 disables
+  nowSecs?: number;               // for reproducible tests
+}
 
 // Transfer limits, whitelist thresholds, and service health.
 // USD values are strings (not bigint) to survive JSON serialization, keyed by
@@ -517,8 +556,31 @@ The following are implementation details composed by the pipeline:
 - **token**: ERC20 approve, balance, allowance
 - **escrow**: contract deployment (per-variant constructors, batch, tempo atomic multicall), withdrawal
 - **api**: bytecode obfuscation, compliance, limits, whitelist, gas history
+- **attestation**: SGX quote verification and payload commitment checking
 - **nomad**: attestation and ECIES signal encryption/submission
 - **poll**: incremental per-recipient delivery watching
+
+### Attestation (internal)
+
+The node serves a quote, its collateral, and an `AttestationPayload`. The quote
+commits to that payload only by hash, in the report data:
+
+```
+report_data[0..32]  = sha256(publicKey . chainId_be . maxBalanceUsd_be . complianceKeys)
+report_data[32..40] = timestamp (unix seconds, big endian)
+report_data[61]     = isMetrics
+report_data[62]     = isDebug
+report_data[63]     = isGlobal
+```
+
+Verification recomputes that hash and compares it to the report data, which is
+what binds the signal-encryption key to the enclave. The compliance keys are
+hashed in the order served: the enclave sorts and deduplicates them when
+building the payload, so re-sorting client-side would break the commitment.
+
+Quote verification uses `@phala/dcap-qvl`, loaded through a dynamic import so
+callers that never verify do not pay for it. Collateral is served alongside the
+quote, so verification needs no network access.
 
 ### Escrow Variants (internal)
 
@@ -602,4 +664,6 @@ For Tempo: gas price is fixed, native token is a stablecoin, no conversion neede
 - `viem`: peer dependency
 - `eciesjs`: direct dependency (encryption format must match node-side Rust `ecies` crate)
 - `@noble/curves`: direct dependency (secp256k1 point arithmetic for blinded signer derivation)
+- `@noble/hashes`: direct dependency (sha256 for the attestation payload commitment)
+- `@phala/dcap-qvl`: direct dependency (SGX quote verification; dynamically imported so it is only loaded when verifying)
 

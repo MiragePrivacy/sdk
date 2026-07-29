@@ -27,6 +27,7 @@ import {
   fetchLimits,
   isWhitelistRejection,
 } from "./internal/api.js";
+import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
   approveAndDeploy,
   deployAtomicBatch,
@@ -136,6 +137,21 @@ function checkLimits(params: {
       throw new WhitelistRequiredError(amountUsd, Number(threshold));
     }
   });
+}
+
+/** Translate the network's attestation policy into fetch options. */
+function attestationOptions(network: NetworkConfig): { verify?: VerifyAttestationOptions | false } {
+  const policy = network.attestation;
+  if (!policy?.required) return {};
+  return {
+    verify: {
+      expectedMrEnclave: policy.expectedMrEnclave,
+      expectedMrSigner: policy.expectedMrSigner,
+      allowedTcbStatus: policy.allowedTcbStatus,
+      allowDebug: policy.allowDebug,
+      maxAgeSecs: policy.maxAgeSecs,
+    },
+  };
 }
 
 /** Build gas overrides from API gas analysis, falling back to network defaults. */
@@ -296,7 +312,9 @@ async function* executeTransfer(
     // Batch escrows have no bond pot and no blinded signer.
     let blindedSigner: Address | undefined;
     if (escrowType !== "batch") {
-      const networkKey = await fetchNetworkKey(network.nomadUrl);
+      // The blinded signer is derived from this key and burned into the
+      // escrow, so a substituted key would hand bonding rights to an attacker.
+      const networkKey = await fetchNetworkKey(network.nomadUrl, attestationOptions(network));
       const blinded = deriveBlindedSigner(networkKey.publicKey);
       blindedSigner = blinded.blindedSigner;
       blindingScalar = blinded.blindingScalar;
@@ -417,7 +435,9 @@ async function* executeTransfer(
   checkAbort(abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
 
-  const networkKey = await fetchNetworkKey(network.nomadUrl);
+  // The signal is encrypted to this key, so verification here is what keeps
+  // the recipient and amounts from being readable by a substituted key.
+  const networkKey = await fetchNetworkKey(network.nomadUrl, attestationOptions(network));
   const fromBlock = await publicClient.getBlockNumber();
 
   const signalResponse = await submitSignal({

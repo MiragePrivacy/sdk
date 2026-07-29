@@ -27,4 +27,17 @@ describe("Nomad node", () => {
     // Compressed secp256k1: 33 bytes = 66 hex chars
     expect(keyHex.length).toBe(66);
   });
+
+  it("reports no verification when it was not requested", async () => {
+    const key = await fetchNetworkKey(NOMAD_URL);
+    expect(key.verification).toBeUndefined();
+  });
+
+  it.skipIf(isTestnet)("refuses to verify a node serving no quote", async () => {
+    // The mock runs outside SGX, so requiring attestation must fail closed
+    // rather than silently trusting the asserted key.
+    await expect(fetchNetworkKey(NOMAD_URL, { verify: true })).rejects.toMatchObject({
+      code: "ATTESTATION_MISSING",
+    });
+  });
 });

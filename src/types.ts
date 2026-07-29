@@ -44,6 +44,20 @@ export interface NetworkConfig {
   /** Multiplier applied to bond + collect gas when sizing the bond pot (x100). */
   bondPotMarginBps: bigint;
   /**
+   * Verify the enclave's SGX quote before encrypting a signal to its key, and
+   * pin the expected measurements. Strongly recommended in production: without
+   * it the key is only asserted by whatever host answered the request.
+   */
+  attestation?: {
+    required: boolean;
+    expectedMrEnclave?: string[];
+    expectedMrSigner?: string[];
+    allowedTcbStatus?: TcbStatus[];
+    /** Accept debug enclaves. Never enable against production nodes. */
+    allowDebug?: boolean;
+    maxAgeSecs?: number;
+  };
+  /**
    * Fixed ETH->token rate, bypassing the on-chain oracle. Intended for local
    * chains and tests where no Uniswap deployment exists.
    */
@@ -97,13 +111,55 @@ export interface TransferEvent {
   to: Address;
 }
 
+/** Intel TCB evaluation outcome for the platform that produced a quote. */
+export type TcbStatus =
+  | "UpToDate"
+  | "SWHardeningNeeded"
+  | "ConfigurationNeeded"
+  | "ConfigurationAndSWHardeningNeeded"
+  | "OutOfDate"
+  | "OutOfDateConfigurationNeeded"
+  | "Revoked"
+  | "Unknown";
+
+/**
+ * Data the enclave commits to by hash in the quote's report data. Untrusted
+ * until the hash is reproduced during verification.
+ */
+export interface AttestationPayload {
+  /** Compressed secp256k1 public key, hex. */
+  publicKey: string;
+  chainId: number;
+  /** Max USD a single EOA may process in one transaction. Zero on a global report. */
+  maxBalanceUsd?: number;
+  /** Ed25519 compliance signer keys the enclave enforces, hex. */
+  complianceKeys?: string[];
+}
+
+export interface AttestationVerification {
+  verified: true;
+  tcbStatus: TcbStatus;
+  advisoryIds: string[];
+  mrenclave: string;
+  mrsigner: string;
+  debug: boolean;
+  /** Unix seconds the enclave generated the report at. */
+  timestamp: number;
+}
+
 export interface NetworkKeyStatus {
   publicKey: string;
+  /** True when the node served a quote. Says nothing about its validity. */
   attested: boolean;
   debug: boolean;
   chainId: number;
   mrenclave?: string;
   mrsigner?: string;
+  /**
+   * Present only when the quote was cryptographically verified and bound to
+   * the served payload. Absent when verification was not requested.
+   */
+  verification?: AttestationVerification;
 }
 
 export interface TokenMetadata {

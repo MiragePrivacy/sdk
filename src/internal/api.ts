@@ -1,5 +1,6 @@
-import { ApiError } from "../errors.js";
+import { ApiError, MirageError } from "../errors.js";
 import type { EscrowKind, NetworkKeyStatus } from "../types.js";
+import { verifyAttestation, type VerifyAttestationOptions } from "./attestation.js";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -173,33 +174,91 @@ export function isWhitelistRejection(error: unknown): boolean {
   return error instanceof ApiError && error.statusCode === 403 && /whitelist/i.test(error.message);
 }
 
-export async function fetchNetworkKey(nomadUrl: string): Promise<NetworkKeyStatus> {
-  const res = await request<{
-    // Current nodes nest the key and chain id inside a hash-committed payload.
-    payload?: { publicKey?: string; chainId?: number } | null;
+export interface AttestResponse {
+  // Current nodes nest the key and chain id inside a hash-committed payload.
+  payload?: {
     publicKey?: string;
-    public_key?: string;
-    attestation: unknown | null;
-    isDebug?: boolean;
-    is_debug?: boolean;
     chainId?: number;
-    chain_id?: number;
-    mrenclave?: string;
-    mrsigner?: string;
-  }>(`${nomadUrl}/attest`);
+    maxBalanceUsd?: number;
+    complianceKeys?: string[];
+  } | null;
+  publicKey?: string;
+  public_key?: string;
+  attestation?: { quote: string; collateral: unknown } | null;
+  isDebug?: boolean;
+  is_debug?: boolean;
+  chainId?: number;
+  chain_id?: number;
+  mrenclave?: string;
+  mrsigner?: string;
+}
+
+export interface FetchNetworkKeyOptions {
+  /**
+   * Verify the SGX quote and bind it to the served payload. Without this the
+   * public key is only asserted by whatever host answered the request.
+   */
+  verify?: boolean | VerifyAttestationOptions;
+}
+
+export async function fetchNetworkKey(
+  nomadUrl: string,
+  options: FetchNetworkKeyOptions = {},
+): Promise<NetworkKeyStatus> {
+  const res = await request<AttestResponse>(`${nomadUrl}/attest`);
 
   const publicKey = res.payload?.publicKey ?? res.publicKey ?? res.public_key ?? "";
   if (!publicKey) {
     throw new ApiError(200, "Attestation response missing enclave public key", res);
   }
 
-  return {
+  const status: NetworkKeyStatus = {
     publicKey,
     attested: res.attestation !== null && res.attestation !== undefined,
     debug: res.isDebug ?? res.is_debug ?? false,
     chainId: Number(res.payload?.chainId ?? res.chainId ?? res.chain_id ?? 0),
     mrenclave: res.mrenclave,
     mrsigner: res.mrsigner,
+  };
+
+  if (!options.verify) return status;
+
+  if (!res.attestation) {
+    throw new MirageError(
+      "ATTESTATION_MISSING",
+      "Node served no attestation quote; it is not running in SGX",
+    );
+  }
+
+  // Only the payload is committed to by the quote, so the top-level fields
+  // cannot be trusted once verification is requested.
+  if (!res.payload?.publicKey) {
+    throw new MirageError(
+      "ATTESTATION_MISSING",
+      "Node served no attestation payload to verify the quote against",
+    );
+  }
+
+  const verification = await verifyAttestation(
+    res.attestation,
+    {
+      publicKey: res.payload.publicKey,
+      chainId: Number(res.payload.chainId ?? 0),
+      maxBalanceUsd: res.payload.maxBalanceUsd,
+      complianceKeys: res.payload.complianceKeys,
+    },
+    typeof options.verify === "object" ? options.verify : {},
+  );
+
+  return {
+    ...status,
+    // Report the measurements from the quote rather than the node's own claim.
+    publicKey: res.payload.publicKey,
+    chainId: Number(res.payload.chainId ?? 0),
+    debug: verification.debug,
+    mrenclave: verification.mrenclave,
+    mrsigner: verification.mrsigner,
+    verification,
   };
 }
 

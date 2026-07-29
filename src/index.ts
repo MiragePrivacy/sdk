@@ -2,7 +2,14 @@
 export { networks, createNetworkConfig } from "./networks.js";
 export { prepareTransfer, executeTransfer } from "./transfer.js";
 export type { TransferParams } from "./transfer.js";
-export type { GasAnalysis, ApiHealth, GasHistoryAverages } from "./internal/api.js";
+export type {
+  GasAnalysis,
+  ApiHealth,
+  GasHistoryAverages,
+  FetchNetworkKeyOptions,
+} from "./internal/api.js";
+export { verifyAttestation, hashAttestationPayload } from "./internal/attestation.js";
+export type { VerifyAttestationOptions } from "./internal/attestation.js";
 export {
   getTokenMetadata,
   getTokenBalance,
@@ -47,6 +54,9 @@ export type {
   TransferStep,
   PreparedTransfer,
   NetworkKeyStatus,
+  AttestationPayload,
+  AttestationVerification,
+  TcbStatus,
   TokenMetadata,
   GasPrice,
 } from "./types.js";
