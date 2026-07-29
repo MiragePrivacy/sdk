@@ -56,6 +56,16 @@ describe("networks", () => {
     expect(networks.ethereum.nodeFeeWei).toBe(500_000_000_000_000n);
   });
 
+  it("requires attestation on every built-in network", () => {
+    for (const network of Object.values(networks)) {
+      expect(network.attestation?.required).toBe(true);
+    }
+  });
+
+  it("never allows debug enclaves on mainnet", () => {
+    expect(networks.ethereum.attestation?.allowDebug).toBe(false);
+  });
+
   it("has correct tempo gas constants", () => {
     const tempo = networks.tempo;
     expect(tempo.gas.approve).toBe(279_126n);
@@ -117,6 +127,23 @@ describe("createNetworkConfig", () => {
     const originalApprove = custom.gas.approve;
     createNetworkConfig(custom, { gas: { approve: 999n } });
     expect(custom.gas.approve).toBe(originalApprove);
+  });
+
+  it("merges attestation overrides without dropping required", () => {
+    // Replacing the object wholesale would silently disable verification.
+    const config = createNetworkConfig("ethereum", { attestation: { allowDebug: true } });
+    expect(config.attestation?.allowDebug).toBe(true);
+    expect(config.attestation?.required).toBe(true);
+  });
+
+  it("allows explicitly opting out of attestation", () => {
+    const config = createNetworkConfig("ethereum", { attestation: { required: false } });
+    expect(config.attestation?.required).toBe(false);
+  });
+
+  it("does not mutate the built-in attestation policy", () => {
+    createNetworkConfig("ethereum", { attestation: { allowDebug: true } });
+    expect(networks.ethereum.attestation?.allowDebug).toBe(false);
   });
 
   it("deep-merges nativeGas independently of gas", () => {

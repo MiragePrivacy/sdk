@@ -51,15 +51,16 @@ interface NetworkConfig {
   // Multiplier applied to bond + collect gas when sizing the bond pot (x100).
   bondPotMarginBps: bigint;
 
-  // Verify the enclave's SGX quote before encrypting a signal to its key.
-  // Strongly recommended in production. Pin the measurements to a known build,
-  // otherwise any Intel-signed enclave would be accepted.
+  // SGX quote verification policy. Verification is ON by default; set
+  // required: false only for local chains and non-SGX test nodes.
+  // Pin the measurements to a known build, otherwise any Intel-signed
+  // enclave would be accepted.
   attestation?: {
-    required: boolean;
+    required?: boolean;       // default true
     expectedMrEnclave?: string[];
     expectedMrSigner?: string[];
     allowedTcbStatus?: TcbStatus[];
-    allowDebug?: boolean;
+    allowDebug?: boolean;     // testnets only; debug memory is not protected
     maxAgeSecs?: number;
   };
 
@@ -355,10 +356,10 @@ const NATIVE_TOKEN_ADDRESS: Address;
 // SGX attestation status. Reads publicKey and chainId from the node's
 // hash-committed `payload` object, falling back to the legacy flat fields.
 //
-// Pass `{ verify: true }` (or VerifyAttestationOptions) to verify the quote
-// against Intel's root CA and bind it to the served payload. Without this the
-// public key is only asserted by whatever host answered the request. When
-// verifying, the returned key and chainId come from the attested payload
+// Verifies the quote against Intel's root CA and binds it to the served
+// payload BY DEFAULT. Pass `{ verify: false }` to skip, only for local chains
+// and non-SGX test nodes. Pass VerifyAttestationOptions to tune the policy.
+// When verifying, the returned key and chainId come from the attested payload
 // rather than the response's top-level fields.
 async function fetchNetworkKey(
   nomadUrl: string,
@@ -579,8 +580,16 @@ hashed in the order served: the enclave sorts and deduplicates them when
 building the payload, so re-sorting client-side would break the commitment.
 
 Quote verification uses `@phala/dcap-qvl`, loaded through a dynamic import so
-callers that never verify do not pay for it. Collateral is served alongside the
+callers that opt out do not pay for it. Collateral is served alongside the
 quote, so verification needs no network access.
+
+Verification is on by default and fails closed: a node serving no quote is
+rejected rather than trusted. Opting out is explicit
+(`attestation.required: false`), and `createNetworkConfig` merges the
+attestation policy field-by-field so a partial override cannot silently drop
+`required`. Debug enclaves are rejected unless `allowDebug` is set, which is
+appropriate only for testnets, since a debug enclave's memory is readable by
+its host.
 
 ### Escrow Variants (internal)
 

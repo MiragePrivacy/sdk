@@ -195,8 +195,9 @@ export interface AttestResponse {
 
 export interface FetchNetworkKeyOptions {
   /**
-   * Verify the SGX quote and bind it to the served payload. Without this the
-   * public key is only asserted by whatever host answered the request.
+   * Verify the SGX quote and bind it to the served payload. Defaults to true:
+   * without it the public key is only asserted by whatever host answered the
+   * request. Pass false only for local chains and non-SGX test nodes.
    */
   verify?: boolean | VerifyAttestationOptions;
 }
@@ -221,7 +222,8 @@ export async function fetchNetworkKey(
     mrsigner: res.mrsigner,
   };
 
-  if (!options.verify) return status;
+  const verify = options.verify ?? true;
+  if (verify === false) return status;
 
   if (!res.attestation) {
     throw new MirageError(
@@ -247,7 +249,7 @@ export async function fetchNetworkKey(
       maxBalanceUsd: res.payload.maxBalanceUsd,
       complianceKeys: res.payload.complianceKeys,
     },
-    typeof options.verify === "object" ? options.verify : {},
+    typeof verify === "object" ? verify : {},
   );
 
   return {

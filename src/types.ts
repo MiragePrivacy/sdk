@@ -44,16 +44,22 @@ export interface NetworkConfig {
   /** Multiplier applied to bond + collect gas when sizing the bond pot (x100). */
   bondPotMarginBps: bigint;
   /**
-   * Verify the enclave's SGX quote before encrypting a signal to its key, and
-   * pin the expected measurements. Strongly recommended in production: without
-   * it the key is only asserted by whatever host answered the request.
+   * SGX quote verification policy. Verification is on by default: without it
+   * the enclave key is only asserted by whatever host answered the request.
    */
   attestation?: {
-    required: boolean;
+    /**
+     * Set false to skip verification entirely. Only for local chains and
+     * non-SGX test nodes, which serve no quote to check.
+     */
+    required?: boolean;
     expectedMrEnclave?: string[];
     expectedMrSigner?: string[];
     allowedTcbStatus?: TcbStatus[];
-    /** Accept debug enclaves. Never enable against production nodes. */
+    /**
+     * Accept debug-mode enclaves, whose memory is not protected and whose
+     * secrets can be read by the host. Testnets only.
+     */
     allowDebug?: boolean;
     maxAgeSecs?: number;
   };

@@ -139,17 +139,20 @@ function checkLimits(params: {
   });
 }
 
-/** Translate the network's attestation policy into fetch options. */
-function attestationOptions(network: NetworkConfig): { verify?: VerifyAttestationOptions | false } {
+/**
+ * Translate the network's attestation policy into fetch options. Verification
+ * is on unless the network explicitly opts out.
+ */
+function attestationOptions(network: NetworkConfig): { verify: VerifyAttestationOptions | false } {
   const policy = network.attestation;
-  if (!policy?.required) return {};
+  if (policy?.required === false) return { verify: false };
   return {
     verify: {
-      expectedMrEnclave: policy.expectedMrEnclave,
-      expectedMrSigner: policy.expectedMrSigner,
-      allowedTcbStatus: policy.allowedTcbStatus,
-      allowDebug: policy.allowDebug,
-      maxAgeSecs: policy.maxAgeSecs,
+      expectedMrEnclave: policy?.expectedMrEnclave,
+      expectedMrSigner: policy?.expectedMrSigner,
+      allowedTcbStatus: policy?.allowedTcbStatus,
+      allowDebug: policy?.allowDebug,
+      maxAgeSecs: policy?.maxAgeSecs,
     },
   };
 }

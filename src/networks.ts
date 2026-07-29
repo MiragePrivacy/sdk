@@ -4,7 +4,9 @@ type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
 
-const NESTED_KEYS = ["gas", "nativeGas"] as const;
+// Merged field-by-field rather than replaced, so a partial override cannot
+// silently drop sibling fields (e.g. attestation.required).
+const NESTED_KEYS = ["gas", "nativeGas", "attestation"] as const;
 
 /**
  * Built-in network configs. Only `ethereum` is a production network; sepolia
@@ -37,6 +39,10 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       collect: 250_000n,
     },
     bondPotMarginBps: 150n,
+    // Production: verified quotes only, and no debug enclaves. Pin
+    // expectedMrEnclave to a known build to bind the key to a specific
+    // release rather than any Intel-signed enclave.
+    attestation: { required: true, allowDebug: false },
     uniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
     priceChainId: 1,
     priceTokenContract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -68,6 +74,10 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       collect: 250_000n,
     },
     bondPotMarginBps: 150n,
+    // Testnet nodes may run debug-mode enclaves depending on how they were
+    // built. If this node does, set allowDebug via createNetworkConfig rather
+    // than turning verification off.
+    attestation: { required: true },
     uniswapRouter: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
     // Testnet has no liquid market; price from mainnet.
     priceChainId: 1,
@@ -101,6 +111,10 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       collect: 932_363n,
     },
     bondPotMarginBps: 150n,
+    // Testnet nodes may run debug-mode enclaves depending on how they were
+    // built. If this node does, set allowDebug via createNetworkConfig rather
+    // than turning verification off.
+    attestation: { required: true },
   },
 };
 
@@ -112,6 +126,7 @@ export function createNetworkConfig(
   // Deep-copy nested objects to prevent mutation of the source config.
   result.gas = { ...result.gas };
   result.nativeGas = { ...result.nativeGas };
+  if (result.attestation) result.attestation = { ...result.attestation };
 
   if (!overrides) return result;
 
@@ -120,7 +135,8 @@ export function createNetworkConfig(
     if (value === undefined) continue;
 
     if ((NESTED_KEYS as readonly string[]).includes(key) && typeof value === "object") {
-      Object.assign(result[key as "gas" | "nativeGas"], value);
+      const target = result[key as "gas" | "nativeGas" | "attestation"];
+      (result as Record<string, unknown>)[key] = { ...target, ...value };
     } else {
       (result as Record<string, unknown>)[key] = value;
     }
