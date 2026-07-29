@@ -148,7 +148,6 @@ function attestationOptions(network: NetworkConfig): { verify: VerifyAttestation
   if (policy?.required === false) return { verify: false };
   return {
     verify: {
-      expectedMrEnclave: policy?.expectedMrEnclave,
       expectedMrSigner: policy?.expectedMrSigner,
       allowedTcbStatus: policy?.allowedTcbStatus,
       allowDebug: policy?.allowDebug,

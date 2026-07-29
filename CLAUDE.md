@@ -57,7 +57,8 @@ interface NetworkConfig {
   // enclave would be accepted.
   attestation?: {
     required?: boolean;       // default true
-    expectedMrEnclave?: string[];
+    // Enclave signing identity. Defaults to MIRAGE_MRSIGNER on the built-in
+    // networks. MRENCLAVE is not pinned: it changes on every enclave release.
     expectedMrSigner?: string[];
     allowedTcbStatus?: TcbStatus[];
     allowDebug?: boolean;     // testnets only; debug memory is not protected
@@ -377,7 +378,6 @@ async function verifyAttestation(
 ): Promise<AttestationVerification>;
 
 interface VerifyAttestationOptions {
-  expectedMrEnclave?: string[];   // pin the enclave measurement
   expectedMrSigner?: string[];    // pin the signing identity
   allowedTcbStatus?: TcbStatus[]; // default: UpToDate, SWHardeningNeeded
   allowDebug?: boolean;           // never enable against production nodes
@@ -385,6 +385,9 @@ interface VerifyAttestationOptions {
   maxAgeSecs?: number;            // default 86_400; 0 disables
   nowSecs?: number;               // for reproducible tests
 }
+
+// Mirage's enclave signing identity, pinned by the built-in networks.
+const MIRAGE_MRSIGNER: string;
 
 // Transfer limits, whitelist thresholds, and service health.
 // USD values are strings (not bigint) to survive JSON serialization, keyed by
@@ -590,6 +593,12 @@ attestation policy field-by-field so a partial override cannot silently drop
 `required`. Debug enclaves are rejected unless `allowDebug` is set, which is
 appropriate only for testnets, since a debug enclave's memory is readable by
 its host.
+
+The built-in networks pin `expectedMrSigner` to `MIRAGE_MRSIGNER`, so a quote
+from an enclave Mirage did not sign is rejected even though it is genuinely
+Intel-signed. MRENCLAVE is reported in `NetworkKeyStatus` but never checked:
+it measures the enclave binary and changes on every release, so pinning it
+would break the SDK on each enclave upgrade.
 
 ### Escrow Variants (internal)
 

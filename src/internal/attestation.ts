@@ -121,9 +121,11 @@ function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 export interface VerifyAttestationOptions {
-  /** Reject the quote unless MRENCLAVE matches one of these (hex). */
-  expectedMrEnclave?: string[];
-  /** Reject the quote unless MRSIGNER matches one of these (hex). */
+  /**
+   * Reject the quote unless MRSIGNER matches one of these (hex). This is the
+   * signing identity, which is stable across enclave releases; MRENCLAVE is
+   * deliberately not pinned, since it changes on every rebuild.
+   */
   expectedMrSigner?: string[];
   /** Accepted TCB states. Defaults to UpToDate and SWHardeningNeeded. */
   allowedTcbStatus?: TcbStatus[];
@@ -153,7 +155,6 @@ export async function verifyAttestation(
   options: VerifyAttestationOptions = {},
 ): Promise<AttestationVerification> {
   const {
-    expectedMrEnclave,
     expectedMrSigner,
     allowedTcbStatus = DEFAULT_ALLOWED_TCB,
     allowDebug = false,
@@ -196,22 +197,16 @@ export async function verifyAttestation(
   const mrEnclave = bytesToHex(sgx.mrEnclave);
   const mrSigner = bytesToHex(sgx.mrSigner);
 
-  // Measurements identify the code that holds the key. Without pinning them a
-  // valid quote from any Intel-signed enclave would be accepted.
-  const normalize = (values: string[]) => values.map((v) => v.replace(/^0x/, "").toLowerCase());
-
-  if (expectedMrEnclave?.length && !normalize(expectedMrEnclave).includes(mrEnclave)) {
-    throw new MirageError(
-      "ATTESTATION_MEASUREMENT_MISMATCH",
-      `Unexpected MRENCLAVE ${mrEnclave}`,
-      { meta: { mrEnclave, expected: expectedMrEnclave } },
-    );
-  }
-
-  if (expectedMrSigner?.length && !normalize(expectedMrSigner).includes(mrSigner)) {
-    throw new MirageError("ATTESTATION_MEASUREMENT_MISMATCH", `Unexpected MRSIGNER ${mrSigner}`, {
-      meta: { mrSigner, expected: expectedMrSigner },
-    });
+  // MRSIGNER identifies who signed the enclave and survives rebuilds, so it is
+  // the measurement worth pinning. MRENCLAVE is reported but not checked: it
+  // changes with every release, and pinning it would break on each upgrade.
+  if (expectedMrSigner?.length) {
+    const expected = expectedMrSigner.map((v) => v.replace(/^0x/, "").toLowerCase());
+    if (!expected.includes(mrSigner)) {
+      throw new MirageError("ATTESTATION_MEASUREMENT_MISMATCH", `Unexpected MRSIGNER ${mrSigner}`, {
+        meta: { mrSigner, expected: expectedMrSigner },
+      });
+    }
   }
 
   const report = parseReportData(sgx.reportData);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { networks, createNetworkConfig } from "../src/networks.js";
+import { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "../src/networks.js";
 
 describe("networks", () => {
   it("has all three built-in networks", () => {
@@ -64,6 +64,16 @@ describe("networks", () => {
 
   it("never allows debug enclaves on mainnet", () => {
     expect(networks.ethereum.attestation?.allowDebug).toBe(false);
+  });
+
+  it("pins Mirage's signing identity on every built-in network", () => {
+    for (const network of Object.values(networks)) {
+      expect(network.attestation?.expectedMrSigner).toEqual([MIRAGE_MRSIGNER]);
+    }
+    // Matches the value the frontend's status page checks against.
+    expect(MIRAGE_MRSIGNER).toBe(
+      "0xeb81f8f64bf9d8e4bba26943a1161e7ca4e878b0775c33637e60516badfb52c3",
+    );
   });
 
   it("has correct tempo gas constants", () => {

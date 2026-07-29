@@ -9,6 +9,13 @@ type DeepPartial<T> = {
 const NESTED_KEYS = ["gas", "nativeGas", "attestation"] as const;
 
 /**
+ * Mirage's enclave signing identity. Stable across enclave releases, unlike
+ * MRENCLAVE, which changes on every rebuild.
+ */
+export const MIRAGE_MRSIGNER =
+  "0xeb81f8f64bf9d8e4bba26943a1161e7ca4e878b0775c33637e60516badfb52c3";
+
+/**
  * Built-in network configs. Only `ethereum` is a production network; sepolia
  * and tempo are testnets.
  */
@@ -39,10 +46,14 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       collect: 250_000n,
     },
     bondPotMarginBps: 150n,
-    // Production: verified quotes only, and no debug enclaves. Pin
-    // expectedMrEnclave to a known build to bind the key to a specific
-    // release rather than any Intel-signed enclave.
-    attestation: { required: true, allowDebug: false },
+    // Production: verified quotes only, no debug enclaves, and the enclave
+    // must be signed by Mirage. MRENCLAVE is not pinned, since it changes on
+    // every enclave release.
+    attestation: {
+      required: true,
+      allowDebug: false,
+      expectedMrSigner: [MIRAGE_MRSIGNER],
+    },
     uniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
     priceChainId: 1,
     priceTokenContract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -76,8 +87,8 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     bondPotMarginBps: 150n,
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
-    // than turning verification off.
-    attestation: { required: true },
+    // than turning verification off; the signer check still applies.
+    attestation: { required: true, expectedMrSigner: [MIRAGE_MRSIGNER] },
     uniswapRouter: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
     // Testnet has no liquid market; price from mainnet.
     priceChainId: 1,
@@ -113,8 +124,8 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     bondPotMarginBps: 150n,
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
-    // than turning verification off.
-    attestation: { required: true },
+    // than turning verification off; the signer check still applies.
+    attestation: { required: true, expectedMrSigner: [MIRAGE_MRSIGNER] },
   },
 };
 

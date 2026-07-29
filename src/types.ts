@@ -53,7 +53,10 @@ export interface NetworkConfig {
      * non-SGX test nodes, which serve no quote to check.
      */
     required?: boolean;
-    expectedMrEnclave?: string[];
+    /**
+     * Pin the enclave's signing identity. MRENCLAVE is not pinned, since it
+     * changes on every enclave rebuild.
+     */
     expectedMrSigner?: string[];
     allowedTcbStatus?: TcbStatus[];
     /**

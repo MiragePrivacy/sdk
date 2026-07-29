@@ -241,20 +241,32 @@ describe("verifyAttestation", () => {
     );
   });
 
-  it("rejects an unexpected MRENCLAVE", async () => {
+  it("rejects an unexpected MRSIGNER", async () => {
     await withStub({ reportData: committedReportData() }, async (verify) => {
       await expect(
-        verify(quote, PAYLOAD, { expectedMrEnclave: [`0x${"cc".repeat(32)}`] }),
+        verify(quote, PAYLOAD, { expectedMrSigner: [`0x${"cc".repeat(32)}`] }),
       ).rejects.toMatchObject({ code: "ATTESTATION_MEASUREMENT_MISMATCH" });
     });
   });
 
-  it("accepts a pinned MRENCLAVE regardless of prefix or case", async () => {
+  it("accepts a pinned MRSIGNER regardless of prefix or case", async () => {
     await withStub({ reportData: committedReportData() }, async (verify) => {
       await expect(
-        verify(quote, PAYLOAD, { expectedMrEnclave: [`0x${"AA".repeat(32)}`] }),
+        verify(quote, PAYLOAD, { expectedMrSigner: [`0x${"BB".repeat(32)}`] }),
       ).resolves.toMatchObject({ verified: true });
     });
+  });
+
+  it("reports MRENCLAVE without pinning it, since it changes each release", async () => {
+    await withStub(
+      { mrEnclave: new Uint8Array(32).fill(0x99), reportData: committedReportData() },
+      async (verify) => {
+        // A differing MRENCLAVE must not by itself fail verification.
+        await expect(
+          verify(quote, PAYLOAD, { expectedMrSigner: [`0x${"bb".repeat(32)}`] }),
+        ).resolves.toMatchObject({ mrenclave: "99".repeat(32) });
+      },
+    );
   });
 
   it("rejects an attestation that is not for the global key", async () => {

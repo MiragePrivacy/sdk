@@ -1,5 +1,5 @@
 // Public API
-export { networks, createNetworkConfig } from "./networks.js";
+export { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "./networks.js";
 export { prepareTransfer, executeTransfer } from "./transfer.js";
 export type { TransferParams } from "./transfer.js";
 export type {
