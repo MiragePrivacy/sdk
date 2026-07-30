@@ -1,6 +1,7 @@
 import type { Address, Hash, PublicClient, WalletClient } from "viem";
 import type {
   EscrowKind,
+  ApprovalCheckpoint,
   FeeEstimate,
   GasConstants,
   GasPrice,
@@ -30,6 +31,8 @@ import {
 import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
   approveAndDeploy,
+  approveForDeployment,
+  deployApproved,
   deployAtomicBatch,
   deriveEscrowKind,
   pickRewardToken,
@@ -47,7 +50,8 @@ export interface TransferParams {
   amount?: bigint;
   /** Multi-recipient form. Deploys one batch escrow for all rows. */
   transfers?: TransferRow[];
-  walletClient: WalletClient;
+  /** Optional while preparing a quote; stage methods receive the active wallet. */
+  walletClient?: WalletClient;
   publicClient: PublicClient;
   network: NetworkConfig;
   /**
@@ -258,9 +262,156 @@ async function buildContext(
 
 export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
   const context = await buildContext(params);
+  let checkpoint: ApprovalCheckpoint | undefined;
+  let deployedSecrets: TransferSecrets | undefined = params.resume;
+
+  async function* approve(
+    walletClient: WalletClient,
+  ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
+    const account = getAccount(walletClient);
+    const iterator = approveForDeployment({
+      transfers: context.rows,
+      rewardAmount: context.fees.rewardAmount,
+      walletClient,
+      publicClient: params.publicClient,
+      account,
+      onAbortCheck: () => {
+        checkAbort(params.abortSignal);
+        assertAccountUnchanged(walletClient, account);
+      },
+    });
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) {
+        checkpoint = next.value;
+        return next.value;
+      }
+      yield {
+        step: "approve",
+        hash: next.value.hash,
+        tokenAddress: next.value.tokenAddress,
+        index: next.value.index,
+        total: next.value.total,
+      };
+    }
+  }
+
+  async function deploy(
+    walletClient: WalletClient,
+    suppliedCheckpoint?: ApprovalCheckpoint,
+  ): Promise<Extract<TransferStep, { step: "deploy" }>> {
+    if (deployedSecrets) {
+      return {
+        step: "deploy",
+        hash: deployedSecrets.deployHash,
+        escrowAddress: deployedSecrets.escrowAddress,
+        escrowType: deployedSecrets.escrowType,
+        secrets: deployedSecrets,
+      };
+    }
+    const account = getAccount(walletClient);
+    checkAbort(params.abortSignal);
+    assertAccountUnchanged(walletClient, account);
+    const obfuscation = context.obfuscation;
+    if (!obfuscation) {
+      throw new MirageError("MISSING_OBFUSCATION", "Escrow bytecode was not fetched");
+    }
+
+    let blindedSigner: Address | undefined;
+    let blindingScalar: `0x${string}` | undefined;
+    if (context.escrowType !== "batch") {
+      const networkKey = await fetchNetworkKey(
+        params.network.nomadUrl,
+        attestationOptions(params.network),
+      );
+      const blinded = deriveBlindedSigner(networkKey.publicKey);
+      blindedSigner = blinded.blindedSigner;
+      blindingScalar = blinded.blindingScalar;
+    }
+
+    const deployArgs = {
+      bytecode: obfuscation.obfuscatedBytecode,
+      escrowType: context.escrowType,
+      transfers: context.rows,
+      rewardAmount: context.fees.rewardAmount,
+      blindedSigner,
+      bondPot: context.fees.bondPot,
+      walletClient,
+      publicClient: params.publicClient,
+      account,
+    };
+    const approval = suppliedCheckpoint ?? checkpoint;
+    const result = params.network.enableAtomicBatch
+      ? await deployAtomicBatch({ ...deployArgs, selectorMapping: obfuscation.selectorMapping })
+      : await deployApproved({ ...deployArgs, checkpoint: approval });
+    const receipt = await params.publicClient.getTransactionReceipt({ hash: result.hash });
+    deployedSecrets = {
+      escrowAddress: result.escrowAddress,
+      escrowType: context.escrowType,
+      blindingScalar,
+      seed: obfuscation.seed,
+      selectorMapping: obfuscation.selectorMapping,
+      deployHash: result.hash,
+      deployedAt: Date.now(),
+      fromBlock: receipt.blockNumber,
+      userApproveGas: approval?.approveGasUsed,
+      userDeployGas: result.deployGasUsed,
+      userGasPrice: result.deployEffectiveGasPrice,
+      rewardAmount: context.fees.rewardAmount,
+    };
+    return {
+      step: "deploy",
+      hash: result.hash,
+      escrowAddress: result.escrowAddress,
+      escrowType: context.escrowType,
+      secrets: deployedSecrets,
+    };
+  }
+
+  async function* complete(
+    walletClient: WalletClient,
+    secrets?: TransferSecrets,
+  ): AsyncGenerator<TransferStep> {
+    const resume = secrets ?? deployedSecrets ?? params.resume;
+    if (!resume) {
+      throw new MirageError("INVALID_STAGE", "Deploy the transfer before completing it");
+    }
+    yield* executeTransfer({ ...params, walletClient, resume }, context);
+  }
+
+  async function* execute(walletClient = params.walletClient): AsyncGenerator<TransferStep> {
+    if (!walletClient) {
+      throw new MirageError("WALLET_REQUIRED", "A wallet client is required to execute a transfer");
+    }
+    yield { step: "fees", fees: context.fees };
+    if (deployedSecrets) {
+      for await (const step of complete(walletClient, deployedSecrets)) {
+        if (step.step !== "fees") yield step;
+      }
+      return;
+    }
+    let approved: ApprovalCheckpoint | undefined;
+    const approvals = approve(walletClient);
+    while (true) {
+      const next = await approvals.next();
+      if (next.done) {
+        approved = next.value;
+        break;
+      }
+      yield next.value;
+    }
+    const deployed = await deploy(walletClient, approved);
+    yield deployed;
+    for await (const step of complete(walletClient, deployed.secrets)) {
+      if (step.step !== "fees") yield step;
+    }
+  }
   return {
     fees: context.fees,
-    execute: () => executeTransfer(params, context),
+    approve,
+    deploy,
+    complete,
+    execute,
   };
 }
 
@@ -269,7 +420,7 @@ async function* executeTransfer(
   cached?: TransferContext,
 ): AsyncGenerator<TransferStep> {
   const {
-    walletClient,
+    walletClient: maybeWalletClient,
     publicClient,
     network,
     accessToken,
@@ -277,10 +428,15 @@ async function* executeTransfer(
     resume,
     pollTimeout = DEFAULT_POLL_TIMEOUT,
   } = params;
+  if (!maybeWalletClient) {
+    throw new MirageError("WALLET_REQUIRED", "A wallet client is required to execute a transfer");
+  }
+  const walletClient = maybeWalletClient;
 
   const account = getAccount(walletClient);
   const context = cached ?? (await buildContext(params, { skipObfuscation: !!resume }));
   const { rows, escrowType, rewardToken, fees } = context;
+  const rewardAmount = resume?.rewardAmount ?? fees.rewardAmount;
 
   // Without the scalar the node cannot be authorized to bond, so fail before
   // touching the chain rather than after funds are committed.
@@ -296,9 +452,9 @@ async function* executeTransfer(
   let seed = resume?.seed;
   let blindingScalar = resume?.blindingScalar;
   let deployedAt = resume?.deployedAt;
-  let userApproveGas: bigint | undefined;
-  let userDeployGas: bigint | undefined;
-  let userGasPrice: bigint | undefined;
+  let userApproveGas: bigint | undefined = resume?.userApproveGas;
+  let userDeployGas: bigint | undefined = resume?.userDeployGas;
+  let userGasPrice: bigint | undefined = resume?.userGasPrice;
 
   if (!resume) {
     checkAbort(abortSignal);
@@ -440,14 +596,18 @@ async function* executeTransfer(
   // The signal is encrypted to this key, so verification here is what keeps
   // the recipient and amounts from being readable by a substituted key.
   const networkKey = await fetchNetworkKey(network.nomadUrl, attestationOptions(network));
-  const fromBlock = await publicClient.getBlockNumber();
+  const fromBlock =
+    resume?.fromBlock ??
+    (resume?.deployHash
+      ? (await publicClient.getTransactionReceipt({ hash: resume.deployHash })).blockNumber
+      : await publicClient.getBlockNumber());
 
   const signalResponse = await submitSignal({
     escrowAddress: escrow,
     escrowType,
     tokenAddress: rewardToken,
     transfers: rows,
-    rewardAmount: fees.rewardAmount,
+    rewardAmount,
     blindingScalar,
     selectorMapping,
     complianceSignature,

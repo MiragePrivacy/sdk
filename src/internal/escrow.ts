@@ -15,11 +15,12 @@ import {
 } from "viem";
 import { ContractError } from "../errors.js";
 import { isNativeToken } from "../token.js";
-import type { EscrowKind, TransferRow } from "../types.js";
+import type { ApprovalCheckpoint, EscrowKind, TransferRow } from "../types.js";
 
 const escrowAbi = parseAbi([
   "function cancelAndWithdraw() external",
   "function fund(uint256 _currentRewardAmount) external",
+  "function is_bonded() external view returns (bool)",
 ]);
 
 // EscrowNative funds the bond pot alongside the reward.
@@ -247,6 +248,122 @@ export interface ApproveAndDeployResult {
   deployResult: DeployResult;
 }
 
+export async function* approveForDeployment(params: {
+  transfers: TransferRow[];
+  rewardAmount: bigint;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  account: Address;
+  onAbortCheck?: () => void;
+}): AsyncGenerator<
+  { hash: Hash; tokenAddress: Address; gasUsed: bigint; index: number; total: number },
+  ApprovalCheckpoint
+> {
+  const { transfers, rewardAmount, walletClient, publicClient, account, onAbortCheck } = params;
+  const buckets = buildApprovalBuckets(transfers, rewardAmount);
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
+  const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
+  const approvals: ApprovalCheckpoint["approvals"] = [];
+  let approveGasUsed = 0n;
+
+  for (const [index, bucket] of buckets.entries()) {
+    onAbortCheck?.();
+    const result = await approveToken({
+      tokenAddress: bucket.tokenAddress,
+      spender: predictedEscrowAddress,
+      amount: bucket.amount,
+      walletClient,
+      publicClient,
+      account,
+    });
+    approveGasUsed += result.gasUsed;
+    const approval = { ...result, tokenAddress: bucket.tokenAddress };
+    approvals.push(approval);
+    yield { ...approval, index, total: buckets.length };
+  }
+
+  return {
+    stage: "approved",
+    account,
+    predictedEscrowAddress,
+    approvals,
+    approveGasUsed,
+  };
+}
+
+export async function deployApproved(params: {
+  bytecode: `0x${string}`;
+  escrowType: EscrowKind;
+  transfers: TransferRow[];
+  rewardAmount: bigint;
+  blindedSigner?: Address;
+  bondPot: bigint;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  account: Address;
+  checkpoint?: ApprovalCheckpoint;
+}): Promise<DeployResult> {
+  const {
+    bytecode,
+    escrowType,
+    transfers,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+    walletClient,
+    publicClient,
+    account,
+    checkpoint,
+  } = params;
+  const buckets = buildApprovalBuckets(transfers, rewardAmount);
+  if (buckets.length > 0 && !checkpoint) {
+    throw new ContractError("Token approvals must complete before deployment");
+  }
+  if (checkpoint && checkpoint.account.toLowerCase() !== account.toLowerCase()) {
+    throw new ContractError("Approval checkpoint belongs to a different account");
+  }
+
+  const predictedEscrowAddress =
+    checkpoint?.predictedEscrowAddress ??
+    predictContractAddress(
+      account,
+      await publicClient.getTransactionCount({ address: account, blockTag: "pending" }),
+    );
+
+  const rewardToken = pickRewardToken(transfers);
+  const constructorArgs = encodeConstructorArgs({
+    escrowType,
+    transfers,
+    rewardToken,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+  });
+  const deployHash = await walletClient.sendTransaction({
+    to: null,
+    data: `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`,
+    chain: walletClient.chain,
+    account,
+    value: computeDeployValue({ escrowType, transfers, rewardToken, rewardAmount, bondPot }),
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: deployHash });
+  if (receipt.status !== "success") {
+    throw new ContractError("Escrow deployment failed", { txHash: deployHash });
+  }
+  if (receipt.contractAddress && getAddress(receipt.contractAddress) !== predictedEscrowAddress) {
+    throw new ContractError(
+      `Escrow deployed to ${receipt.contractAddress} but ${predictedEscrowAddress} was predicted`,
+      { txHash: deployHash },
+    );
+  }
+  return {
+    hash: deployHash,
+    escrowAddress: predictedEscrowAddress,
+    deployGasUsed: receipt.gasUsed,
+    deployEffectiveGasPrice: receipt.effectiveGasPrice,
+  };
+}
+
 /**
  * Approve each distinct ERC20 against the predicted escrow, then deploy. With
  * K approvals the deploy lands at nonce N+K, so the address is predicted from
@@ -280,73 +397,42 @@ export async function approveAndDeploy(params: {
     onAbortCheck,
   } = params;
 
-  const rewardToken = pickRewardToken(transfers);
-  const buckets = buildApprovalBuckets(transfers, rewardAmount);
-
-  // One approval per distinct ERC20, so with K buckets the deploy lands at
-  // nonce N+K. Every approval targets that address.
-  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
-  const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
-
-  const approvals: Array<{ hash: Hash; tokenAddress: Address; gasUsed: bigint }> = [];
-  let approveGasUsed = 0n;
-
-  for (const [index, bucket] of buckets.entries()) {
-    onAbortCheck?.();
-    const { hash, gasUsed } = await approveToken({
-      tokenAddress: bucket.tokenAddress,
-      spender: predictedEscrowAddress,
-      amount: bucket.amount,
-      walletClient,
-      publicClient,
-      account,
-    });
-    approveGasUsed += gasUsed;
-    approvals.push({ hash, tokenAddress: bucket.tokenAddress, gasUsed });
-    onApproval?.({ hash, tokenAddress: bucket.tokenAddress, index, total: buckets.length });
+  const iterator = approveForDeployment({
+    transfers,
+    rewardAmount,
+    walletClient,
+    publicClient,
+    account,
+    onAbortCheck,
+  });
+  const approvals: ApprovalCheckpoint["approvals"] = [];
+  let checkpoint: ApprovalCheckpoint | undefined;
+  while (true) {
+    const next = await iterator.next();
+    if (next.done) {
+      checkpoint = next.value;
+      break;
+    }
+    approvals.push(next.value);
+    onApproval?.(next.value);
   }
-
-  const constructorArgs = encodeConstructorArgs({
+  const deployResult = await deployApproved({
+    bytecode,
     escrowType,
     transfers,
-    rewardToken,
     rewardAmount,
     blindedSigner,
     bondPot,
-  });
-
-  const deployHash = await walletClient.sendTransaction({
-    to: null,
-    data: `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`,
-    chain: walletClient.chain,
+    walletClient,
+    publicClient,
     account,
-    value: computeDeployValue({ escrowType, transfers, rewardToken, rewardAmount, bondPot }),
+    checkpoint,
   });
-
-  const deployReceipt = await publicClient.waitForTransactionReceipt({ hash: deployHash });
-  if (deployReceipt.status !== "success") {
-    throw new ContractError("Escrow deployment failed", { txHash: deployHash });
-  }
-
-  // The allowances were granted to the predicted address, so a mismatch means
-  // the escrow was funded at an address the caller would never learn about.
-  const deployed = deployReceipt.contractAddress;
-  if (deployed && getAddress(deployed) !== predictedEscrowAddress) {
-    throw new ContractError(
-      `Escrow deployed to ${deployed} but ${predictedEscrowAddress} was predicted`,
-      { txHash: deployHash },
-    );
-  }
 
   return {
     approvals,
-    approveGasUsed,
-    deployResult: {
-      hash: deployHash,
-      escrowAddress: predictedEscrowAddress,
-      deployGasUsed: deployReceipt.gasUsed,
-      deployEffectiveGasPrice: deployReceipt.effectiveGasPrice,
-    },
+    approveGasUsed: checkpoint.approveGasUsed,
+    deployResult,
   };
 }
 
@@ -499,3 +585,26 @@ export async function withdrawFromEscrow(params: {
     { txHash: hash },
   );
 }
+
+export async function getEscrowStatus(params: {
+  escrowAddress: Address;
+  publicClient: PublicClient;
+  selectorMapping?: Record<string, string>;
+}): Promise<{ bonded: boolean; cancellable: boolean }> {
+  const standardData = encodeFunctionData({
+    abi: escrowAbi,
+    functionName: "is_bonded",
+  });
+  const mapped = params.selectorMapping?.[standardData.slice(0, 10)];
+  const data = mapped
+    ? (`${mapped}${standardData.slice(10)}` as `0x${string}`)
+    : standardData;
+  const result = await params.publicClient.call({
+    to: params.escrowAddress,
+    data,
+  });
+  const bonded = BigInt(result.data ?? "0x0") !== 0n;
+  return { bonded, cancellable: !bonded };
+}
+
+export const cancelTransfer = withdrawFromEscrow;

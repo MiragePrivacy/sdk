@@ -19,13 +19,16 @@ export {
 } from "./token.js";
 export {
   fetchNetworkKey,
+  fetchNetworkStatus,
   fetchApiHealth,
   fetchTransferLimit,
   fetchGasHistoryAverages,
   checkWhitelist,
+  checkWhitelistToken,
   isApprovalStale,
   APPROVAL_MAX_AGE_SECS,
 } from "./internal/api.js";
+export { getEscrowStatus, cancelTransfer } from "./internal/escrow.js";
 
 // Errors
 export {
@@ -48,11 +51,13 @@ export type {
   GasConstants,
   NativeGasConstants,
   FeeEstimate,
+  AssetRequirement,
   TransferEvent,
   TransferRow,
   TransferSecrets,
   TransferStep,
   PreparedTransfer,
+  ApprovalCheckpoint,
   NetworkKeyStatus,
   AttestationPayload,
   AttestationVerification,

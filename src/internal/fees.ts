@@ -193,6 +193,7 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
   let networkFee: bigint;
   let nodeFee: bigint;
   let bondPot = 0n;
+  let networkGasToken = 0n;
 
   if (network.kind === "tempo") {
     // Tempo: fixed base fee, stablecoin native token, no price conversion.
@@ -205,6 +206,7 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
 
     const scale = 10n ** (18n - BigInt(tokenDecimals));
     networkFee = userGasWei / scale;
+    networkGasToken = networkFee;
     const nodeFeeBase = (network.nodeFeeUsd * 10n ** BigInt(tokenDecimals)) / 10n ** 6n;
     nodeFee = nodeFeeBase + nodeGasWei / scale;
     // Single escrows still fund bond and collect through the pot; without it
@@ -223,6 +225,7 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
     const maxFee = await resolveGasPrice(publicClient, gasPrice);
 
     networkFee = maxFee * nativeGas.deploy;
+    networkGasToken = networkFee;
     nodeFee = network.nodeFeeWei + maxFee * nodeGasUnits(escrowType, nativeGas);
     bondPot = computeBondPot({
       escrowType,
@@ -238,6 +241,7 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
     // Approve gas scales with the distinct ERC20 count; an all-native batch
     // needs no allowances at all.
     const userGasWei = maxFee * (gas.approve * BigInt(approvalCount) + gas.deploy);
+    networkGasToken = userGasWei;
     const nodeGasWei = maxFee * nodeGasUnits(escrowType, gas);
     const bondPotWei = computeBondPot({
       escrowType,
@@ -278,6 +282,25 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
   // the transfer is a token, so folding it into a token total would be
   // meaningless; callers reserve it separately via bondPot.
   const potInTransferUnits = nativeEth || network.kind === "tempo";
+  const byAsset = new Map<string, { tokenAddress: Address; transferAmount: bigint }>();
+  for (const row of transfers) {
+    const key = row.tokenAddress.toLowerCase();
+    const current = byAsset.get(key);
+    if (current) current.transferAmount += row.amount;
+    else byAsset.set(key, { tokenAddress: row.tokenAddress, transferAmount: row.amount });
+  }
+  const rewardEntry = byAsset.get(rewardTokenKey) ?? {
+    tokenAddress: rewardToken,
+    transferAmount: 0n,
+  };
+  byAsset.set(rewardTokenKey, rewardEntry);
+  const assetRequirements = Array.from(byAsset.values()).map((entry) => ({
+    tokenAddress: entry.tokenAddress,
+    transferAmount: entry.transferAmount,
+    escrowAmount:
+      entry.transferAmount +
+      (entry.tokenAddress.toLowerCase() === rewardTokenKey ? rewardAmount : 0n),
+  }));
 
   return {
     transferAmount: rewardAssetAmount,
@@ -291,5 +314,7 @@ export async function estimateFees(params: EstimateFeesParams): Promise<FeeEstim
     totalAmount: rewardAssetAmount + totalFee + (potInTransferUnits ? bondPot : 0n),
     decimals: tokenDecimals,
     isNativeEth: nativeEth,
+    assetRequirements,
+    gasTokenRequirement: networkGasToken + bondPot,
   };
 }

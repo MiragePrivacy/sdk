@@ -1,4 +1,4 @@
-import type { Address, Hash } from "viem";
+import type { Address, Hash, WalletClient } from "viem";
 
 export type NetworkId = "sepolia" | "tempo" | "ethereum";
 export type NetworkKind = "ethereum" | "tempo";
@@ -110,6 +110,23 @@ export interface FeeEstimate {
   totalAmount: bigint;
   decimals: number;
   isNativeEth: boolean;
+  /**
+   * Amount each asset must make available to the escrow. This is the canonical
+   * balance/allowance view for mixed-asset batches.
+   */
+  assetRequirements: AssetRequirement[];
+  /**
+   * Chain gas-token reserve for the wallet's transactions plus the refundable
+   * bond pot. On EVM ERC20 transfers this is denominated in wei and must not be
+   * added to token-denominated `totalAmount`.
+   */
+  gasTokenRequirement: bigint;
+}
+
+export interface AssetRequirement {
+  tokenAddress: Address;
+  transferAmount: bigint;
+  escrowAmount: bigint;
 }
 
 export interface TransferEvent {
@@ -204,6 +221,21 @@ export interface TransferSecrets {
   selectorMapping?: Record<string, string>;
   deployHash: Hash;
   deployedAt: number;
+  /** Deployment block used as the recovery polling cursor. */
+  fromBlock?: bigint;
+  userApproveGas?: bigint;
+  userDeployGas?: bigint;
+  userGasPrice?: bigint;
+  /** Reward committed in the deployed escrow; required for exact resume. */
+  rewardAmount?: bigint;
+}
+
+export interface ApprovalCheckpoint {
+  stage: "approved";
+  account: Address;
+  predictedEscrowAddress: Address;
+  approvals: Array<{ hash: Hash; tokenAddress: Address; gasUsed: bigint }>;
+  approveGasUsed: bigint;
 }
 
 export type TransferStep =
@@ -233,5 +265,14 @@ export type TransferStep =
 
 export interface PreparedTransfer {
   fees: FeeEstimate;
-  execute(): AsyncGenerator<TransferStep>;
+  approve(walletClient: WalletClient): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
+  deploy(
+    walletClient: WalletClient,
+    checkpoint?: ApprovalCheckpoint,
+  ): Promise<Extract<TransferStep, { step: "deploy" }>>;
+  complete(
+    walletClient: WalletClient,
+    secrets?: TransferSecrets,
+  ): AsyncGenerator<TransferStep>;
+  execute(walletClient?: WalletClient): AsyncGenerator<TransferStep>;
 }

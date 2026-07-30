@@ -185,6 +185,32 @@ describe("estimateFees", () => {
       expect(mixed.networkFee).toBeGreaterThan(single.networkFee);
     });
 
+    it("exposes exact per-asset escrow requirements for mixed batches", async () => {
+      const fees = await estimateFees({
+        transfers: [row(USDC_ADDRESS, 10_000_000n), row(USDT_ADDRESS, 20_000_000n)],
+        escrowType: "batch",
+        tokenDecimals: 6,
+        network: networks.ethereum,
+        publicClient: mockPublicClient(),
+        gasPrice: { maxFeePerGas: gasPrice, maxPriorityFeePerGas: 2_000_000_000n },
+        ethToTokenRate,
+      });
+
+      expect(fees.assetRequirements).toEqual([
+        {
+          tokenAddress: USDC_ADDRESS,
+          transferAmount: 10_000_000n,
+          escrowAmount: 10_000_000n + fees.rewardAmount,
+        },
+        {
+          tokenAddress: USDT_ADDRESS,
+          transferAmount: 20_000_000n,
+          escrowAmount: 20_000_000n,
+        },
+      ]);
+      expect(fees.gasTokenRequirement).toBeGreaterThan(0n);
+    });
+
     it("aggregates the reward asset case-insensitively", async () => {
       const fees = await estimateFees({
         transfers: [

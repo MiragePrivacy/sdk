@@ -1,5 +1,5 @@
 import { ApiError, MirageError } from "../errors.js";
-import type { EscrowKind, NetworkKeyStatus } from "../types.js";
+import type { EscrowKind, NetworkConfig, NetworkKeyStatus } from "../types.js";
 import { verifyAttestation, type VerifyAttestationOptions } from "./attestation.js";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -264,6 +264,22 @@ export async function fetchNetworkKey(
   };
 }
 
+/** Fetch and verify the node key using a network's declared trust policy. */
+export function fetchNetworkStatus(network: NetworkConfig): Promise<NetworkKeyStatus> {
+  const policy = network.attestation;
+  return fetchNetworkKey(network.nomadUrl, {
+    verify:
+      policy?.required === false
+        ? false
+        : {
+            expectedMrSigner: policy?.expectedMrSigner,
+            allowedTcbStatus: policy?.allowedTcbStatus,
+            allowDebug: policy?.allowDebug,
+            maxAgeSecs: policy?.maxAgeSecs,
+          },
+  });
+}
+
 export interface ApiHealth {
   status: string;
   version?: string;
@@ -402,5 +418,21 @@ export async function checkWhitelist(
   return {
     whitelisted: res.whitelisted,
     accessToken: res.whitelisted ? hash : undefined,
+  };
+}
+
+/** Check a previously-derived whitelist token, such as one received in a link. */
+export async function checkWhitelistToken(
+  apiServer: string,
+  token: string,
+): Promise<{ whitelisted: boolean; accessToken?: string }> {
+  const res = await request<{ whitelisted: boolean }>(`${apiServer}/whitelist`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: token, hashed: true }),
+  });
+  return {
+    whitelisted: res.whitelisted,
+    accessToken: res.whitelisted ? token : undefined,
   };
 }

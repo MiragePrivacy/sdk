@@ -51,6 +51,43 @@ for await (const event of prepared.execute()) {
 }
 ```
 
+## Staged execution
+
+Consumers that expose separate approval and deployment controls can use the
+same prepared transfer without reimplementing protocol logic:
+
+```ts
+const prepared = await prepareTransfer({
+  transfers,
+  publicClient,
+  network: networks.ethereum,
+});
+
+// Approve button. The generator yields immediately after each token approval.
+const approvals = prepared.approve(walletClient);
+let checkpoint;
+while (true) {
+  const next = await approvals.next();
+  if (next.done) {
+    checkpoint = next.value;
+    break;
+  }
+  console.log(next.value.hash);
+}
+
+// Deploy button. Persist `deployed.secrets` immediately.
+const deployed = await prepared.deploy(walletClient, checkpoint);
+
+// Automatically submit and monitor after deployment.
+for await (const event of prepared.complete(walletClient, deployed.secrets)) {
+  console.log(event.step);
+}
+```
+
+`ApprovalCheckpoint` and `TransferSecrets` are serializable stage boundaries.
+The latter includes the deployment polling cursor and committed reward so a
+reload can resume without changing the escrow's signal.
+
 ## Networks
 
 Built-in configs for `ethereum`, `sepolia`, and `tempo`:
@@ -104,7 +141,7 @@ If a transfer fails after the escrow is deployed (e.g. account change, abort, ti
 ```ts
 const prepared = await prepareTransfer({
   // ...same params,
-  escrowAddress: "0x...", // from the previous error
+  resume: savedTransferSecrets,
 });
 
 for await (const event of prepared.execute()) {

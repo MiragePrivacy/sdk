@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepare": "npm run build",
     "check": "tsc --noEmit",
     "test": "vitest run --exclude 'test/integration/**'",
     "test:watch": "vitest --exclude 'test/integration/**'",
