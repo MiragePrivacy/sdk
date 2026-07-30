@@ -1,5 +1,5 @@
 {
-  "name": "@mirageprivacy/mirage-sdk",
+  "name": "@mirageprivacy/sdk",
   "version": "0.1.0",
   "description": "SDK for private transfers on Mirage",
   "type": "module",

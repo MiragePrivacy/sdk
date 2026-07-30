@@ -1,11 +1,11 @@
-# @mirageprivacy/mirage-sdk
+# @mirageprivacy/sdk
 
 TypeScript SDK for private transfers on the Mirage protocol. Encapsulates the full transfer lifecycle (fee estimation, token approvals, escrow deployment, compliance, encrypted signal submission, and transfer polling) into a single async generator flow.
 
 ## Install
 
 ```sh
-npm install @mirageprivacy/mirage-sdk viem
+npm install @mirageprivacy/sdk viem
 ```
 
 `viem` is a peer dependency.
@@ -13,7 +13,7 @@ npm install @mirageprivacy/mirage-sdk viem
 ## Quick start
 
 ```ts
-import { networks, prepareTransfer, getTokenMetadata, getTokenBalance } from "@mirageprivacy/mirage-sdk";
+import { networks, prepareTransfer, getTokenMetadata, getTokenBalance } from "@mirageprivacy/sdk";
 import { createPublicClient, createWalletClient, http, custom, parseUnits, formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -93,7 +93,7 @@ reload can resume without changing the escrow's signal.
 Built-in configs for `ethereum`, `sepolia`, and `tempo`:
 
 ```ts
-import { networks, createNetworkConfig } from "@mirageprivacy/mirage-sdk";
+import { networks, createNetworkConfig } from "@mirageprivacy/sdk";
 
 // Use a built-in config directly
 const network = networks.ethereum;
@@ -174,7 +174,7 @@ import {
   getTokenAllowance,
   isNativeToken,
   NATIVE_TOKEN_ADDRESS,
-} from "@mirageprivacy/mirage-sdk";
+} from "@mirageprivacy/sdk";
 
 const meta = await getTokenMetadata(tokenAddress, publicClient);
 // { address, name, symbol, decimals }
@@ -189,7 +189,7 @@ isNativeToken(NATIVE_TOKEN_ADDRESS); // true
 ## Service utilities
 
 ```ts
-import { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "@mirageprivacy/mirage-sdk";
+import { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "@mirageprivacy/sdk";
 
 // SGX attestation status
 const key = await fetchNetworkKey("https://sgx1.mirageprivacy.com");
@@ -216,7 +216,7 @@ import {
   TransferAbortedError,
   TransferTimeoutError,
   TransferLimitError,
-} from "@mirageprivacy/mirage-sdk";
+} from "@mirageprivacy/sdk";
 
 try {
   for await (const event of prepared.execute()) { /* ... */ }

@@ -431,7 +431,7 @@ import {
   TransferTimeoutError,
   TransferLimitError,
   WhitelistRequiredError,
-} from "@mirageprivacy/mirage-sdk";
+} from "@mirageprivacy/sdk";
 import { createWalletClient, createPublicClient, http, parseUnits, formatUnits } from "viem";
 
 // walletClient and publicClient are provided by the app (e.g. via AppKit/MetaMask).
@@ -684,4 +684,3 @@ For Tempo: gas price is fixed, native token is a stablecoin, no conversion neede
 - `@noble/curves`: direct dependency (secp256k1 point arithmetic for blinded signer derivation)
 - `@noble/hashes`: direct dependency (sha256 for the attestation payload commitment)
 - `@phala/dcap-qvl`: direct dependency (SGX quote verification; dynamically imported so it is only loaded when verifying)
-
