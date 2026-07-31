@@ -154,6 +154,8 @@ function attestationOptions(network: NetworkConfig): { verify: VerifyAttestation
     verify: {
       expectedMrSigner: policy?.expectedMrSigner,
       allowedTcbStatus: policy?.allowedTcbStatus,
+      allowedAdvisoryIds: policy?.allowedAdvisoryIds,
+      minimumIsvSvn: policy?.minimumIsvSvn,
       allowDebug: policy?.allowDebug,
       maxAgeSecs: policy?.maxAgeSecs,
     },

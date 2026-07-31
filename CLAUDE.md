@@ -61,6 +61,8 @@ interface NetworkConfig {
     // networks. MRENCLAVE is not pinned: it changes on every enclave release.
     expectedMrSigner?: string[];
     allowedTcbStatus?: TcbStatus[];
+    allowedAdvisoryIds?: string[];
+    minimumIsvSvn?: number;
     allowDebug?: boolean;     // testnets only; debug memory is not protected
     maxAgeSecs?: number;
   };
@@ -380,6 +382,8 @@ async function verifyAttestation(
 interface VerifyAttestationOptions {
   expectedMrSigner?: string[];    // pin the signing identity
   allowedTcbStatus?: TcbStatus[]; // default: UpToDate, SWHardeningNeeded
+  allowedAdvisoryIds?: string[];  // reject advisories outside this allowlist
+  minimumIsvSvn?: number;         // minimum enclave security version
   allowDebug?: boolean;           // never enable against production nodes
   requireGlobal?: boolean;        // default true
   maxAgeSecs?: number;            // default 86_400; 0 disables

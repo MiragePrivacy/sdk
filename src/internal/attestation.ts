@@ -129,6 +129,10 @@ export interface VerifyAttestationOptions {
   expectedMrSigner?: string[];
   /** Accepted TCB states. Defaults to UpToDate and SWHardeningNeeded. */
   allowedTcbStatus?: TcbStatus[];
+  /** Reject Intel advisories not included in this allowlist. */
+  allowedAdvisoryIds?: string[];
+  /** Reject enclaves whose verified ISVSVN is below this value. */
+  minimumIsvSvn?: number;
   /** Accept debug-mode enclaves. Never enable against production nodes. */
   allowDebug?: boolean;
   /** Require the attestation to be for the global key. Defaults to true. */
@@ -157,11 +161,24 @@ export async function verifyAttestation(
   const {
     expectedMrSigner,
     allowedTcbStatus = DEFAULT_ALLOWED_TCB,
+    allowedAdvisoryIds,
+    minimumIsvSvn,
     allowDebug = false,
     requireGlobal = true,
     maxAgeSecs = DEFAULT_MAX_AGE_SECS,
     nowSecs = Math.floor(Date.now() / 1000),
   } = options;
+
+  if (
+    minimumIsvSvn !== undefined &&
+    (!Number.isInteger(minimumIsvSvn) || minimumIsvSvn < 0 || minimumIsvSvn > 65_535)
+  ) {
+    throw new MirageError(
+      "INVALID_ATTESTATION_POLICY",
+      "minimumIsvSvn must be an integer between 0 and 65535",
+      { meta: { minimumIsvSvn } },
+    );
+  }
 
   const { QuoteVerifier } = await import("@phala/dcap-qvl");
 
@@ -186,6 +203,26 @@ export async function verifyAttestation(
     );
   }
 
+  const advisoryIds = verified.advisory_ids ?? [];
+  if (allowedAdvisoryIds !== undefined) {
+    const allowed = new Set(allowedAdvisoryIds);
+    const disallowedAdvisoryIds = advisoryIds.filter((id: string) => !allowed.has(id));
+    if (disallowedAdvisoryIds.length > 0) {
+      throw new MirageError(
+        "ATTESTATION_TCB_REJECTED",
+        `Enclave TCB reported disallowed advisories: ${disallowedAdvisoryIds.join(", ")}`,
+        {
+          meta: {
+            status: verified.status,
+            advisoryIds,
+            disallowedAdvisoryIds,
+            allowedAdvisoryIds,
+          },
+        },
+      );
+    }
+  }
+
   const sgx = verified.report.asSgx();
   if (!sgx) {
     throw new MirageError(
@@ -196,6 +233,22 @@ export async function verifyAttestation(
 
   const mrEnclave = bytesToHex(sgx.mrEnclave);
   const mrSigner = bytesToHex(sgx.mrSigner);
+  const isvSvn = sgx.isvSvn;
+
+  if (minimumIsvSvn !== undefined && isvSvn < minimumIsvSvn) {
+    throw new MirageError(
+      "ATTESTATION_TCB_REJECTED",
+      `Enclave ISVSVN ${isvSvn} is below the required minimum ${minimumIsvSvn}`,
+      {
+        meta: {
+          status: verified.status,
+          advisoryIds,
+          isvSvn,
+          minimumIsvSvn,
+        },
+      },
+    );
+  }
 
   // MRSIGNER identifies who signed the enclave and survives rebuilds, so it is
   // the measurement worth pinning. MRENCLAVE is reported but not checked: it
@@ -252,9 +305,10 @@ export async function verifyAttestation(
   return {
     verified: true,
     tcbStatus: verified.status as TcbStatus,
-    advisoryIds: verified.advisory_ids ?? [],
+    advisoryIds,
     mrenclave: mrEnclave,
     mrsigner: mrSigner,
+    isvSvn,
     debug: report.isDebug,
     timestamp: report.timestamp,
   };

@@ -60,6 +60,16 @@ export interface NetworkConfig {
     expectedMrSigner?: string[];
     allowedTcbStatus?: TcbStatus[];
     /**
+     * Reject a quote if Intel reports an advisory outside this allowlist.
+     * An empty list requires a quote with no advisory IDs.
+     */
+    allowedAdvisoryIds?: string[];
+    /**
+     * Minimum enclave security version. Releases must bump ISVSVN whenever a
+     * security-relevant enclave fix is required by policy.
+     */
+    minimumIsvSvn?: number;
+    /**
      * Accept debug-mode enclaves, whose memory is not protected and whose
      * secrets can be read by the host. Testnets only.
      */
@@ -168,6 +178,8 @@ export interface AttestationVerification {
   advisoryIds: string[];
   mrenclave: string;
   mrsigner: string;
+  /** Enclave security version from the verified SGX report. */
+  isvSvn: number;
   debug: boolean;
   /** Unix seconds the enclave generated the report at. */
   timestamp: number;

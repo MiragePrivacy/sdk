@@ -274,6 +274,8 @@ export function fetchNetworkStatus(network: NetworkConfig): Promise<NetworkKeySt
         : {
             expectedMrSigner: policy?.expectedMrSigner,
             allowedTcbStatus: policy?.allowedTcbStatus,
+            allowedAdvisoryIds: policy?.allowedAdvisoryIds,
+            minimumIsvSvn: policy?.minimumIsvSvn,
             allowDebug: policy?.allowDebug,
             maxAgeSecs: policy?.maxAgeSecs,
           },

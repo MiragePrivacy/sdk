@@ -155,6 +155,8 @@ describe("verifyAttestation", () => {
       status?: string;
       mrEnclave?: Uint8Array;
       mrSigner?: Uint8Array;
+      isvSvn?: number;
+      advisoryIds?: string[];
       reportData?: Uint8Array;
     },
     run: (verify: typeof import("../src/internal/attestation.js").verifyAttestation) => Promise<void>,
@@ -162,6 +164,7 @@ describe("verifyAttestation", () => {
     const sgx = {
       mrEnclave: report.mrEnclave ?? new Uint8Array(32).fill(0xaa),
       mrSigner: report.mrSigner ?? new Uint8Array(32).fill(0xbb),
+      isvSvn: report.isvSvn ?? 2,
       reportData: report.reportData ?? new Uint8Array(64),
     };
 
@@ -171,7 +174,7 @@ describe("verifyAttestation", () => {
           allowDebug: () => ({
             verify: () => ({
               status: report.status ?? "UpToDate",
-              advisory_ids: [],
+              advisory_ids: report.advisoryIds ?? [],
               report: { asSgx: () => sgx },
             }),
           }),
@@ -207,6 +210,7 @@ describe("verifyAttestation", () => {
       expect(result.verified).toBe(true);
       expect(result.tcbStatus).toBe("UpToDate");
       expect(result.mrenclave).toBe("aa".repeat(32));
+      expect(result.isvSvn).toBe(2);
     });
   });
 
@@ -239,6 +243,73 @@ describe("verifyAttestation", () => {
         });
       },
     );
+  });
+
+  it("accepts an explicitly allowed TCB status, advisory set, and ISVSVN", async () => {
+    await withStub(
+      {
+        status: "ConfigurationAndSWHardeningNeeded",
+        advisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+        isvSvn: 2,
+        reportData: committedReportData(),
+      },
+      async (verify) => {
+        await expect(
+          verify(quote, PAYLOAD, {
+            allowedTcbStatus: ["ConfigurationAndSWHardeningNeeded"],
+            allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+            minimumIsvSvn: 2,
+          }),
+        ).resolves.toMatchObject({
+          tcbStatus: "ConfigurationAndSWHardeningNeeded",
+          advisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+          isvSvn: 2,
+        });
+      },
+    );
+  });
+
+  it("rejects an advisory outside the configured allowlist", async () => {
+    await withStub(
+      {
+        status: "ConfigurationAndSWHardeningNeeded",
+        advisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615", "INTEL-SA-99999"],
+        reportData: committedReportData(),
+      },
+      async (verify) => {
+        await expect(
+          verify(quote, PAYLOAD, {
+            allowedTcbStatus: ["ConfigurationAndSWHardeningNeeded"],
+            allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+          }),
+        ).rejects.toMatchObject({
+          code: "ATTESTATION_TCB_REJECTED",
+          meta: { disallowedAdvisoryIds: ["INTEL-SA-99999"] },
+        });
+      },
+    );
+  });
+
+  it("rejects an enclave below the configured minimum ISVSVN", async () => {
+    await withStub(
+      { isvSvn: 1, reportData: committedReportData() },
+      async (verify) => {
+        await expect(
+          verify(quote, PAYLOAD, { minimumIsvSvn: 2 }),
+        ).rejects.toMatchObject({
+          code: "ATTESTATION_TCB_REJECTED",
+          meta: { isvSvn: 1, minimumIsvSvn: 2 },
+        });
+      },
+    );
+  });
+
+  it("rejects an invalid minimum ISVSVN policy", async () => {
+    await withStub({ reportData: committedReportData() }, async (verify) => {
+      await expect(
+        verify(quote, PAYLOAD, { minimumIsvSvn: Number.NaN }),
+      ).rejects.toMatchObject({ code: "INVALID_ATTESTATION_POLICY" });
+    });
   });
 
   it("rejects an unexpected MRSIGNER", async () => {

@@ -193,7 +193,20 @@ import { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "@miragepriv
 
 // SGX attestation status
 const key = await fetchNetworkKey("https://sgx1.mirageprivacy.com");
-// { publicKey, attested, debug, chainId, mrenclave?, mrsigner? }
+// { publicKey, attested, debug, chainId, mrenclave?, mrsigner?, verification? }
+
+// Tune the verification policy for a known hardened enclave release.
+const hardenedKey = await fetchNetworkKey("https://sgx1.mirageprivacy.com", {
+  verify: {
+    allowedTcbStatus: [
+      "UpToDate",
+      "SWHardeningNeeded",
+      "ConfigurationAndSWHardeningNeeded",
+    ],
+    allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+    minimumIsvSvn: 2,
+  },
+});
 
 // Service health and transfer limits
 const health = await fetchApiHealth("https://api.mirageprivacy.com");

@@ -53,6 +53,16 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       required: true,
       allowDebug: false,
       expectedMrSigner: [MIRAGE_MRSIGNER],
+      allowedTcbStatus: [
+        "UpToDate",
+        "SWHardeningNeeded",
+        "ConfigurationAndSWHardeningNeeded",
+      ],
+      // Rust's Fortanix SGX target has mitigated INTEL-SA-00615 since 1.62.1.
+      // ISVSVN 2 identifies the deployed hardened Mirage enclave. The remaining
+      // INTEL-SA-00289 platform risk is accepted explicitly here.
+      allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+      minimumIsvSvn: 2,
     },
     uniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
     priceChainId: 1,

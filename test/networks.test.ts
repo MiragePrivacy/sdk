@@ -95,6 +95,18 @@ describe("createNetworkConfig", () => {
     expect(config.gas).not.toBe(networks.ethereum.gas);
   });
 
+  it("pins the production attestation exception to known advisories and ISVSVN", () => {
+    expect(networks.ethereum.attestation).toMatchObject({
+      allowedTcbStatus: [
+        "UpToDate",
+        "SWHardeningNeeded",
+        "ConfigurationAndSWHardeningNeeded",
+      ],
+      allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+      minimumIsvSvn: 2,
+    });
+  });
+
   it("overrides top-level fields", () => {
     const config = createNetworkConfig("ethereum", {
       platformFeeRate: 100n,
