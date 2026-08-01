@@ -3,6 +3,7 @@ import type {
   EscrowKind,
   ApprovalCheckpoint,
   FeeEstimate,
+  FeeRefreshOverrides,
   GasConstants,
   GasPrice,
   NetworkConfig,
@@ -188,6 +189,7 @@ interface TransferContext {
   decimals: number[];
   ethPriceUsd: number;
   fees: FeeEstimate;
+  platformFeeBase: bigint;
   obfuscation?: ObfuscationResult;
   /** Largest single row in USD, for reporting a server-side whitelist refusal. */
   maxRowUsd: number;
@@ -203,17 +205,26 @@ async function buildContext(
   const escrowType = params.resume?.escrowType ?? deriveEscrowKind(rows);
   const rewardToken = pickRewardToken(rows);
 
-  const metadata = await Promise.all(
+  const rewardDecimalsOf = (meta: Awaited<ReturnType<typeof getTokenMetadata>>[]) =>
+    meta.find((m) => m.address.toLowerCase() === rewardToken.toLowerCase())?.decimals ??
+    meta[0].decimals;
+
+  // The price lookup needs the reward decimals, so it chains on metadata; the
+  // API fetches are independent and run alongside both.
+  const metadataPromise = Promise.all(
     rows.map((row) => getTokenMetadata(row.tokenAddress, publicClient)),
   );
+  const [metadata, ethPriceUsd, health, obfuscation] = await Promise.all([
+    metadataPromise,
+    metadataPromise.then((meta) =>
+      resolveEthPrice(network, publicClient, rewardToken, rewardDecimalsOf(meta)),
+    ),
+    fetchLimits(network.apiServer),
+    options.skipObfuscation ? undefined : fetchObfuscation(network.apiServer, escrowType),
+  ]);
   const decimals = metadata.map((m) => m.decimals);
-  const rewardDecimals =
-    metadata.find((m) => m.address.toLowerCase() === rewardToken.toLowerCase())?.decimals ??
-    decimals[0];
+  const rewardDecimals = rewardDecimalsOf(metadata);
 
-  const ethPriceUsd = await resolveEthPrice(network, publicClient, rewardToken, rewardDecimals);
-
-  const health = await fetchLimits(network.apiServer);
   checkLimits({
     health,
     chainId: network.chainId,
@@ -222,10 +233,6 @@ async function buildContext(
     ethPriceUsd,
     hasAccessToken: !!accessToken,
   });
-
-  const obfuscation = options.skipObfuscation
-    ? undefined
-    : await fetchObfuscation(network.apiServer, escrowType);
 
   // Platform fee is charged on the whole batch, normalized to the reward asset.
   // Scale in bigint: converting via float loses precision at 18 decimals.
@@ -256,6 +263,7 @@ async function buildContext(
     decimals,
     ethPriceUsd,
     fees,
+    platformFeeBase,
     obfuscation,
     maxRowUsd: Math.max(...rows.map((row, i) => rowValueUsd(row, decimals[i], ethPriceUsd))),
     whitelistThresholdUsd: threshold != null ? Number(threshold) : undefined,
@@ -408,12 +416,40 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       if (step.step !== "fees") yield step;
     }
   }
+
+  async function refreshFees(overrides: FeeRefreshOverrides = {}): Promise<FeeEstimate> {
+    if (checkpoint || deployedSecrets) {
+      throw new MirageError(
+        "INVALID_STAGE",
+        "Fees are locked once approval has begun; the reward amount is baked into the allowances",
+      );
+    }
+    if (overrides.ethToTokenRate !== undefined) {
+      context.ethPriceUsd = overrides.ethToTokenRate;
+    }
+    context.fees = await estimateFees({
+      transfers: context.rows,
+      escrowType: context.escrowType,
+      tokenDecimals: context.rewardDecimals,
+      network: params.network,
+      publicClient: params.publicClient,
+      gasPrice: overrides.gasPrice ?? params.gasPrice,
+      gasOverrides: buildGasOverrides(context.obfuscation?.gasAnalysis, params.network.kind),
+      ethToTokenRate: isNativeToken(context.rewardToken) ? undefined : context.ethPriceUsd,
+      platformFeeBase: context.platformFeeBase,
+    });
+    return context.fees;
+  }
+
   return {
-    fees: context.fees,
+    get fees() {
+      return context.fees;
+    },
     approve,
     deploy,
     complete,
     execute,
+    refreshFees,
   };
 }
 

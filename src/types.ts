@@ -275,8 +275,21 @@ export type TransferStep =
   /** All recipients delivered. */
   | { step: "complete"; transfers: TransferEvent[] };
 
+export interface FeeRefreshOverrides {
+  gasPrice?: GasPrice;
+  /** Fresh ETH->token rate; skips the price oracle when supplied. */
+  ethToTokenRate?: number;
+}
+
 export interface PreparedTransfer {
   fees: FeeEstimate;
+  /**
+   * Re-estimate fees from the prepared context without refetching metadata,
+   * limits, or bytecode. Makes no network calls when both overrides are
+   * supplied. Throws once approval has begun, since the reward amount is
+   * baked into the allowances.
+   */
+  refreshFees(overrides?: FeeRefreshOverrides): Promise<FeeEstimate>;
   approve(walletClient: WalletClient): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
   deploy(
     walletClient: WalletClient,

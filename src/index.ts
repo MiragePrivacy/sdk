@@ -51,6 +51,7 @@ export type {
   GasConstants,
   NativeGasConstants,
   FeeEstimate,
+  FeeRefreshOverrides,
   AssetRequirement,
   TransferEvent,
   TransferRow,
