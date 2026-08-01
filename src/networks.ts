@@ -1,4 +1,4 @@
-import type { NetworkConfig, NetworkId } from "./types.js";
+import type { NetworkConfig, NetworkId, TcbStatus } from "./types.js";
 
 type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
@@ -14,6 +14,19 @@ const NESTED_KEYS = ["gas", "nativeGas", "attestation"] as const;
  */
 export const MIRAGE_MRSIGNER =
   "0xeb81f8f64bf9d8e4bba26943a1161e7ca4e878b0775c33637e60516badfb52c3";
+
+/**
+ * TCB states and Intel advisories accepted on every network. All Mirage nodes
+ * run on the same SGX platform, so the platform risk assessment is shared.
+ * Rust's Fortanix SGX target has mitigated INTEL-SA-00615 since 1.62.1; the
+ * remaining INTEL-SA-00289 platform risk is accepted explicitly here.
+ */
+const ALLOWED_TCB_STATUS: TcbStatus[] = [
+  "UpToDate",
+  "SWHardeningNeeded",
+  "ConfigurationAndSWHardeningNeeded",
+];
+const ALLOWED_ADVISORY_IDS = ["INTEL-SA-00289", "INTEL-SA-00615"];
 
 /**
  * Built-in network configs. Only `ethereum` is a production network; sepolia
@@ -53,15 +66,9 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       required: true,
       allowDebug: false,
       expectedMrSigner: [MIRAGE_MRSIGNER],
-      allowedTcbStatus: [
-        "UpToDate",
-        "SWHardeningNeeded",
-        "ConfigurationAndSWHardeningNeeded",
-      ],
-      // Rust's Fortanix SGX target has mitigated INTEL-SA-00615 since 1.62.1.
-      // ISVSVN 2 identifies the deployed hardened Mirage enclave. The remaining
-      // INTEL-SA-00289 platform risk is accepted explicitly here.
-      allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+      allowedTcbStatus: ALLOWED_TCB_STATUS,
+      allowedAdvisoryIds: ALLOWED_ADVISORY_IDS,
+      // ISVSVN 2 identifies the deployed hardened Mirage enclave.
       minimumIsvSvn: 2,
     },
     uniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
@@ -98,7 +105,12 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
     // than turning verification off; the signer check still applies.
-    attestation: { required: true, expectedMrSigner: [MIRAGE_MRSIGNER] },
+    attestation: {
+      required: true,
+      expectedMrSigner: [MIRAGE_MRSIGNER],
+      allowedTcbStatus: ALLOWED_TCB_STATUS,
+      allowedAdvisoryIds: ALLOWED_ADVISORY_IDS,
+    },
     uniswapRouter: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
     // Testnet has no liquid market; price from mainnet.
     priceChainId: 1,
@@ -135,7 +147,12 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
     // than turning verification off; the signer check still applies.
-    attestation: { required: true, expectedMrSigner: [MIRAGE_MRSIGNER] },
+    attestation: {
+      required: true,
+      expectedMrSigner: [MIRAGE_MRSIGNER],
+      allowedTcbStatus: ALLOWED_TCB_STATUS,
+      allowedAdvisoryIds: ALLOWED_ADVISORY_IDS,
+    },
   },
 };
 
