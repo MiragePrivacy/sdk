@@ -211,9 +211,19 @@ async function buildContext(
     meta[0].decimals;
 
   // The price lookup needs the reward decimals, so it chains on metadata; the
-  // API fetches are independent and run alongside both.
+  // API fetches are independent and run alongside both. Rows sharing a token
+  // share one lookup.
+  const uniqueMetadata = new Map<string, ReturnType<typeof getTokenMetadata>>();
   const metadataPromise = Promise.all(
-    rows.map((row) => getTokenMetadata(row.tokenAddress, publicClient)),
+    rows.map((row) => {
+      const key = row.tokenAddress.toLowerCase();
+      let promise = uniqueMetadata.get(key);
+      if (!promise) {
+        promise = getTokenMetadata(row.tokenAddress, publicClient);
+        uniqueMetadata.set(key, promise);
+      }
+      return promise;
+    }),
   );
   const [metadata, ethPriceUsd, health, obfuscation] = await Promise.all([
     metadataPromise,

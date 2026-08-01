@@ -13,19 +13,43 @@ export function isNativeToken(address: Address): boolean {
   return getAddress(address) === getAddress(NATIVE_TOKEN_ADDRESS);
 }
 
-export async function getTokenMetadata(
+// ERC20 metadata is immutable, so cache it per chain. Storing the in-flight
+// promise also collapses concurrent lookups (e.g. batch rows sharing a token)
+// into one set of reads; failures are evicted so they retry.
+const metadataCache = new Map<string, Promise<TokenMetadata>>();
+
+export function getTokenMetadata(
   tokenAddress: Address,
   publicClient: PublicClient,
 ): Promise<TokenMetadata> {
   if (isNativeToken(tokenAddress)) {
-    return {
+    return Promise.resolve({
       address: NATIVE_TOKEN_ADDRESS,
       name: "Ether",
       symbol: "ETH",
       decimals: 18,
-    };
+    });
   }
 
+  const chainId = publicClient.chain?.id;
+  const key = chainId !== undefined ? `${chainId}:${tokenAddress.toLowerCase()}` : undefined;
+  if (key) {
+    const cached = metadataCache.get(key);
+    if (cached) return cached;
+  }
+
+  const promise = fetchTokenMetadata(tokenAddress, publicClient);
+  if (key) {
+    metadataCache.set(key, promise);
+    promise.catch(() => metadataCache.delete(key));
+  }
+  return promise;
+}
+
+async function fetchTokenMetadata(
+  tokenAddress: Address,
+  publicClient: PublicClient,
+): Promise<TokenMetadata> {
   const [name, symbol, decimals] = await Promise.all([
     publicClient.readContract({
       address: tokenAddress,
