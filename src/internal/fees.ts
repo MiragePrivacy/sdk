@@ -1,5 +1,5 @@
 import type { Address, PublicClient } from "viem";
-import { formatUnits } from "viem";
+import { createPublicClient, formatUnits, http } from "viem";
 import type {
   EscrowKind,
   FeeEstimate,
@@ -116,10 +116,16 @@ export async function resolveEthPrice(
     );
   }
 
+  // The price router may live on a different chain than the transfer (testnets
+  // price against mainnet), so it needs its own client when priceRpcUrl is set.
+  const priceClient = network.priceRpcUrl
+    ? (createPublicClient({ transport: http(network.priceRpcUrl) }) as PublicClient)
+    : publicClient;
+
   return getEthToTokenRate(
     network.priceTokenContract ?? tokenAddress,
     routerAddress,
-    publicClient,
+    priceClient,
     tokenDecimals,
   );
 }
