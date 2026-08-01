@@ -290,6 +290,14 @@ export interface PreparedTransfer {
    * baked into the allowances.
    */
   refreshFees(overrides?: FeeRefreshOverrides): Promise<FeeEstimate>;
+  /**
+   * Replace transfer amounts and recipients, reusing the prepared context.
+   * The token layout is fixed at preparation: same row count and the same
+   * token per row, since the cached metadata, escrow kind, and bytecode all
+   * derive from it. Re-checks limits and re-estimates fees without network
+   * calls when overrides are supplied. Throws once approval has begun.
+   */
+  updateTransfers(transfers: TransferRow[], overrides?: FeeRefreshOverrides): Promise<FeeEstimate>;
   approve(walletClient: WalletClient): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
   deploy(
     walletClient: WalletClient,

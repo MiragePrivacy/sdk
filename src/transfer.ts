@@ -190,6 +190,7 @@ interface TransferContext {
   ethPriceUsd: number;
   fees: FeeEstimate;
   platformFeeBase: bigint;
+  health: ApiHealth;
   obfuscation?: ObfuscationResult;
   /** Largest single row in USD, for reporting a server-side whitelist refusal. */
   maxRowUsd: number;
@@ -264,6 +265,7 @@ async function buildContext(
     ethPriceUsd,
     fees,
     platformFeeBase,
+    health,
     obfuscation,
     maxRowUsd: Math.max(...rows.map((row, i) => rowValueUsd(row, decimals[i], ethPriceUsd))),
     whitelistThresholdUsd: threshold != null ? Number(threshold) : undefined,
@@ -441,6 +443,53 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     return context.fees;
   }
 
+  async function updateTransfers(
+    transfers: TransferRow[],
+    overrides: FeeRefreshOverrides = {},
+  ): Promise<FeeEstimate> {
+    if (checkpoint || deployedSecrets) {
+      throw new MirageError(
+        "INVALID_STAGE",
+        "Transfers are locked once approval has begun; prepare a new transfer instead",
+      );
+    }
+    // The cached metadata, escrow kind, reward asset, and bytecode are all
+    // derived from the token layout, so it is fixed at preparation time.
+    const layoutChanged =
+      transfers.length !== context.rows.length ||
+      transfers.some(
+        (row, i) => row.tokenAddress.toLowerCase() !== context.rows[i].tokenAddress.toLowerCase(),
+      );
+    if (layoutChanged) {
+      throw new MirageError(
+        "INVALID_PARAMS",
+        "Token layout changed; prepare a new transfer to change tokens or row count",
+      );
+    }
+    if (overrides.ethToTokenRate !== undefined) {
+      context.ethPriceUsd = overrides.ethToTokenRate;
+    }
+    checkLimits({
+      health: context.health,
+      chainId: params.network.chainId,
+      rows: transfers,
+      decimals: context.decimals,
+      ethPriceUsd: context.ethPriceUsd,
+      hasAccessToken: !!params.accessToken,
+    });
+    context.rows = transfers;
+    context.platformFeeBase = transfers.reduce((sum, row, i) => {
+      const scaled = scaleAmount(row.amount, context.decimals[i], context.rewardDecimals);
+      return (
+        sum + (isNativeToken(row.tokenAddress) ? applyEthPrice(scaled, context.ethPriceUsd) : scaled)
+      );
+    }, 0n);
+    context.maxRowUsd = Math.max(
+      ...transfers.map((row, i) => rowValueUsd(row, context.decimals[i], context.ethPriceUsd)),
+    );
+    return refreshFees(overrides);
+  }
+
   return {
     get fees() {
       return context.fees;
@@ -450,6 +499,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     complete,
     execute,
     refreshFees,
+    updateTransfers,
   };
 }
 
