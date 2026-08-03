@@ -144,6 +144,12 @@ export interface VerifyAttestationOptions {
 }
 
 const DEFAULT_MAX_AGE_SECS = 86_400;
+/**
+ * Tolerance for clock differences between the quoting platform and the client.
+ * Anything further ahead is rejected: a future timestamp would otherwise
+ * produce a negative age and defeat the freshness check entirely.
+ */
+const MAX_CLOCK_SKEW_SECS = 300;
 
 /**
  * Verify an SGX quote and bind it to the served attestation payload.
@@ -294,12 +300,22 @@ export async function verifyAttestation(
     );
   }
 
-  if (maxAgeSecs > 0 && nowSecs - report.timestamp > maxAgeSecs) {
-    throw new MirageError(
-      "ATTESTATION_STALE",
-      `Attestation is ${nowSecs - report.timestamp}s old, exceeding the ${maxAgeSecs}s limit`,
-      { meta: { timestamp: report.timestamp, maxAgeSecs } },
-    );
+  if (maxAgeSecs > 0) {
+    const age = nowSecs - report.timestamp;
+    if (age < -MAX_CLOCK_SKEW_SECS) {
+      throw new MirageError(
+        "ATTESTATION_STALE",
+        `Attestation is dated ${-age}s in the future, exceeding the ${MAX_CLOCK_SKEW_SECS}s clock skew allowance`,
+        { meta: { timestamp: report.timestamp, nowSecs, maxClockSkewSecs: MAX_CLOCK_SKEW_SECS } },
+      );
+    }
+    if (age > maxAgeSecs) {
+      throw new MirageError(
+        "ATTESTATION_STALE",
+        `Attestation is ${age}s old, exceeding the ${maxAgeSecs}s limit`,
+        { meta: { timestamp: report.timestamp, maxAgeSecs } },
+      );
+    }
   }
 
   return {
