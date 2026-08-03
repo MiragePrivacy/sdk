@@ -312,21 +312,35 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
   const context = await buildContext(params);
   let checkpoint: ApprovalCheckpoint | undefined;
   let deployedSecrets: TransferSecrets | undefined = params.resume;
-  // Set before the first approval is signed rather than after the generator
-  // finishes: allowances commit to the reward amount from that point on, so
-  // the transfer must stop being mutable immediately.
-  let approvalStarted = false;
+  // Latched once an approval is actually broadcast: from that point the
+  // allowances commit to the reward amount, so the transfer must stop being
+  // mutable. Kept separate from the in-progress guard below so a rejected
+  // wallet prompt, which submits nothing, stays retryable.
+  let approvalBroadcast = false;
+  let approvalInProgress = false;
 
   async function* approve(
     walletClient: WalletClient,
   ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
-    if (approvalStarted && !checkpoint) {
+    if (approvalInProgress) {
       throw new MirageError(
         "INVALID_STAGE",
         "An approval sequence is already in progress for this transfer",
       );
     }
-    approvalStarted = true;
+    approvalInProgress = true;
+    try {
+      return yield* runApprovals(walletClient);
+    } finally {
+      // Released even on failure; nothing was committed unless a transaction
+      // was broadcast, which approvalBroadcast records independently.
+      approvalInProgress = false;
+    }
+  }
+
+  async function* runApprovals(
+    walletClient: WalletClient,
+  ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
     const account = getAccount(walletClient);
     const iterator = approveForDeployment({
       transfers: context.rows,
@@ -345,6 +359,8 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
         checkpoint = next.value;
         return next.value;
       }
+      // A yielded step carries a transaction hash, so the allowance is live.
+      approvalBroadcast = true;
       yield {
         step: "approve",
         hash: next.value.hash,
@@ -473,7 +489,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
   }
 
   async function refreshFees(overrides: FeeRefreshOverrides = {}): Promise<FeeEstimate> {
-    if (approvalStarted || checkpoint || deployedSecrets) {
+    if (approvalBroadcast || approvalInProgress || checkpoint || deployedSecrets) {
       throw new MirageError(
         "INVALID_STAGE",
         "Fees are locked once approval has begun; the reward amount is baked into the allowances",
@@ -509,7 +525,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     transfers: TransferRow[],
     overrides: FeeRefreshOverrides = {},
   ): Promise<FeeEstimate> {
-    if (approvalStarted || checkpoint || deployedSecrets) {
+    if (approvalBroadcast || approvalInProgress || checkpoint || deployedSecrets) {
       throw new MirageError(
         "INVALID_STAGE",
         "Transfers are locked once approval has begun; prepare a new transfer instead",
