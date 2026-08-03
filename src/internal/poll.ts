@@ -60,13 +60,28 @@ export async function* pollTransfers(params: {
             includeTransactions: true,
           });
 
-          const match = block.transactions.find(
+          // Exact value, matching the ERC20 branch: a larger unrelated payment
+          // to the same recipient is not this delivery.
+          const candidates = block.transactions.filter(
             (tx) =>
               typeof tx !== "string" &&
               tx.to?.toLowerCase() === row.recipientAddress.toLowerCase() &&
-              tx.value >= row.amount &&
+              tx.value === row.amount &&
               !claimed.has(tx.hash),
           );
+
+          let match: (typeof candidates)[number] | undefined;
+          for (const candidate of candidates) {
+            if (typeof candidate === "string") continue;
+            // A reverted transaction still appears in the block but moved no
+            // value, so it must not count as a delivery.
+            const receipt = await publicClient.getTransactionReceipt({ hash: candidate.hash });
+            if (receipt.status === "success") {
+              match = candidate;
+              break;
+            }
+            claimed.add(candidate.hash);
+          }
 
           if (match && typeof match !== "string") {
             claimed.add(match.hash);

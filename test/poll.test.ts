@@ -178,6 +178,7 @@ describe("pollTransfers", () => {
         ],
       }),
       getLogs: vi.fn(),
+      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
     } as any;
 
     const seen = [];
@@ -193,5 +194,72 @@ describe("pollTransfers", () => {
 
     expect(seen).toEqual(["0xdd"]);
     expect(client.getLogs).not.toHaveBeenCalled();
+  });
+
+  it("ignores a reverted native transaction to the recipient", async () => {
+    const rows = [row(NATIVE_TOKEN_ADDRESS, 1_000n, R1)];
+    const client = {
+      getBlockNumber: vi.fn().mockResolvedValue(10n),
+      getBlock: vi.fn().mockResolvedValue({
+        number: 10n,
+        transactions: [
+          { hash: "0xbad", to: R1, from: "0x00000000000000000000000000000000000000aa", value: 1_000n },
+        ],
+      }),
+      getLogs: vi.fn(),
+      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "reverted" }),
+    } as any;
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    await expect(
+      (async () => {
+        for await (const _ of pollTransfers({
+          transfers: rows,
+          publicClient: client,
+          timeout: 5_000,
+          fromBlock: 10n,
+          pollIntervalMs: 1,
+          signal: controller.signal,
+        })) {
+          // unreachable: the only candidate reverted
+        }
+      })(),
+    ).rejects.toMatchObject({ code: "TRANSFER_ABORTED" });
+  });
+
+  it("ignores a native transaction whose value does not match exactly", async () => {
+    const rows = [row(NATIVE_TOKEN_ADDRESS, 1_000n, R1)];
+    const client = {
+      getBlockNumber: vi.fn().mockResolvedValue(10n),
+      getBlock: vi.fn().mockResolvedValue({
+        number: 10n,
+        // An unrelated, larger payment to the same recipient.
+        transactions: [
+          { hash: "0xbig", to: R1, from: "0x00000000000000000000000000000000000000aa", value: 5_000n },
+        ],
+      }),
+      getLogs: vi.fn(),
+      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
+    } as any;
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    await expect(
+      (async () => {
+        for await (const _ of pollTransfers({
+          transfers: rows,
+          publicClient: client,
+          timeout: 5_000,
+          fromBlock: 10n,
+          pollIntervalMs: 1,
+          signal: controller.signal,
+        })) {
+          // unreachable: value must match exactly
+        }
+      })(),
+    ).rejects.toMatchObject({ code: "TRANSFER_ABORTED" });
   });
 });
