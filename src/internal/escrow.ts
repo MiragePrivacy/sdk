@@ -240,6 +240,8 @@ export interface DeployResult {
   escrowAddress: Address;
   deployGasUsed: bigint;
   deployEffectiveGasPrice: bigint;
+  /** Block the deploy landed in; the lower bound for delivery polling. */
+  deployBlock: bigint;
 }
 
 export interface ApproveAndDeployResult {
@@ -361,6 +363,7 @@ export async function deployApproved(params: {
     escrowAddress: predictedEscrowAddress,
     deployGasUsed: receipt.gasUsed,
     deployEffectiveGasPrice: receipt.effectiveGasPrice,
+    deployBlock: receipt.blockNumber,
   };
 }
 
@@ -532,6 +535,7 @@ export async function deployAtomicBatch(params: {
     escrowAddress: predictedEscrowAddress,
     deployGasUsed: receipt.gasUsed,
     deployEffectiveGasPrice: receipt.effectiveGasPrice,
+    deployBlock: receipt.blockNumber,
   };
 }
 

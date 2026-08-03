@@ -104,6 +104,29 @@ function applyEthPrice(amount: bigint, ethPriceUsd: number): bigint {
 }
 
 /**
+ * Batch total normalized to the reward asset's units, for the percentage fee.
+ *
+ * Native rows are only price-converted when the reward asset is an ERC20, where
+ * the fee is charged in stablecoin units. When the reward asset is ETH the fee
+ * is charged in wei, so converting to USD there would overcharge by the ETH
+ * price.
+ */
+function computePlatformFeeBase(
+  rows: TransferRow[],
+  decimals: number[],
+  rewardToken: Address,
+  rewardDecimals: number,
+  ethPriceUsd: number,
+): bigint {
+  const rewardIsNative = isNativeToken(rewardToken);
+  return rows.reduce((sum, row, i) => {
+    const scaled = scaleAmount(row.amount, decimals[i], rewardDecimals);
+    const convert = !rewardIsNative && isNativeToken(row.tokenAddress);
+    return sum + (convert ? applyEthPrice(scaled, ethPriceUsd) : scaled);
+  }, 0n);
+}
+
+/**
  * Limits and whitelist thresholds apply per transfer, not to the batch total:
  * ten transfers under the limit are allowed even if their sum exceeds it.
  */
@@ -247,10 +270,13 @@ async function buildContext(
 
   // Platform fee is charged on the whole batch, normalized to the reward asset.
   // Scale in bigint: converting via float loses precision at 18 decimals.
-  const platformFeeBase = rows.reduce((sum, row, i) => {
-    const scaled = scaleAmount(row.amount, decimals[i], rewardDecimals);
-    return sum + (isNativeToken(row.tokenAddress) ? applyEthPrice(scaled, ethPriceUsd) : scaled);
-  }, 0n);
+  const platformFeeBase = computePlatformFeeBase(
+    rows,
+    decimals,
+    rewardToken,
+    rewardDecimals,
+    ethPriceUsd,
+  );
 
   const fees = await estimateFees({
     transfers: rows,
@@ -286,10 +312,21 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
   const context = await buildContext(params);
   let checkpoint: ApprovalCheckpoint | undefined;
   let deployedSecrets: TransferSecrets | undefined = params.resume;
+  // Set before the first approval is signed rather than after the generator
+  // finishes: allowances commit to the reward amount from that point on, so
+  // the transfer must stop being mutable immediately.
+  let approvalStarted = false;
 
   async function* approve(
     walletClient: WalletClient,
   ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
+    if (approvalStarted && !checkpoint) {
+      throw new MirageError(
+        "INVALID_STAGE",
+        "An approval sequence is already in progress for this transfer",
+      );
+    }
+    approvalStarted = true;
     const account = getAccount(walletClient);
     const iterator = approveForDeployment({
       transfers: context.rows,
@@ -413,14 +450,20 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       return;
     }
     let approved: ApprovalCheckpoint | undefined;
-    const approvals = approve(walletClient);
-    while (true) {
-      const next = await approvals.next();
-      if (next.done) {
-        approved = next.value;
-        break;
+    // On atomic-batch networks deploy() approves inside the batched
+    // transaction. Running the standalone pass first would send redundant
+    // approvals, break atomicity, and exceed the deploy-only gas the fee
+    // estimate assumes.
+    if (!params.network.enableAtomicBatch) {
+      const approvals = approve(walletClient);
+      while (true) {
+        const next = await approvals.next();
+        if (next.done) {
+          approved = next.value;
+          break;
+        }
+        yield next.value;
       }
-      yield next.value;
     }
     const deployed = await deploy(walletClient, approved);
     yield deployed;
@@ -430,7 +473,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
   }
 
   async function refreshFees(overrides: FeeRefreshOverrides = {}): Promise<FeeEstimate> {
-    if (checkpoint || deployedSecrets) {
+    if (approvalStarted || checkpoint || deployedSecrets) {
       throw new MirageError(
         "INVALID_STAGE",
         "Fees are locked once approval has begun; the reward amount is baked into the allowances",
@@ -438,6 +481,15 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     }
     if (overrides.ethToTokenRate !== undefined) {
       context.ethPriceUsd = overrides.ethToTokenRate;
+      // The base values native rows at the ETH price, so a new rate invalidates
+      // it. Without this the fee would keep using the old valuation.
+      context.platformFeeBase = computePlatformFeeBase(
+        context.rows,
+        context.decimals,
+        context.rewardToken,
+        context.rewardDecimals,
+        context.ethPriceUsd,
+      );
     }
     context.fees = await estimateFees({
       transfers: context.rows,
@@ -457,7 +509,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     transfers: TransferRow[],
     overrides: FeeRefreshOverrides = {},
   ): Promise<FeeEstimate> {
-    if (checkpoint || deployedSecrets) {
+    if (approvalStarted || checkpoint || deployedSecrets) {
       throw new MirageError(
         "INVALID_STAGE",
         "Transfers are locked once approval has begun; prepare a new transfer instead",
@@ -488,12 +540,15 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       hasAccessToken: !!params.accessToken,
     });
     context.rows = transfers;
-    context.platformFeeBase = transfers.reduce((sum, row, i) => {
-      const scaled = scaleAmount(row.amount, context.decimals[i], context.rewardDecimals);
-      return (
-        sum + (isNativeToken(row.tokenAddress) ? applyEthPrice(scaled, context.ethPriceUsd) : scaled)
-      );
-    }, 0n);
+    // Recomputed from the new rows here because refreshFees only rebuilds the
+    // base when the caller overrides the rate.
+    context.platformFeeBase = computePlatformFeeBase(
+      transfers,
+      context.decimals,
+      context.rewardToken,
+      context.rewardDecimals,
+      context.ethPriceUsd,
+    );
     context.maxRowUsd = Math.max(
       ...transfers.map((row, i) => rowValueUsd(row, context.decimals[i], context.ethPriceUsd)),
     );
@@ -553,6 +608,7 @@ async function* executeTransfer(
   let userApproveGas: bigint | undefined = resume?.userApproveGas;
   let userDeployGas: bigint | undefined = resume?.userDeployGas;
   let userGasPrice: bigint | undefined = resume?.userGasPrice;
+  let deployBlock: bigint | undefined = resume?.fromBlock;
 
   if (!resume) {
     checkAbort(abortSignal);
@@ -594,6 +650,7 @@ async function* executeTransfer(
       deployHash = result.hash;
       userDeployGas = result.deployGasUsed;
       userGasPrice = result.deployEffectiveGasPrice;
+      deployBlock = result.deployBlock;
     } else {
       const approvalSteps: TransferStep[] = [];
       const result = await approveAndDeploy({
@@ -618,6 +675,7 @@ async function* executeTransfer(
       userApproveGas = result.approveGasUsed || undefined;
       userDeployGas = result.deployResult.deployGasUsed;
       userGasPrice = result.deployResult.deployEffectiveGasPrice;
+      deployBlock = result.deployResult.deployBlock;
     }
 
     deployedAt = Date.now();
@@ -627,6 +685,9 @@ async function* executeTransfer(
       hash: deployHash,
       escrowAddress,
       escrowType,
+      // Mirror the staged path's secrets exactly. Omitting the reward would
+      // make a resume re-estimate it, and a different value than the one
+      // committed in the funded escrow gets the signal rejected.
       secrets: {
         escrowAddress,
         escrowType,
@@ -635,6 +696,11 @@ async function* executeTransfer(
         selectorMapping,
         deployHash,
         deployedAt,
+        fromBlock: deployBlock,
+        userApproveGas,
+        userDeployGas,
+        userGasPrice,
+        rewardAmount: fees.rewardAmount,
       },
     };
   }
@@ -695,9 +761,9 @@ async function* executeTransfer(
   // the recipient and amounts from being readable by a substituted key.
   const networkKey = await fetchNetworkKey(network.nomadUrl, attestationOptions(network));
   const fromBlock =
-    resume?.fromBlock ??
-    (resume?.deployHash
-      ? (await publicClient.getTransactionReceipt({ hash: resume.deployHash })).blockNumber
+    deployBlock ??
+    (deployHash
+      ? (await publicClient.getTransactionReceipt({ hash: deployHash })).blockNumber
       : await publicClient.getBlockNumber());
 
   const signalResponse = await submitSignal({
