@@ -9,22 +9,6 @@ export type NetworkKind = "ethereum" | "tempo";
  */
 export type EscrowKind = "erc20" | "native" | "batch";
 
-export interface GasConstants {
-  approve: bigint;
-  deploy: bigint;
-  bond: bigint;
-  fund: bigint;
-  collect: bigint;
-}
-
-/** Gas constants for the native ETH escrow variant. */
-export interface NativeGasConstants {
-  deploy: bigint;
-  bond: bigint;
-  fund: bigint;
-  collect: bigint;
-}
-
 export interface NetworkConfig {
   id: NetworkId;
   kind: NetworkKind;
@@ -32,17 +16,8 @@ export interface NetworkConfig {
   rpcUrl: string;
   nomadUrl: string;
   apiServer: string;
-  enableCompliance: boolean;
-  /** Submit approve + deploy + fund as a single native-multicall tx (tempo). */
+  /** Submit exact quoted approvals and deployment as one native call vector (Tempo). */
   enableAtomicBatch: boolean;
-  nodeFeeUsd: bigint;
-  /** Base node fee for native ETH transfers, in wei. */
-  nodeFeeWei: bigint;
-  platformFeeRate: bigint;
-  gas: GasConstants;
-  nativeGas: NativeGasConstants;
-  /** Multiplier applied to bond + collect gas when sizing the bond pot (x100). */
-  bondPotMarginBps: bigint;
   /**
    * SGX quote verification policy. Verification is on by default: without it
    * the enclave key is only asserted by whatever host answered the request.
@@ -76,61 +51,27 @@ export interface NetworkConfig {
     allowDebug?: boolean;
     maxAgeSecs?: number;
   };
-  /**
-   * Fixed ETH->token rate, bypassing the on-chain oracle. Intended for local
-   * chains and tests where no Uniswap deployment exists.
-   */
-  ethToTokenRate?: number;
-  // Uniswap V2 router address for ETH->token price conversion (EVM ERC20 fees)
-  uniswapRouter?: Address;
-  // WETH address override (normally fetched from router)
-  wethAddress?: Address;
-  // For testnets: use a different chain's RPC for pricing (e.g. mainnet for sepolia)
-  priceRpcUrl?: string;
-  priceChainId?: number;
-  priceTokenContract?: Address;
-  priceUniswapRouter?: Address;
 }
 
 export interface FeeEstimate {
-  transferAmount: bigint;
-  networkFee: bigint;
-  nodeFee: bigint;
-  platformFee: bigint;
-  totalFee: bigint;
-  /**
-   * Gas-token amount the wallet fronts as msg.value at deploy to fund the
-   * node's bond and collect transactions. Zero for batch escrows. Refundable
-   * surplus rather than a fee, so it is excluded from totalFee.
-   *
-   * Denominated in the chain's gas token: wei on EVM (including for ERC20
-   * escrows, which pay it in ETH), token units on tempo. It is only included
-   * in totalAmount when that matches the transfer's own unit, so an ERC20
-   * transfer on EVM must reserve this separately.
-   */
-  bondPot: bigint;
-  /**
-   * Amount pulled by the escrow: transferAmount + nodeFee + platformFee.
-   * Excludes networkFee, which the wallet pays as gas on its own txs.
-   */
-  escrowAmount: bigint;
-  /** Paid to the node for executing the transfer: nodeFee + platformFee. */
+  /** Single public fee quoted by the API; no node/platform split is exposed. */
+  serviceFee: AssetAmount;
+  /** Escrow reward denomination selected from the first ordered Signal. */
+  rewardAsset: Address;
+  /** Complete reward pot; equal to the public service fee amount. */
   rewardAmount: bigint;
-  /** Total leaving the wallet, including the bond pot. */
-  totalAmount: bigint;
-  decimals: number;
-  isNativeEth: boolean;
   /**
-   * Amount each asset must make available to the escrow. This is the canonical
-   * balance/allowance view for mixed-asset batches.
+   * Exact amount of each asset the API requires for principal plus the reward
+   * pot. ERC-20 entries are approved; the native entry is sent as msg.value.
    */
+  depositByAsset: Record<string, bigint>;
+  msgValue: bigint;
   assetRequirements: AssetRequirement[];
-  /**
-   * Chain gas-token reserve for the wallet's transactions plus the refundable
-   * bond pot. On EVM ERC20 transfers this is denominated in wei and must not be
-   * added to token-denominated `totalAmount`.
-   */
-  gasTokenRequirement: bigint;
+}
+
+export interface AssetAmount {
+  asset: Address;
+  amount: bigint;
 }
 
 export interface AssetRequirement {
@@ -170,6 +111,8 @@ export interface AttestationPayload {
   maxBalanceUsd?: number;
   /** Ed25519 compliance signer keys the enclave enforces, hex. */
   complianceKeys?: string[];
+  /** Ed25519 pricing signer keys the enclave enforces, hex. */
+  pricingKeys?: string[];
 }
 
 export interface AttestationVerification {
@@ -226,9 +169,9 @@ export interface TransferRow {
  */
 export interface TransferSecrets {
   escrowAddress: Address;
-  escrowType: EscrowKind;
-  /** Per-escrow secp256k1 blinding scalar. Absent for batch escrows. */
-  blindingScalar?: `0x${string}`;
+  escrowType: "batch";
+  /** Base scalar for the batch's ordered one-time bid signers. */
+  blindingScalar: `0x${string}`;
   seed: string;
   selectorMapping?: Record<string, string>;
   deployHash: Hash;
@@ -239,7 +182,16 @@ export interface TransferSecrets {
   userDeployGas?: bigint;
   userGasPrice?: bigint;
   /** Reward committed in the deployed escrow; required for exact resume. */
-  rewardAmount?: bigint;
+  rewardAmount: bigint;
+  rewardAsset: Address;
+  quoteCommitment: `0x${string}`;
+  /** Opaque API authorization encrypted directly for Nomad. */
+  sealedPricingAuthorization: `0x${string}`;
+  serviceFee: AssetAmount;
+  depositByAsset: Record<string, bigint>;
+  msgValue: bigint;
+  /** Sender address signed into the pricing authorization. */
+  senderAddress: Address;
 }
 
 export interface ApprovalCheckpoint {
@@ -262,7 +214,7 @@ export type TransferStep =
       /** Retain to resume this transfer later; never log or share. */
       secrets: TransferSecrets;
     }
-  | { step: "compliance"; approval: { signature: string; timestamp: number } }
+  | { step: "compliance"; approval: ExecutionApproval }
   | { step: "signal"; response: string }
   /** Emitted incrementally as each recipient's delivery lands on chain. */
   | {
@@ -276,9 +228,21 @@ export type TransferStep =
   | { step: "complete"; transfers: TransferEvent[] };
 
 export interface FeeRefreshOverrides {
+  /** @deprecated Pricing inputs are owned by the API and cannot be overridden. */
   gasPrice?: GasPrice;
-  /** Fresh ETH->token rate; skips the price oracle when supplied. */
+  /** @deprecated Pricing inputs are owned by the API and cannot be overridden. */
   ethToTokenRate?: number;
+}
+
+export interface ExecutionApproval {
+  version: number;
+  chainId: number;
+  escrowContract: Address;
+  deploymentTxHash: `0x${string}`;
+  runtimeCodeHash: `0x${string}`;
+  quoteCommitment: `0x${string}`;
+  approvedAt: number;
+  signature: string;
 }
 
 export interface PreparedTransfer {

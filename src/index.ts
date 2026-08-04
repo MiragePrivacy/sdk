@@ -48,9 +48,8 @@ export type {
   NetworkKind,
   NetworkConfig,
   EscrowKind,
-  GasConstants,
-  NativeGasConstants,
   FeeEstimate,
+  AssetAmount,
   FeeRefreshOverrides,
   AssetRequirement,
   TransferEvent,
@@ -65,4 +64,5 @@ export type {
   TcbStatus,
   TokenMetadata,
   GasPrice,
+  ExecutionApproval,
 } from "./types.js";

@@ -1,5 +1,11 @@
+import type { Address } from "viem";
 import { ApiError, MirageError } from "../errors.js";
-import type { EscrowKind, NetworkConfig, NetworkKeyStatus } from "../types.js";
+import type {
+  EscrowKind,
+  ExecutionApproval,
+  NetworkConfig,
+  NetworkKeyStatus,
+} from "../types.js";
 import { verifyAttestation, type VerifyAttestationOptions } from "./attestation.js";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -116,11 +122,7 @@ export async function fetchObfuscation(
   };
 }
 
-export interface ComplianceApproval {
-  signature: string;
-  timestamp: number;
-  escrowAddress: string;
-}
+export type ComplianceApproval = ExecutionApproval;
 
 /**
  * Compliance approvals are rejected by the node once stale, so a resumed or
@@ -128,8 +130,87 @@ export interface ComplianceApproval {
  */
 export const APPROVAL_MAX_AGE_SECS = 300;
 
-export function isApprovalStale(timestamp: number, nowSecs = Date.now() / 1000): boolean {
-  return nowSecs - timestamp >= APPROVAL_MAX_AGE_SECS;
+export function isApprovalStale(approvedAt: number, nowSecs = Date.now() / 1000): boolean {
+  return nowSecs - approvedAt >= APPROVAL_MAX_AGE_SECS;
+}
+
+export type ExecutionMode = "private" | "native";
+
+export interface PricingSignalRequest {
+  asset: string;
+  execution_mode: ExecutionMode;
+  items: Array<{ client_row_id: string; recipient: string; amount: string }>;
+}
+
+export interface PricingQuote {
+  chainId: number;
+  serviceFee: { asset: Address; amount: bigint };
+  deployment: {
+    escrowType: "batch";
+    constructorArgs: `0x${string}`;
+    quoteCommitment: `0x${string}`;
+    rewardAsset: Address;
+    rewardAmount: bigint;
+    depositByAsset: Record<string, bigint>;
+    msgValue: bigint;
+  };
+  sealedPricingAuthorization: `0x${string}`;
+}
+
+/** Request the API-authored economics and exact EscrowBatch constructor. */
+export async function fetchPricingQuote(
+  apiServer: string,
+  params: {
+    chainId: number;
+    sender: Address;
+    blindedSigners: Address[];
+    signals: PricingSignalRequest[];
+  },
+): Promise<PricingQuote> {
+  const res = await request<{
+    chain_id: number;
+    service_fee: { asset: Address; amount: string };
+    deployment: {
+      escrow_type: "batch";
+      constructor_args: `0x${string}`;
+      quote_commitment: `0x${string}`;
+      reward_asset: Address;
+      reward_amount: string;
+      deposit_by_asset: Record<string, string>;
+      msg_value: string;
+    };
+    sealed_pricing_authorization: `0x${string}`;
+  }>(`${apiServer}/pricing/quote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chain_id: params.chainId,
+      sender: params.sender,
+      escrow_type: "batch",
+      blinded_signers: params.blindedSigners,
+      signals: params.signals,
+    }),
+  });
+
+  return {
+    chainId: res.chain_id,
+    serviceFee: { asset: res.service_fee.asset, amount: BigInt(res.service_fee.amount) },
+    deployment: {
+      escrowType: res.deployment.escrow_type,
+      constructorArgs: res.deployment.constructor_args,
+      quoteCommitment: res.deployment.quote_commitment,
+      rewardAsset: res.deployment.reward_asset,
+      rewardAmount: BigInt(res.deployment.reward_amount),
+      depositByAsset: Object.fromEntries(
+        Object.entries(res.deployment.deposit_by_asset).map(([asset, amount]) => [
+          asset,
+          BigInt(amount),
+        ]),
+      ),
+      msgValue: BigInt(res.deployment.msg_value),
+    },
+    sealedPricingAuthorization: res.sealed_pricing_authorization,
+  };
 }
 
 export async function fetchComplianceApproval(
@@ -139,6 +220,7 @@ export async function fetchComplianceApproval(
     chainId: number;
     seed: string;
     escrowType: EscrowKind;
+    quoteCommitment: `0x${string}`;
     accessToken?: string;
   },
 ): Promise<ComplianceApproval> {
@@ -147,26 +229,17 @@ export async function fetchComplianceApproval(
     chain_id: params.chainId,
     seed: params.seed,
     escrow_type: params.escrowType,
+    quote_commitment: params.quoteCommitment,
   };
   if (params.accessToken) {
     body.access_token = params.accessToken;
   }
 
-  const res = await request<{
-    signature: string;
-    timestamp: number;
-    escrow_address: string;
-  }>(`${apiServer}/compliance`, {
+  return request<ComplianceApproval>(`${apiServer}/compliance`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
-  return {
-    signature: res.signature,
-    timestamp: res.timestamp,
-    escrowAddress: res.escrow_address,
-  };
 }
 
 /** True when a compliance rejection indicates whitelist verification is needed. */
@@ -181,6 +254,7 @@ export interface AttestResponse {
     chainId?: number;
     maxBalanceUsd?: number;
     complianceKeys?: string[];
+    pricingKeys?: string[];
   } | null;
   publicKey?: string;
   public_key?: string;
@@ -248,6 +322,7 @@ export async function fetchNetworkKey(
       chainId: Number(res.payload.chainId ?? 0),
       maxBalanceUsd: res.payload.maxBalanceUsd,
       complianceKeys: res.payload.complianceKeys,
+      pricingKeys: res.payload.pricingKeys,
     },
     typeof verify === "object" ? verify : {},
   );
