@@ -1,6 +1,6 @@
 # @mirageprivacy/sdk
 
-TypeScript SDK for private transfers on the Mirage protocol. Encapsulates the full transfer lifecycle (fee estimation, token approvals, escrow deployment, compliance, encrypted signal submission, and transfer polling) into a single async generator flow.
+TypeScript SDK for private transfers on the Mirage protocol. It requests API-authored pricing, deploys the exact quoted EscrowBatch, obtains a quote-bound execution approval, submits the encrypted Nomad Signal, and polls recipient transfers.
 
 ## Install
 
@@ -37,7 +37,9 @@ const prepared = await prepareTransfer({
   network: networks.ethereum,
 });
 
-console.log(`Total cost: ${formatUnits(prepared.fees.totalAmount, token.decimals)} ${token.symbol}`);
+console.log(
+  `Service fee: ${formatUnits(prepared.fees.serviceFee.amount, token.decimals)} ${token.symbol}`,
+);
 
 // 2. Execute transfer
 for await (const event of prepared.execute()) {
@@ -45,8 +47,8 @@ for await (const event of prepared.execute()) {
     case "fees":    console.log("Fees calculated");                          break;
     case "approve": console.log(`Approved: ${event.hash}`);                  break;
     case "deploy":  console.log(`Escrow: ${event.escrowAddress}`);           break;
-    case "signal":  console.log(`Signal sent: ${event.hash}`);               break;
-    case "complete": console.log(`Done: ${event.transfer.transactionHash}`); break;
+    case "signal":  console.log(`Signal sent: ${event.response}`);           break;
+    case "complete": console.log(`Delivered ${event.transfers.length} row(s)`); break;
   }
 }
 ```
@@ -59,6 +61,7 @@ same prepared transfer without reimplementing protocol logic:
 ```ts
 const prepared = await prepareTransfer({
   transfers,
+  senderAddress: walletClient.account.address,
   publicClient,
   network: networks.ethereum,
 });
@@ -85,8 +88,9 @@ for await (const event of prepared.complete(walletClient, deployed.secrets)) {
 ```
 
 `ApprovalCheckpoint` and `TransferSecrets` are serializable stage boundaries.
-The latter includes the deployment polling cursor and committed reward so a
-reload can resume without changing the escrow's signal.
+The latter includes the batch scalar, quote commitment, and opaque sealed
+pricing authorization. Persist it immediately: a reload must submit the same
+authorization that produced the deployed constructor.
 
 ## Networks
 
@@ -98,22 +102,22 @@ import { networks, createNetworkConfig } from "@mirageprivacy/sdk";
 // Use a built-in config directly
 const network = networks.ethereum;
 
-// Or customize (nested objects like `gas` are merged, not replaced)
+// Or customize transport and attestation policy.
 const custom = createNetworkConfig("ethereum", {
   rpcUrl: "https://my-rpc.example.com",
-  gas: { approve: 60_000n }, // only overrides approve, keeps other gas values
+  attestation: { maxAgeSecs: 180 },
 });
 ```
 
 ## Transfer lifecycle
 
-`prepareTransfer` returns a `PreparedTransfer` with `.fees` (the fee estimate) and `.execute()` (an async generator that runs the full pipeline):
+`prepareTransfer` returns a `PreparedTransfer` with the API quote in `.fees` and an async `.execute()` pipeline:
 
-1. **fees** - Gas and protocol fee estimation
-2. **approve** - ERC-20 token approval (skipped for native ETH and batched flows)
-3. **deploy** - Escrow contract deployment
-4. **compliance** - Compliance check (when `network.enableCompliance` is true)
-5. **signal** - Encrypted signal submission to the Mirage node
+1. **fees** - Public API service fee and exact funding requirements
+2. **approve** - One exact approval per ERC-20 funding asset
+3. **deploy** - Exact API-quoted EscrowBatch deployment
+4. **compliance** - Execution approval bound to the deployment and quote
+5. **signal** - Minimal encrypted Signal envelope submission to Nomad
 6. **complete** - Transfer event observed on-chain
 
 ### Cancellation
@@ -149,7 +153,7 @@ for await (const event of prepared.execute()) {
 }
 ```
 
-## Fee estimation
+## Pricing
 
 All amounts are `bigint` in raw token units. Use viem's `parseUnits`/`formatUnits` at the boundary.
 
@@ -157,13 +161,16 @@ All amounts are `bigint` in raw token units. Use viem's `parseUnits`/`formatUnit
 const prepared = await prepareTransfer({ /* ... */ });
 const { fees } = prepared;
 
-fees.transferAmount; // what the recipient receives
-fees.networkFee;     // gas cost for user transactions
-fees.nodeFee;        // node fee (base + gas for node operations)
-fees.platformFee;    // percentage-based protocol fee (0.50%)
-fees.totalFee;       // networkFee + nodeFee + platformFee
-fees.totalAmount;    // transferAmount + totalFee (what leaves the wallet)
+fees.serviceFee;      // one public { asset, amount } quote
+fees.rewardAsset;     // escrow reward denomination
+fees.rewardAmount;    // complete reward pot; internal split remains private
+fees.depositByAsset;  // exact principal + reward funding by asset
+fees.msgValue;        // exact native amount supplied during deployment
 ```
+
+The SDK does not calculate or publish a platform/node split. Pricing formulas,
+gas profiles, floors, ceilings, and execution limits are owned and signed by
+the API.
 
 ## Token utilities
 
