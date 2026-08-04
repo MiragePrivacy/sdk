@@ -141,6 +141,9 @@ export function getNetwork(): NetworkConfig {
       rpcUrl: RPC_URL,
       nomadUrl: NOMAD_URL,
       apiServer: API_URL,
+      // Testnet enclaves are typically debug builds. Verification stays on;
+      // only the debug-mode rejection is relaxed.
+      attestation: { allowDebug: true },
     });
   }
   return createNetworkConfig("ethereum", {
@@ -150,9 +153,13 @@ export function getNetwork(): NetworkConfig {
     nomadUrl: NOMAD_URL,
     apiServer: API_URL,
     enableCompliance: false,
-    enableBatch: false,
+    enableAtomicBatch: false,
     nodeFeeUsd: 2_000000n,
     platformFeeRate: 50n,
+    // Anvil has no Uniswap deployment; price the local chain directly.
+    ethToTokenRate: 4500,
+    // The mock nomad runs outside SGX and serves no quote to verify.
+    attestation: { required: false },
   });
 }
 

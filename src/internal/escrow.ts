@@ -14,12 +14,17 @@ import {
   parseAbi,
 } from "viem";
 import { ContractError } from "../errors.js";
-import type { NetworkConfig } from "../types.js";
+import { isNativeToken } from "../token.js";
+import type { ApprovalCheckpoint, EscrowKind, TransferRow } from "../types.js";
 
 const escrowAbi = parseAbi([
   "function cancelAndWithdraw() external",
-  "function fund(uint256 _currentRewardAmount, uint256 _currentPaymentAmount) external",
+  "function fund(uint256 _currentRewardAmount) external",
+  "function is_bonded() external view returns (bool)",
 ]);
+
+// EscrowNative funds the bond pot alongside the reward.
+const nativeEscrowAbi = parseAbi(["function fund(uint256 _currentRewardAmount, uint256 _bondAmount) external"]);
 
 const CANCEL_ABI = [
   {
@@ -48,13 +53,186 @@ const CANCEL_REASON_MESSAGES: Record<string, string> = {
   ETHTransferFailed: "ETH transfer back to deployer failed",
 };
 
-export function predictContractAddress(
-  deployerAddress: Address,
-  nonce: number,
-): Address {
-  const rlpEncoded = toRlp([deployerAddress, toHex(nonce)]);
-  const hash = keccak256(rlpEncoded);
-  return getAddress(`0x${hash.slice(26)}` as Address);
+const BATCH_TRANSFER_COMPONENTS = [
+  { type: "address", name: "asset" },
+  { type: "address", name: "recipient" },
+  { type: "uint256", name: "amount" },
+] as const;
+
+export function predictContractAddress(deployerAddress: Address, nonce: number): Address {
+  // RLP encodes zero as the empty string, not as a zero byte, so nonce 0 must
+  // not go through toHex. Getting this wrong only shows up on an account's
+  // very first transaction.
+  const rlpEncoded = toRlp([deployerAddress, nonce === 0 ? "0x" : toHex(nonce)]);
+  return getAddress(`0x${keccak256(rlpEncoded).slice(26)}` as Address);
+}
+
+/**
+ * Reward asset: the first ERC20 row, else the first row. Must agree across fee
+ * calculation, approvals, constructor encoding, and the signal's tokenContract
+ * or the deploy reverts.
+ */
+export function pickRewardToken(transfers: TransferRow[]): Address {
+  const erc20 = transfers.find((t) => !isNativeToken(t.tokenAddress));
+  return erc20 ? erc20.tokenAddress : transfers[0].tokenAddress;
+}
+
+/** Sum of native ETH rows, which the escrow holds directly rather than pulling. */
+export function sumNativeAmount(transfers: TransferRow[]): bigint {
+  return transfers.reduce((sum, t) => (isNativeToken(t.tokenAddress) ? sum + t.amount : sum), 0n);
+}
+
+/** Derive the escrow variant. Row count wins over reward-token nativeness. */
+export function deriveEscrowKind(transfers: TransferRow[]): EscrowKind {
+  if (transfers.length > 1) return "batch";
+  return isNativeToken(pickRewardToken(transfers)) ? "native" : "erc20";
+}
+
+/**
+ * Allowance buckets: one approval per distinct ERC20, with the node reward
+ * folded into the reward asset's bucket.
+ */
+export function buildApprovalBuckets(
+  transfers: TransferRow[],
+  rewardAmount: bigint,
+): Array<{ tokenAddress: Address; amount: bigint }> {
+  const buckets = new Map<string, { tokenAddress: Address; amount: bigint }>();
+
+  for (const row of transfers) {
+    if (isNativeToken(row.tokenAddress)) continue;
+    const key = row.tokenAddress.toLowerCase();
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.amount += row.amount;
+    } else {
+      buckets.set(key, { tokenAddress: row.tokenAddress, amount: row.amount });
+    }
+  }
+
+  const rewardToken = pickRewardToken(transfers);
+  if (!isNativeToken(rewardToken) && rewardAmount > 0n) {
+    const key = rewardToken.toLowerCase();
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.amount += rewardAmount;
+    } else {
+      buckets.set(key, { tokenAddress: rewardToken, amount: rewardAmount });
+    }
+  }
+
+  return Array.from(buckets.values());
+}
+
+/**
+ * Approve a spender for exactly one transaction.
+ *
+ * Each escrow is deployed to a fresh CREATE address that has never held an
+ * allowance, so there is nothing to reset: the zero-to-nonzero path is the
+ * only one USDT-style tokens require. Sending a second transaction here would
+ * also shift the deploy nonce and invalidate the predicted address.
+ */
+async function approveToken(params: {
+  tokenAddress: Address;
+  spender: Address;
+  amount: bigint;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  account: Address;
+}): Promise<{ hash: Hash; gasUsed: bigint }> {
+  const { tokenAddress, spender, amount, walletClient, publicClient, account } = params;
+
+  const hash = await walletClient.writeContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: "approve",
+    args: [spender, amount],
+    chain: walletClient.chain,
+    account,
+  });
+
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") {
+    throw new ContractError("Token approval failed", { txHash: hash });
+  }
+
+  return { hash, gasUsed: receipt.gasUsed };
+}
+
+function encodeConstructorArgs(params: {
+  escrowType: EscrowKind;
+  transfers: TransferRow[];
+  rewardToken: Address;
+  rewardAmount: bigint;
+  blindedSigner?: Address;
+  bondPot: bigint;
+}): `0x${string}` {
+  const { escrowType, transfers, rewardToken, rewardAmount, blindedSigner, bondPot } = params;
+
+  if (escrowType === "batch") {
+    return encodeAbiParameters(
+      [
+        { type: "address", name: "_rewardAsset" },
+        { type: "tuple[]", name: "_expectedTransfers", components: BATCH_TRANSFER_COMPONENTS },
+        { type: "uint256", name: "_currentRewardAmount" },
+      ],
+      [
+        rewardToken,
+        transfers.map((t) => ({
+          asset: t.tokenAddress,
+          recipient: t.recipientAddress,
+          amount: t.amount,
+        })),
+        rewardAmount,
+      ],
+    );
+  }
+
+  const row = transfers[0];
+
+  if (escrowType === "native") {
+    return encodeAbiParameters(
+      [
+        { type: "address", name: "_expectedRecipient" },
+        { type: "uint256", name: "_expectedAmount" },
+        { type: "address", name: "_blindedSigner" },
+        { type: "uint256", name: "_currentRewardAmount" },
+        { type: "uint256", name: "_bondAmount" },
+      ],
+      [row.recipientAddress, row.amount, blindedSigner!, rewardAmount, bondPot],
+    );
+  }
+
+  return encodeAbiParameters(
+    [
+      { type: "address", name: "_tokenContract" },
+      { type: "address", name: "_expectedRecipient" },
+      { type: "uint256", name: "_expectedAmount" },
+      { type: "address", name: "_blindedSigner" },
+      { type: "uint256", name: "_currentRewardAmount" },
+    ],
+    [rewardToken, row.recipientAddress, row.amount, blindedSigner!, rewardAmount],
+  );
+}
+
+/** msg.value at deploy: native payments plus, for single escrows, the bond pot. */
+function computeDeployValue(params: {
+  escrowType: EscrowKind;
+  transfers: TransferRow[];
+  rewardToken: Address;
+  rewardAmount: bigint;
+  bondPot: bigint;
+}): bigint {
+  const { escrowType, transfers, rewardToken, rewardAmount, bondPot } = params;
+
+  if (escrowType === "batch") {
+    return sumNativeAmount(transfers) + (isNativeToken(rewardToken) ? rewardAmount : 0n);
+  }
+
+  if (escrowType === "native") {
+    return transfers[0].amount + rewardAmount + bondPot;
+  }
+
+  return bondPot;
 }
 
 export interface DeployResult {
@@ -62,173 +240,289 @@ export interface DeployResult {
   escrowAddress: Address;
   deployGasUsed: bigint;
   deployEffectiveGasPrice: bigint;
+  /** Block the deploy landed in; the lower bound for delivery polling. */
+  deployBlock: bigint;
 }
 
-// Ethereum: approve predicted escrow → deploy (constructor does transferFrom)
-// Native ETH: deploy with value (no approve needed)
-export async function approveAndDeploy(params: {
-  bytecode: `0x${string}`;
-  selectorMapping?: Record<string, string>;
-  tokenAddress: Address;
-  recipientAddress: Address;
-  transferAmount: bigint;
+export interface ApproveAndDeployResult {
+  approvals: Array<{ hash: Hash; tokenAddress: Address; gasUsed: bigint }>;
+  approveGasUsed: bigint;
+  deployResult: DeployResult;
+}
+
+export async function* approveForDeployment(params: {
+  transfers: TransferRow[];
   rewardAmount: bigint;
-  totalAmount: bigint;
-  isNativeEth: boolean;
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
-}): Promise<{
-  approveHash: Hash | null;
-  approveGasUsed: bigint | null;
-  deployResult: DeployResult;
-}> {
-  const {
-    bytecode, tokenAddress, recipientAddress,
-    transferAmount, rewardAmount, totalAmount,
-    isNativeEth, walletClient, publicClient, account,
-  } = params;
-
+  onAbortCheck?: () => void;
+}): AsyncGenerator<
+  { hash: Hash; tokenAddress: Address; gasUsed: bigint; index: number; total: number },
+  ApprovalCheckpoint
+> {
+  const { transfers, rewardAmount, walletClient, publicClient, account, onAbortCheck } = params;
+  const buckets = buildApprovalBuckets(transfers, rewardAmount);
   const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
+  const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
+  const approvals: ApprovalCheckpoint["approvals"] = [];
+  let approveGasUsed = 0n;
 
-  let approveHash: Hash | null = null;
-  let approveGasUsed: bigint | null = null;
-
-  if (!isNativeEth) {
-    // Approve uses nonce N, deploy uses nonce N+1
-    const predictedEscrowAddress = predictContractAddress(account, nonce + 1);
-
-    approveHash = await walletClient.writeContract({
-      address: tokenAddress,
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [predictedEscrowAddress, totalAmount],
-      chain: walletClient.chain,
+  for (const [index, bucket] of buckets.entries()) {
+    onAbortCheck?.();
+    const result = await approveToken({
+      tokenAddress: bucket.tokenAddress,
+      spender: predictedEscrowAddress,
+      amount: bucket.amount,
+      walletClient,
+      publicClient,
+      account,
     });
-
-    const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
-    if (approveReceipt.status !== "success") {
-      throw new ContractError("Token approval failed", { txHash: approveHash });
-    }
-    approveGasUsed = approveReceipt.gasUsed;
-  }
-
-  // Build constructor args
-  const constructorArgs = isNativeEth
-    ? encodeAbiParameters(
-        [
-          { type: "address", name: "_expectedRecipient" },
-          { type: "uint256", name: "_expectedAmount" },
-          { type: "uint256", name: "_currentRewardAmount" },
-          { type: "uint256", name: "_currentPaymentAmount" },
-        ],
-        [recipientAddress, transferAmount, rewardAmount, transferAmount],
-      )
-    : encodeAbiParameters(
-        [
-          { type: "address", name: "_tokenContract" },
-          { type: "address", name: "_expectedRecipient" },
-          { type: "uint256", name: "_expectedAmount" },
-          { type: "uint256", name: "_currentRewardAmount" },
-          { type: "uint256", name: "_currentPaymentAmount" },
-        ],
-        [tokenAddress, recipientAddress, transferAmount, rewardAmount, transferAmount],
-      );
-
-  const deploymentData = `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`;
-  const value = isNativeEth ? rewardAmount + transferAmount : undefined;
-
-  const deployHash = await walletClient.sendTransaction({
-    to: null,
-    data: deploymentData,
-    chain: walletClient.chain,
-    value,
-  });
-
-  const deployReceipt = await publicClient.waitForTransactionReceipt({ hash: deployHash });
-  if (deployReceipt.status !== "success") {
-    throw new ContractError("Escrow deployment failed", { txHash: deployHash });
-  }
-
-  const escrowAddress = deployReceipt.contractAddress;
-  if (!escrowAddress) {
-    throw new ContractError("No contract address in deploy receipt", { txHash: deployHash });
+    approveGasUsed += result.gasUsed;
+    const approval = { ...result, tokenAddress: bucket.tokenAddress };
+    approvals.push(approval);
+    yield { ...approval, index, total: buckets.length };
   }
 
   return {
-    approveHash,
+    stage: "approved",
+    account,
+    predictedEscrowAddress,
+    approvals,
     approveGasUsed,
-    deployResult: {
-      hash: deployHash,
-      escrowAddress,
-      deployGasUsed: deployReceipt.gasUsed,
-      deployEffectiveGasPrice: deployReceipt.effectiveGasPrice,
-    },
   };
 }
 
-// Tempo: deploy + approve + fund in a single batched transaction
-export async function deployBatched(params: {
+export async function deployApproved(params: {
   bytecode: `0x${string}`;
-  selectorMapping?: Record<string, string>;
-  tokenAddress: Address;
-  recipientAddress: Address;
-  transferAmount: bigint;
+  escrowType: EscrowKind;
+  transfers: TransferRow[];
   rewardAmount: bigint;
-  totalAmount: bigint;
+  blindedSigner?: Address;
+  bondPot: bigint;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  account: Address;
+  checkpoint?: ApprovalCheckpoint;
+}): Promise<DeployResult> {
+  const {
+    bytecode,
+    escrowType,
+    transfers,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+    walletClient,
+    publicClient,
+    account,
+    checkpoint,
+  } = params;
+  const buckets = buildApprovalBuckets(transfers, rewardAmount);
+  if (buckets.length > 0 && !checkpoint) {
+    throw new ContractError("Token approvals must complete before deployment");
+  }
+  if (checkpoint && checkpoint.account.toLowerCase() !== account.toLowerCase()) {
+    throw new ContractError("Approval checkpoint belongs to a different account");
+  }
+
+  const predictedEscrowAddress =
+    checkpoint?.predictedEscrowAddress ??
+    predictContractAddress(
+      account,
+      await publicClient.getTransactionCount({ address: account, blockTag: "pending" }),
+    );
+
+  const rewardToken = pickRewardToken(transfers);
+  const constructorArgs = encodeConstructorArgs({
+    escrowType,
+    transfers,
+    rewardToken,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+  });
+  const deployHash = await walletClient.sendTransaction({
+    to: null,
+    data: `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`,
+    chain: walletClient.chain,
+    account,
+    value: computeDeployValue({ escrowType, transfers, rewardToken, rewardAmount, bondPot }),
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: deployHash });
+  if (receipt.status !== "success") {
+    throw new ContractError("Escrow deployment failed", { txHash: deployHash });
+  }
+  if (receipt.contractAddress && getAddress(receipt.contractAddress) !== predictedEscrowAddress) {
+    throw new ContractError(
+      `Escrow deployed to ${receipt.contractAddress} but ${predictedEscrowAddress} was predicted`,
+      { txHash: deployHash },
+    );
+  }
+  return {
+    hash: deployHash,
+    escrowAddress: predictedEscrowAddress,
+    deployGasUsed: receipt.gasUsed,
+    deployEffectiveGasPrice: receipt.effectiveGasPrice,
+    deployBlock: receipt.blockNumber,
+  };
+}
+
+/**
+ * Approve each distinct ERC20 against the predicted escrow, then deploy. With
+ * K approvals the deploy lands at nonce N+K, so the address is predicted from
+ * that offset and every approval targets it.
+ */
+export async function approveAndDeploy(params: {
+  bytecode: `0x${string}`;
+  escrowType: EscrowKind;
+  transfers: TransferRow[];
+  rewardAmount: bigint;
+  blindedSigner?: Address;
+  bondPot: bigint;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+  account: Address;
+  onApproval?: (approval: { hash: Hash; tokenAddress: Address; index: number; total: number }) => void;
+  /** Invoked before each approval so a cancel is honored mid-sequence. */
+  onAbortCheck?: () => void;
+}): Promise<ApproveAndDeployResult> {
+  const {
+    bytecode,
+    escrowType,
+    transfers,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+    walletClient,
+    publicClient,
+    account,
+    onApproval,
+    onAbortCheck,
+  } = params;
+
+  const iterator = approveForDeployment({
+    transfers,
+    rewardAmount,
+    walletClient,
+    publicClient,
+    account,
+    onAbortCheck,
+  });
+  const approvals: ApprovalCheckpoint["approvals"] = [];
+  let checkpoint: ApprovalCheckpoint | undefined;
+  while (true) {
+    const next = await iterator.next();
+    if (next.done) {
+      checkpoint = next.value;
+      break;
+    }
+    approvals.push(next.value);
+    onApproval?.(next.value);
+  }
+  const deployResult = await deployApproved({
+    bytecode,
+    escrowType,
+    transfers,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+    walletClient,
+    publicClient,
+    account,
+    checkpoint,
+  });
+
+  return {
+    approvals,
+    approveGasUsed: checkpoint.approveGasUsed,
+    deployResult,
+  };
+}
+
+/**
+ * Tempo: deploy, approve, and fund in a single native-multicall transaction.
+ * The constructor runs with a zero reward so it skips the pull, then fund()
+ * moves the tokens once the allowances exist.
+ */
+export async function deployAtomicBatch(params: {
+  bytecode: `0x${string}`;
+  escrowType: EscrowKind;
+  selectorMapping?: Record<string, string>;
+  transfers: TransferRow[];
+  rewardAmount: bigint;
+  blindedSigner?: Address;
+  bondPot: bigint;
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
 }): Promise<DeployResult> {
   const {
-    bytecode, selectorMapping, tokenAddress, recipientAddress,
-    transferAmount, rewardAmount, totalAmount,
-    walletClient, publicClient, account,
+    bytecode,
+    escrowType,
+    selectorMapping,
+    transfers,
+    rewardAmount,
+    blindedSigner,
+    bondPot,
+    walletClient,
+    publicClient,
+    account,
   } = params;
 
+  const rewardToken = pickRewardToken(transfers);
+  // Must include pending txs: a stale nonce predicts an address that will hold
+  // no funds.
   const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce);
 
-  // 1. Deploy with 0 amounts (constructor skips transferFrom)
-  const constructorArgs = encodeAbiParameters(
-    [
-      { type: "address", name: "_tokenContract" },
-      { type: "address", name: "_expectedRecipient" },
-      { type: "uint256", name: "_expectedAmount" },
-      { type: "uint256", name: "_currentRewardAmount" },
-      { type: "uint256", name: "_currentPaymentAmount" },
-    ],
-    [tokenAddress, recipientAddress, transferAmount, 0n, 0n],
-  );
-  const deploymentData = `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`;
-
-  // 2. Approve the predicted escrow as spender
-  const approveData = encodeFunctionData({
-    abi: erc20Abi,
-    functionName: "approve",
-    args: [predictedEscrowAddress, totalAmount],
+  // Deploy with a zero reward so the constructor skips funding.
+  const constructorArgs = encodeConstructorArgs({
+    escrowType,
+    transfers,
+    rewardToken,
+    rewardAmount: 0n,
+    blindedSigner,
+    bondPot,
   });
 
-  // 3. Call fund() — use obfuscated selector if available
-  const standardFundData = encodeFunctionData({
-    abi: escrowAbi,
-    functionName: "fund",
-    args: [rewardAmount, transferAmount],
-  });
-  const originalSelector = standardFundData.slice(0, 10);
-  const obfuscatedSelector = selectorMapping?.[originalSelector];
+  const approveCalls = buildApprovalBuckets(transfers, rewardAmount).map((bucket) => ({
+    to: bucket.tokenAddress,
+    data: encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [predictedEscrowAddress, bucket.amount],
+    }),
+    value: 0n,
+  }));
+
+  const standardFundData =
+    escrowType === "native"
+      ? encodeFunctionData({
+          abi: nativeEscrowAbi,
+          functionName: "fund",
+          args: [rewardAmount, bondPot],
+        })
+      : encodeFunctionData({ abi: escrowAbi, functionName: "fund", args: [rewardAmount] });
+  const obfuscatedSelector = selectorMapping?.[standardFundData.slice(0, 10)];
   const fundData = obfuscatedSelector
     ? (`${obfuscatedSelector}${standardFundData.slice(10)}` as `0x${string}`)
     : standardFundData;
 
-  // Submit batched transaction (Tempo native multicall)
-  const hash = await (walletClient as any).sendTransaction({
+  // The constructor runs with a zero reward, so the pot and payment travel
+  // with fund() instead of the deploy call.
+  const fundValue =
+    sumNativeAmount(transfers) + (isNativeToken(rewardToken) ? rewardAmount : 0n) + bondPot;
+
+  const hash = await (walletClient as unknown as {
+    sendTransaction: (args: unknown) => Promise<Hash>;
+  }).sendTransaction({
     calls: [
-      { data: deploymentData, value: 0n },
-      { to: tokenAddress, data: approveData, value: 0n },
-      { to: predictedEscrowAddress, data: fundData, value: 0n },
+      { data: `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`, value: 0n },
+      ...approveCalls,
+      { to: predictedEscrowAddress, data: fundData, value: fundValue },
     ],
     chain: walletClient.chain,
+    account,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -238,9 +532,10 @@ export async function deployBatched(params: {
 
   return {
     hash,
-    escrowAddress: receipt.contractAddress ?? predictedEscrowAddress,
+    escrowAddress: predictedEscrowAddress,
     deployGasUsed: receipt.gasUsed,
     deployEffectiveGasPrice: receipt.effectiveGasPrice,
+    deployBlock: receipt.blockNumber,
   };
 }
 
@@ -294,3 +589,26 @@ export async function withdrawFromEscrow(params: {
     { txHash: hash },
   );
 }
+
+export async function getEscrowStatus(params: {
+  escrowAddress: Address;
+  publicClient: PublicClient;
+  selectorMapping?: Record<string, string>;
+}): Promise<{ bonded: boolean; cancellable: boolean }> {
+  const standardData = encodeFunctionData({
+    abi: escrowAbi,
+    functionName: "is_bonded",
+  });
+  const mapped = params.selectorMapping?.[standardData.slice(0, 10)];
+  const data = mapped
+    ? (`${mapped}${standardData.slice(10)}` as `0x${string}`)
+    : standardData;
+  const result = await params.publicClient.call({
+    to: params.escrowAddress,
+    data,
+  });
+  const bonded = BigInt(result.data ?? "0x0") !== 0n;
+  return { bonded, cancellable: !bonded };
+}
+
+export const cancelTransfer = withdrawFromEscrow;

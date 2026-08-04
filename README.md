@@ -1,11 +1,11 @@
-# @mirageprivacy/mirage-sdk
+# @mirageprivacy/sdk
 
 TypeScript SDK for private transfers on the Mirage protocol. Encapsulates the full transfer lifecycle (fee estimation, token approvals, escrow deployment, compliance, encrypted signal submission, and transfer polling) into a single async generator flow.
 
 ## Install
 
 ```sh
-npm install @mirageprivacy/mirage-sdk viem
+npm install @mirageprivacy/sdk viem
 ```
 
 `viem` is a peer dependency.
@@ -13,7 +13,7 @@ npm install @mirageprivacy/mirage-sdk viem
 ## Quick start
 
 ```ts
-import { networks, prepareTransfer, getTokenMetadata, getTokenBalance } from "@mirageprivacy/mirage-sdk";
+import { networks, prepareTransfer, getTokenMetadata, getTokenBalance } from "@mirageprivacy/sdk";
 import { createPublicClient, createWalletClient, http, custom, parseUnits, formatUnits } from "viem";
 import { mainnet } from "viem/chains";
 
@@ -51,12 +51,49 @@ for await (const event of prepared.execute()) {
 }
 ```
 
+## Staged execution
+
+Consumers that expose separate approval and deployment controls can use the
+same prepared transfer without reimplementing protocol logic:
+
+```ts
+const prepared = await prepareTransfer({
+  transfers,
+  publicClient,
+  network: networks.ethereum,
+});
+
+// Approve button. The generator yields immediately after each token approval.
+const approvals = prepared.approve(walletClient);
+let checkpoint;
+while (true) {
+  const next = await approvals.next();
+  if (next.done) {
+    checkpoint = next.value;
+    break;
+  }
+  console.log(next.value.hash);
+}
+
+// Deploy button. Persist `deployed.secrets` immediately.
+const deployed = await prepared.deploy(walletClient, checkpoint);
+
+// Automatically submit and monitor after deployment.
+for await (const event of prepared.complete(walletClient, deployed.secrets)) {
+  console.log(event.step);
+}
+```
+
+`ApprovalCheckpoint` and `TransferSecrets` are serializable stage boundaries.
+The latter includes the deployment polling cursor and committed reward so a
+reload can resume without changing the escrow's signal.
+
 ## Networks
 
 Built-in configs for `ethereum`, `sepolia`, and `tempo`:
 
 ```ts
-import { networks, createNetworkConfig } from "@mirageprivacy/mirage-sdk";
+import { networks, createNetworkConfig } from "@mirageprivacy/sdk";
 
 // Use a built-in config directly
 const network = networks.ethereum;
@@ -104,7 +141,7 @@ If a transfer fails after the escrow is deployed (e.g. account change, abort, ti
 ```ts
 const prepared = await prepareTransfer({
   // ...same params,
-  escrowAddress: "0x...", // from the previous error
+  resume: savedTransferSecrets,
 });
 
 for await (const event of prepared.execute()) {
@@ -137,7 +174,7 @@ import {
   getTokenAllowance,
   isNativeToken,
   NATIVE_TOKEN_ADDRESS,
-} from "@mirageprivacy/mirage-sdk";
+} from "@mirageprivacy/sdk";
 
 const meta = await getTokenMetadata(tokenAddress, publicClient);
 // { address, name, symbol, decimals }
@@ -152,11 +189,24 @@ isNativeToken(NATIVE_TOKEN_ADDRESS); // true
 ## Service utilities
 
 ```ts
-import { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "@mirageprivacy/mirage-sdk";
+import { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "@mirageprivacy/sdk";
 
 // SGX attestation status
 const key = await fetchNetworkKey("https://sgx1.mirageprivacy.com");
-// { publicKey, attested, debug, chainId, mrenclave?, mrsigner? }
+// { publicKey, attested, debug, chainId, mrenclave?, mrsigner?, verification? }
+
+// Tune the verification policy for a known hardened enclave release.
+const hardenedKey = await fetchNetworkKey("https://sgx1.mirageprivacy.com", {
+  verify: {
+    allowedTcbStatus: [
+      "UpToDate",
+      "SWHardeningNeeded",
+      "ConfigurationAndSWHardeningNeeded",
+    ],
+    allowedAdvisoryIds: ["INTEL-SA-00289", "INTEL-SA-00615"],
+    minimumIsvSvn: 2,
+  },
+});
 
 // Service health and transfer limits
 const health = await fetchApiHealth("https://api.mirageprivacy.com");
@@ -179,7 +229,7 @@ import {
   TransferAbortedError,
   TransferTimeoutError,
   TransferLimitError,
-} from "@mirageprivacy/mirage-sdk";
+} from "@mirageprivacy/sdk";
 
 try {
   for await (const event of prepared.execute()) { /* ... */ }

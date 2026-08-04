@@ -2,84 +2,140 @@ import type { Address, PublicClient } from "viem";
 import { parseAbiItem } from "viem";
 import { TransferTimeoutError } from "../errors.js";
 import { checkAbort } from "./abort.js";
-import type { TransferEvent } from "../types.js";
+import { isNativeToken } from "../token.js";
+import type { TransferEvent, TransferRow } from "../types.js";
 
 const transferEventAbi = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 );
 
-export async function pollTransferEvent(params: {
-  recipientAddress: Address;
-  tokenAddress: Address;
-  expectedAmount: bigint;
-  publicClient: PublicClient;
-  isNativeEth: boolean;
-  timeout: number;
-  signal?: AbortSignal;
-}): Promise<TransferEvent> {
-  const { recipientAddress, tokenAddress, expectedAmount, publicClient, isNativeEth, timeout, signal } = params;
+export interface DeliveredTransfer {
+  transfer: TransferEvent;
+  row: TransferRow;
+  index: number;
+}
 
-  const startBlock = await publicClient.getBlockNumber();
+/**
+ * Watch for each recipient's delivery, yielding as they land. The node sends a
+ * separate transaction per recipient, so a batch completes incrementally
+ * rather than all at once.
+ *
+ * Each on-chain delivery is matched to at most one row, so repeated rows with
+ * identical parameters each consume a distinct delivery.
+ */
+export async function* pollTransfers(params: {
+  transfers: TransferRow[];
+  publicClient: PublicClient;
+  timeout: number;
+  fromBlock?: bigint;
+  pollIntervalMs?: number;
+  signal?: AbortSignal;
+}): AsyncGenerator<DeliveredTransfer> {
+  const { transfers, publicClient, timeout, signal, pollIntervalMs = 2000 } = params;
+
+  const startBlock = params.fromBlock ?? (await publicClient.getBlockNumber());
   const deadline = Date.now() + timeout;
 
-  while (Date.now() < deadline) {
+  const pending = new Set(transfers.map((_, i) => i));
+  const claimed = new Set<string>();
+
+  while (pending.size > 0) {
     checkAbort(signal);
 
-    if (isNativeEth) {
-      // Native ETH: the node sends a regular transaction to the recipient.
-      // Watch new blocks for tx.to === recipientAddress with matching value.
-      const currentBlock = await publicClient.getBlockNumber();
+    if (Date.now() >= deadline) {
+      throw new TransferTimeoutError(timeout);
+    }
 
-      for (let blockNum = startBlock; blockNum <= currentBlock; blockNum++) {
-        const block = await publicClient.getBlock({
-          blockNumber: blockNum,
-          includeTransactions: true,
-        });
+    const currentBlock = await publicClient.getBlockNumber();
+    const delivered: DeliveredTransfer[] = [];
 
-        for (const tx of block.transactions) {
-          if (typeof tx === "string") continue;
+    for (const index of pending) {
+      const row = transfers[index];
 
-          if (
-            tx.to?.toLowerCase() === recipientAddress.toLowerCase() &&
-            tx.value >= expectedAmount
-          ) {
-            return {
-              transactionHash: tx.hash,
-              blockNumber: block.number,
-              amount: tx.value,
-              from: tx.from,
-              to: recipientAddress,
-            };
+      if (isNativeToken(row.tokenAddress)) {
+        // Native ETH arrives as a plain transaction to the recipient.
+        for (let blockNum = startBlock; blockNum <= currentBlock; blockNum++) {
+          const block = await publicClient.getBlock({
+            blockNumber: blockNum,
+            includeTransactions: true,
+          });
+
+          // Exact value, matching the ERC20 branch: a larger unrelated payment
+          // to the same recipient is not this delivery.
+          const candidates = block.transactions.filter(
+            (tx) =>
+              typeof tx !== "string" &&
+              tx.to?.toLowerCase() === row.recipientAddress.toLowerCase() &&
+              tx.value === row.amount &&
+              !claimed.has(tx.hash),
+          );
+
+          let match: (typeof candidates)[number] | undefined;
+          for (const candidate of candidates) {
+            if (typeof candidate === "string") continue;
+            // A reverted transaction still appears in the block but moved no
+            // value, so it must not count as a delivery.
+            const receipt = await publicClient.getTransactionReceipt({ hash: candidate.hash });
+            if (receipt.status === "success") {
+              match = candidate;
+              break;
+            }
+            claimed.add(candidate.hash);
+          }
+
+          if (match && typeof match !== "string") {
+            claimed.add(match.hash);
+            delivered.push({
+              index,
+              row,
+              transfer: {
+                transactionHash: match.hash,
+                blockNumber: block.number,
+                amount: match.value,
+                from: match.from,
+                to: row.recipientAddress,
+              },
+            });
+            break;
           }
         }
-      }
-    } else {
-      // ERC20: look for Transfer event to recipientAddress with matching amount
-      const currentBlock = await publicClient.getBlockNumber();
-      const logs = await publicClient.getLogs({
-        address: tokenAddress,
-        event: transferEventAbi,
-        args: { to: recipientAddress },
-        fromBlock: startBlock,
-        toBlock: currentBlock,
-      });
+      } else {
+        const logs = await publicClient.getLogs({
+          address: row.tokenAddress,
+          event: transferEventAbi,
+          args: { to: row.recipientAddress },
+          fromBlock: startBlock,
+          toBlock: currentBlock,
+        });
 
-      for (const log of logs) {
-        const transferAmount = BigInt(log.data);
-        if (transferAmount === expectedAmount) {
-          return {
-            transactionHash: log.transactionHash!,
-            blockNumber: log.blockNumber,
-            amount: log.args.value!,
-            from: log.args.from!,
-            to: log.args.to!,
-          };
+        const match = logs.find(
+          (log) => log.args.value === row.amount && !claimed.has(`${log.transactionHash}:${log.logIndex}`),
+        );
+
+        if (match) {
+          claimed.add(`${match.transactionHash}:${match.logIndex}`);
+          delivered.push({
+            index,
+            row,
+            transfer: {
+              transactionHash: match.transactionHash!,
+              blockNumber: match.blockNumber,
+              amount: match.args.value!,
+              from: match.args.from!,
+              to: match.args.to!,
+            },
+          });
         }
       }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
+    for (const item of delivered) {
+      pending.delete(item.index);
+      yield item;
+    }
 
-  throw new TransferTimeoutError(timeout);
+    if (pending.size === 0) return;
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
 }

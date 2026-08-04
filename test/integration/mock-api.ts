@@ -23,6 +23,7 @@ function createServer(port: number): http.Server {
   let erc20Runtime: string | null = null;
   let nativeDeployment: string | null = null;
   let nativeRuntime: string | null = null;
+  let batchDeployment: string | null = null;
 
   function loadBytecode() {
     if (!erc20Deployment) {
@@ -30,6 +31,7 @@ function createServer(port: number): http.Server {
       erc20Runtime = readBytecode("erc20_runtime.hex");
       nativeDeployment = readBytecode("native_deployment.hex");
       nativeRuntime = readBytecode("native_runtime.hex");
+      batchDeployment = readBytecode("batch_deployment.hex");
     }
   }
 
@@ -46,7 +48,14 @@ function createServer(port: number): http.Server {
 
     if (req.method === "GET" && req.url === "/") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", version: "mock" }));
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          version: "mock",
+          max_tx_usd: {},
+          whitelist_required_usd: {},
+        }),
+      );
       return;
     }
 
@@ -57,9 +66,12 @@ function createServer(port: number): http.Server {
         try {
           loadBytecode();
           const request = JSON.parse(body);
-          const isNative = request.native_eth === true;
-
-          const bytecode = isNative ? nativeDeployment! : erc20Deployment!;
+          const bytecode =
+            request.escrow_type === "native"
+              ? nativeDeployment!
+              : request.escrow_type === "batch"
+                ? batchDeployment!
+                : erc20Deployment!;
           const size = (bytecode.length - 2) / 2; // minus 0x prefix, hex->bytes
 
           res.writeHead(200, { "Content-Type": "application/json" });

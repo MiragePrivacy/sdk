@@ -20,6 +20,10 @@ All token amounts are `bigint` (raw wei/unit values). The SDK never uses floatin
 type NetworkId = "sepolia" | "tempo" | "ethereum";
 type NetworkKind = "ethereum" | "tempo";
 
+// Escrow variant. Determines deployed bytecode, constructor shape, and fee
+// profile. The node cross-validates this against the signal's reward token.
+type EscrowKind = "erc20" | "native" | "batch";
+
 interface NetworkConfig {
   id: NetworkId;
   kind: NetworkKind;
@@ -29,25 +33,56 @@ interface NetworkConfig {
   apiServer: string;
   enableCompliance: boolean;
 
-  // When true, approve + deploy + fund are submitted as a single batched tx.
-  // Defaults to true for tempo (native multicall), false for ethereum.
-  // Future: ethereum batch support via smart accounts or Buildernet.
-  enableBatch: boolean;
+  // When true, approve + deploy + fund are submitted as a single native
+  // multicall tx (tempo). Unrelated to batch escrows, which are the
+  // multi-recipient escrow variant.
+  enableAtomicBatch: boolean;
 
   // Fee parameters
   nodeFeeUsd: bigint;           // e.g. 2_000000n for $2.00 (6 decimals)
+  nodeFeeWei: bigint;           // base node fee for native ETH transfers
   platformFeeRate: bigint;      // basis points, e.g. 50n = 0.50%
 
   // Gas constants for fee estimation.
-  // API gas estimations override these, when not available it wil fall back
+  // API gas estimations override these, when not available it will fall back
   gas: GasConstants;
+  nativeGas: NativeGasConstants;
+
+  // Multiplier applied to bond + collect gas when sizing the bond pot (x100).
+  bondPotMarginBps: bigint;
+
+  // SGX quote verification policy. Verification is ON by default; set
+  // required: false only for local chains and non-SGX test nodes.
+  // Pin the measurements to a known build, otherwise any Intel-signed
+  // enclave would be accepted.
+  attestation?: {
+    required?: boolean;       // default true
+    // Enclave signing identity. Defaults to MIRAGE_MRSIGNER on the built-in
+    // networks. MRENCLAVE is not pinned: it changes on every enclave release.
+    expectedMrSigner?: string[];
+    allowedTcbStatus?: TcbStatus[];
+    allowedAdvisoryIds?: string[];
+    minimumIsvSvn?: number;
+    allowDebug?: boolean;     // testnets only; debug memory is not protected
+    maxAgeSecs?: number;
+  };
+
+  // Fixed ETH->token rate, bypassing the on-chain oracle. For local chains.
+  ethToTokenRate?: number;
 }
 
 interface GasConstants {
   approve: bigint;
   deploy: bigint;
   bond: bigint;
-  transfer: bigint;
+  fund: bigint;
+  collect: bigint;
+}
+
+interface NativeGasConstants {
+  deploy: bigint;
+  bond: bigint;
+  fund: bigint;
   collect: bigint;
 }
 
@@ -80,16 +115,40 @@ class ContractError extends MirageError {
   txHash?: Hash;
 }
 
-// Thrown by executeTransfer when the AbortSignal is triggered after
-// transactions have already been submitted.
-// If aborted after deploy, the SDK attempts a withdrawal before throwing.
-// If the withdrawal itself fails, withdrawError is set and escrowAddress
-// is included so the caller can attempt recovery.
+// Thrown by executeTransfer when the AbortSignal is triggered.
+// The SDK does not attempt a withdrawal: if deploy completed, escrowAddress is
+// included so the caller can decide whether to withdraw.
 class TransferAbortedError extends MirageError {
   code: "TRANSFER_ABORTED";
   escrowAddress?: Address;    // set if deploy completed before abort
-  withdrawHash?: Hash;        // set if withdrawal tx was submitted successfully
-  withdrawError?: unknown;    // set if withdrawal tx failed
+  withdrawHash?: Hash;        // set only if the caller-side withdrawal ran
+  withdrawError?: unknown;
+}
+
+// Thrown when a single row exceeds the network's per-transaction limit.
+// Limits apply per transfer, not to a batch total.
+class TransferLimitError extends MirageError {
+  code: "TRANSFER_LIMIT_EXCEEDED";
+  amountUsd: number;
+  limitUsd: number;
+  rowIndex: number;           // index of the offending row
+}
+
+// Thrown when a transfer exceeds the network's whitelist threshold and no
+// access token was supplied. Run the whitelist flow, then retry with the
+// resulting token as params.accessToken.
+class WhitelistRequiredError extends MirageError {
+  code: "WHITELIST_REQUIRED";
+  amountUsd: number;
+  thresholdUsd: number;
+}
+
+// Thrown when resuming a non-batch escrow without its blinding scalar. The
+// node cannot be authorized to bond without it, so the transfer can only be
+// completed from the device that deployed the escrow.
+class MissingBlindingScalarError extends MirageError {
+  code: "MISSING_BLINDING_SCALAR";
+  escrowAddress?: Address;
 }
 
 // Thrown (as MirageError with code "ACCOUNT_CHANGED") when walletClient.account
@@ -118,7 +177,15 @@ interface FeeEstimate {
   nodeFee: bigint;              // base node fee + gas cost for node txs
   platformFee: bigint;          // percentage-based protocol fee
   totalFee: bigint;             // networkFee + nodeFee + platformFee
-  totalAmount: bigint;          // transferAmount + totalFee (what leaves the wallet)
+  // ETH the wallet fronts as msg.value at deploy to pay for the node's bond
+  // and collect txs. Always wei, even for ERC20 escrows. Zero for batch.
+  // Refundable surplus, so excluded from totalFee but part of totalAmount.
+  bondPot: bigint;
+  // Pulled by the escrow: transferAmount + rewardAmount. Excludes networkFee,
+  // which the wallet pays as gas on its own txs.
+  escrowAmount: bigint;
+  rewardAmount: bigint;         // paid to the node: nodeFee + platformFee
+  totalAmount: bigint;          // total leaving the wallet, including bondPot
   decimals: number;             // token decimals, for display formatting
   isNativeEth: boolean;
 }
@@ -144,27 +211,50 @@ interface NetworkKeyStatus {
 ### Transfer
 
 ```ts
-interface TransferParams {
+// A single recipient row. A plain transfer is internally a one-row batch.
+interface TransferRow {
   tokenAddress: Address;
   recipientAddress: Address;
-  amount: bigint;               // raw token units (use parseUnits at call site)
+  amount: bigint;
+}
+
+// Secret material required to complete a deployed escrow. The blinding scalar
+// never leaves the device in shareable form: without it the node cannot be
+// authorized to bond, so a resumed transfer must supply the original value.
+interface TransferSecrets {
+  escrowAddress: Address;
+  escrowType: EscrowKind;
+  blindingScalar?: `0x${string}`;  // absent for batch escrows
+  seed: string;
+  selectorMapping?: Record<string, string>;
+  deployHash: Hash;
+  deployedAt: number;
+}
+
+interface TransferParams {
+  // Single-recipient form. Mutually exclusive with `transfers`.
+  tokenAddress?: Address;
+  recipientAddress?: Address;
+  amount?: bigint;              // raw token units (use parseUnits at call site)
+  // Multi-recipient form. Deploys one batch escrow for all rows; mixed
+  // ERC20 + native ETH is supported.
+  transfers?: TransferRow[];
   walletClient: WalletClient;
   publicClient: PublicClient;
   // account is derived from walletClient.account at call time and locked for
   // the duration of the transfer. No explicit account field.
   network: NetworkConfig;
-  // Resume a transfer whose escrow is already deployed (e.g. after an
-  // ACCOUNT_CHANGED or TRANSFER_ABORTED recovery). Skips approve and deploy
-  // steps; the generator starts from compliance (or signal if compliance is
-  // not required). Fee estimation is also skipped, amount must match what
-  // was originally funded.
-  escrowAddress?: Address;
-  // Required when network.enableCompliance is true. Validated before any
-  // transactions are submitted, missing or invalid token throws immediately.
+  // Resume a transfer whose escrow is already deployed. Skips approve and
+  // deploy; the generator starts from compliance (or signal if compliance is
+  // not required). Must carry the blinding scalar for non-batch escrows,
+  // which only the deploying device holds.
+  resume?: TransferSecrets;
+  // Required when the transfer exceeds the network's whitelist threshold.
+  // See WhitelistRequiredError.
   accessToken?: string;
   gasPrice?: GasPrice;          // override live gas; required for fee calc on EVM
   abortSignal?: AbortSignal;    // cancellation; see TransferAbortedError
-  // Max time (ms) to wait for the Transfer event after signal submission.
+  // Max time (ms) to wait for all deliveries after signal submission.
   // Throws TransferTimeoutError if exceeded. Default: 120_000 (2 minutes).
   pollTimeout?: number;
 }
@@ -177,33 +267,49 @@ interface GasPrice {
 
 type TransferStep =
   | { step: "fees"; fees: FeeEstimate }
-  // hash is the approval tx hash. The SDK waits for confirmation before proceeding.
-  | { step: "approve"; hash: Hash }
-  // hash is the deploy tx hash; escrowAddress is available once confirmed.
-  | { step: "deploy"; hash: Hash; escrowAddress: Address }
+  // Emitted once per distinct ERC20 requiring an allowance. The SDK waits for
+  // confirmation before proceeding.
+  | { step: "approve"; hash: Hash; tokenAddress: Address; index: number; total: number }
+  // secrets must be retained to resume this transfer; never log or share them.
+  | {
+      step: "deploy";
+      hash: Hash;
+      escrowAddress: Address;
+      escrowType: EscrowKind;
+      secrets: TransferSecrets;
+    }
   | { step: "compliance"; approval: { signature: string; timestamp: number } }
-  // hash is the signal submission tx hash.
-  | { step: "signal"; hash: Hash }
-  | { step: "complete"; transfer: TransferEvent };
+  | { step: "signal"; response: string }
+  // Emitted incrementally as each recipient's delivery lands on chain. The
+  // node sends one tx per recipient, so a batch completes progressively.
+  | { step: "transfer"; transfer: TransferEvent; row: TransferRow; index: number; total: number }
+  // All recipients delivered.
+  | { step: "complete"; transfers: TransferEvent[] };
 
-// Estimate fees without sending transactions.
-// Fetches gas price from the publicClient (or uses gasPrice override).
+interface PreparedTransfer {
+  fees: FeeEstimate;
+  execute(): AsyncGenerator<TransferStep>;
+}
+
+// Estimate fees without sending transactions, and return an executor that
+// reuses the fetched obfuscation and gas analysis.
+// Checks per-row transfer limits and whitelist thresholds up front.
 async function prepareTransfer(
   params: TransferParams,
-): Promise<FeeEstimate>;
+): Promise<PreparedTransfer>;
 
 // Execute full transfer. Yields progress steps as each stage completes.
-// Internally handles: fee calc → approve → deploy → compliance → signal → poll.
-// Network kind (ethereum vs tempo) determines the escrow strategy automatically.
+// Internally: fee calc -> approve(s) -> deploy -> compliance -> signal -> poll.
+// Escrow variant is derived from the rows: more than one row is always batch,
+// otherwise native or erc20 based on the reward token.
 //
-// Cancellation: pass an AbortSignal via params.abortSignal. The generator checks the
-// signal between steps. If aborted before any transactions are sent, it throws
-// TransferAbortedError with no escrowAddress. If aborted after deploy, the SDK
-// submits a withdrawal tx before throwing. on success, withdrawHash is set; on
-// failure, withdrawError and escrowAddress are set for caller-side recovery.
+// Cancellation: pass an AbortSignal via params.abortSignal. The generator
+// checks the signal between steps and throws TransferAbortedError. No
+// withdrawal is attempted; escrowAddress is included for caller-side recovery.
 //
-// Timeout: if the Transfer event is not observed within params.pollTimeout ms
-// after signal submission, throws TransferTimeoutError.
+// Timeout: if all deliveries are not observed within params.pollTimeout ms
+// after signal submission, throws TransferTimeoutError. Deliveries observed
+// before the timeout are still yielded.
 async function* executeTransfer(
   params: TransferParams,
 ): AsyncGenerator<TransferStep>;
@@ -250,20 +356,70 @@ const NATIVE_TOKEN_ADDRESS: Address;
 ### Service Utilities
 
 ```ts
-// SGX attestation status.
+// SGX attestation status. Reads publicKey and chainId from the node's
+// hash-committed `payload` object, falling back to the legacy flat fields.
+//
+// Verifies the quote against Intel's root CA and binds it to the served
+// payload BY DEFAULT. Pass `{ verify: false }` to skip, only for local chains
+// and non-SGX test nodes. Pass VerifyAttestationOptions to tune the policy.
+// When verifying, the returned key and chainId come from the attested payload
+// rather than the response's top-level fields.
 async function fetchNetworkKey(
   nomadUrl: string,
+  options?: { verify?: boolean | VerifyAttestationOptions },
 ): Promise<NetworkKeyStatus>;
 
-// Transfer limits and service health.
-// maxTransferUsd values are strings (not bigint) to survive JSON serialization.
+// Verify a quote and its payload commitment directly.
+// Checks, in order: Intel signature chain, TCB status, enclave measurements,
+// the payload hash committed in the report data, debug mode, global-key flag,
+// and report age.
+async function verifyAttestation(
+  attestation: { quote: string; collateral: unknown },
+  payload: AttestationPayload,
+  options?: VerifyAttestationOptions,
+): Promise<AttestationVerification>;
+
+interface VerifyAttestationOptions {
+  expectedMrSigner?: string[];    // pin the signing identity
+  allowedTcbStatus?: TcbStatus[]; // default: UpToDate, SWHardeningNeeded
+  allowedAdvisoryIds?: string[];  // reject advisories outside this allowlist
+  minimumIsvSvn?: number;         // minimum enclave security version
+  allowDebug?: boolean;           // never enable against production nodes
+  requireGlobal?: boolean;        // default true
+  maxAgeSecs?: number;            // default 86_400; 0 disables
+  nowSecs?: number;               // for reproducible tests
+}
+
+// Mirage's enclave signing identity, pinned by the built-in networks.
+const MIRAGE_MRSIGNER: string;
+
+// Transfer limits, whitelist thresholds, and service health.
+// USD values are strings (not bigint) to survive JSON serialization, keyed by
+// chain id.
 async function fetchApiHealth(
   apiServer: string,
 ): Promise<{
   status: string;
   version?: string;
   maxTransferUsd?: Record<string, string | null>;
+  whitelistRequiredUsd?: Record<string, string | null>;
 }>;
+
+// Historical gas averages, for surfacing an "elevated gas" indicator.
+// Not used for execution pricing, which reads live gas from the chain.
+// Returns null when the endpoint is unavailable or has no samples.
+async function fetchGasHistoryAverages(
+  apiServer: string,
+  chainId: number,
+): Promise<{ maxFeePerGas: bigint; sampledDays: number; windowDays: number } | null>;
+
+// Check whether an identifier is whitelisted. The value is normalized
+// (trimmed, lowercased) and hashed client-side; the hash itself becomes the
+// access token passed as accessToken on subsequent transfers.
+async function checkWhitelist(
+  apiServer: string,
+  email: string,
+): Promise<{ whitelisted: boolean; accessToken?: string }>;
 ```
 
 ## Example Usage
@@ -272,13 +428,14 @@ async function fetchApiHealth(
 import {
   networks,
   prepareTransfer,
-  executeTransfer,
   getTokenMetadata,
   getTokenBalance,
   MirageError,
   TransferAbortedError,
   TransferTimeoutError,
-} from "@mirageprivacy/mirage-sdk";
+  TransferLimitError,
+  WhitelistRequiredError,
+} from "@mirageprivacy/sdk";
 import { createWalletClient, createPublicClient, http, parseUnits, formatUnits } from "viem";
 
 // walletClient and publicClient are provided by the app (e.g. via AppKit/MetaMask).
@@ -301,74 +458,80 @@ if (balance < amount) {
   throw new Error(`Insufficient balance: ${formatUnits(balance, token.decimals)} ${token.symbol}`);
 }
 
-// 2. Preview fees before asking the user to confirm.
-const fees = await prepareTransfer({
+// 2. Preview fees before asking the user to confirm. Limits and whitelist
+//    thresholds are checked here, before any transaction is sent.
+const controller = new AbortController();
+
+const prepared = await prepareTransfer({
   tokenAddress: TOKEN_ADDRESS,
   recipientAddress: RECIPIENT,
   amount,
   walletClient,
   publicClient,
   network: NETWORK,
+  abortSignal: controller.signal,
+  pollTimeout: 120_000,
 });
 
+const { fees } = prepared;
 console.log(`Sending:    ${formatUnits(fees.transferAmount, token.decimals)} ${token.symbol}`);
 console.log(`Total cost: ${formatUnits(fees.totalAmount, token.decimals)} ${token.symbol}`);
 console.log(`  network fee:  ${formatUnits(fees.networkFee, token.decimals)}`);
 console.log(`  node fee:     ${formatUnits(fees.nodeFee, token.decimals)}`);
 console.log(`  platform fee: ${formatUnits(fees.platformFee, token.decimals)}`);
+// Refundable ETH outlay, always wei.
+console.log(`  bond pot:     ${formatUnits(fees.bondPot, 18)} ETH`);
+
+// For a batch, pass rows instead of a single recipient:
+//   prepareTransfer({ transfers: [{ tokenAddress, recipientAddress, amount }, ...], ... })
 
 // 3. Execute. The controller lets the UI cancel (e.g. user clicks "Cancel").
-const controller = new AbortController();
-
-// Wire up a cancel button, network change, or account change event:
-//   controller.abort();
+//    Wire up a cancel button, network change, or account change event:
+//      controller.abort();
 
 try {
-  for await (const event of executeTransfer({
-    tokenAddress: TOKEN_ADDRESS,
-    recipientAddress: RECIPIENT,
-    amount,
-    walletClient,
-    publicClient,
-    network: NETWORK,
-    abortSignal: controller.signal,
-    pollTimeout: 120_000,
-  })) {
-    switch (event.step) {
+  for await (const step of prepared.execute()) {
+    switch (step.step) {
       case "fees":
-        // Re-emitted at execution time; fees may differ slightly from prepareTransfer
-        // if gas moved between preview and execution.
+        // Re-emitted at execution time; fees may differ slightly from the
+        // preview if gas moved in between.
         break;
       case "approve":
-        console.log(`Token approval confirmed: ${step.hash}`);
+        console.log(`Approved ${step.tokenAddress} (${step.index + 1}/${step.total}): ${step.hash}`);
         break;
       case "deploy":
         console.log(`Escrow deployed: ${step.escrowAddress} (tx: ${step.hash})`);
+        // Persist step.secrets to resume later. Contains the blinding scalar,
+        // so keep it local: never put it in a URL, log, or error report.
+        localStorage.setItem(step.escrowAddress, JSON.stringify(step.secrets));
         break;
       case "compliance":
         console.log(`Compliance approved at ${step.approval.timestamp}`);
         break;
       case "signal":
-        console.log(`Signal submitted: ${step.hash}`);
+        console.log(`Signal submitted: ${step.response}`);
+        break;
+      case "transfer":
+        // Emitted per recipient as each delivery lands.
+        console.log(
+          `Delivered ${step.index + 1}/${step.total} to ${step.row.recipientAddress}: ` +
+            step.transfer.transactionHash,
+        );
         break;
       case "complete":
-        console.log(`Transfer complete: ${step.transfer.transactionHash}`);
+        console.log(`All ${step.transfers.length} transfer(s) complete`);
         break;
     }
   }
 } catch (e) {
   if (e instanceof TransferAbortedError) {
-    if (e.withdrawHash) {
-      console.warn("Cancelled: withdrawal submitted, funds returning", e.withdrawHash);
-    } else if (e.withdrawError) {
-      // Escrow is still funded. Surface escrowAddress for manual recovery.
-      console.error("Cancelled: withdrawal failed, manual recovery needed", {
-        escrow: e.escrowAddress,
-        error: e.withdrawError,
-      });
-    } else {
-      console.warn("Cancelled before any transactions were sent");
-    }
+    // The escrow keeps the funds until withdrawn; surface it for recovery.
+    console.warn("Cancelled", { escrow: e.escrowAddress });
+  } else if (e instanceof TransferLimitError) {
+    console.error(`Row ${e.rowIndex} exceeds the $${e.limitUsd} limit`);
+  } else if (e instanceof WhitelistRequiredError) {
+    // Run the whitelist flow, then retry with the resulting accessToken.
+    console.error(`Transfers above $${e.thresholdUsd} require verification`);
   } else if (e instanceof TransferTimeoutError) {
     console.error("Timed out waiting for node to complete transfer");
   } else if (e instanceof MirageError && e.code === "ACCOUNT_CHANGED") {
@@ -379,8 +542,9 @@ try {
       actual:   e.meta.actualAccount,
     });
     if (e.meta.escrowAddress) {
-      // Once the user switches back, resume from compliance/signal:
-      // executeTransfer({ ...params, escrowAddress: e.meta.escrowAddress })
+      // Once the user switches back, resume from compliance/signal using the
+      // secrets persisted at the deploy step:
+      //   prepareTransfer({ ...params, resume: savedSecrets })
       console.warn("Resume with escrowAddress:", e.meta.escrowAddress);
     }
   } else if (e instanceof MirageError) {
@@ -396,11 +560,89 @@ try {
 The following are implementation details composed by the pipeline:
 
 - **fees**: fee calculation using obfuscation estimations, fallback gas constants, and the protocol's rates, all in bigint
+- **bond**: blinded signer derivation (secp256k1) and bond pot sizing
 - **token**: ERC20 approve, balance, allowance
-- **escrow**: contract deployment (standard for ethereum kind, batched for tempo kind), withdrawal
-- **api**: bytecode obfuscation, compliance requests
-- **nomad**: ECIES signal encryption and submission
-- **transfer**: polling for Transfer events / native ETH transfers
+- **escrow**: contract deployment (per-variant constructors, batch, tempo atomic multicall), withdrawal
+- **api**: bytecode obfuscation, compliance, limits, whitelist, gas history
+- **attestation**: SGX quote verification and payload commitment checking
+- **nomad**: attestation and ECIES signal encryption/submission
+- **poll**: incremental per-recipient delivery watching
+
+### Attestation (internal)
+
+The node serves a quote, its collateral, and an `AttestationPayload`. The quote
+commits to that payload only by hash, in the report data:
+
+```
+report_data[0..32]  = sha256(publicKey . chainId_be . maxBalanceUsd_be . complianceKeys)
+report_data[32..40] = timestamp (unix seconds, big endian)
+report_data[61]     = isMetrics
+report_data[62]     = isDebug
+report_data[63]     = isGlobal
+```
+
+Verification recomputes that hash and compares it to the report data, which is
+what binds the signal-encryption key to the enclave. The compliance keys are
+hashed in the order served: the enclave sorts and deduplicates them when
+building the payload, so re-sorting client-side would break the commitment.
+
+Quote verification uses `@phala/dcap-qvl`, loaded through a dynamic import so
+callers that opt out do not pay for it. Collateral is served alongside the
+quote, so verification needs no network access.
+
+Verification is on by default and fails closed: a node serving no quote is
+rejected rather than trusted. Opting out is explicit
+(`attestation.required: false`), and `createNetworkConfig` merges the
+attestation policy field-by-field so a partial override cannot silently drop
+`required`. Debug enclaves are rejected unless `allowDebug` is set, which is
+appropriate only for testnets, since a debug enclave's memory is readable by
+its host.
+
+The built-in networks pin `expectedMrSigner` to `MIRAGE_MRSIGNER`, so a quote
+from an enclave Mirage did not sign is rejected even though it is genuinely
+Intel-signed. MRENCLAVE is reported in `NetworkKeyStatus` but never checked:
+it measures the enclave binary and changes on every release, so pinning it
+would break the SDK on each enclave upgrade.
+
+### Escrow Variants (internal)
+
+```
+EscrowNative: (address recipient, uint256 amount, address blindedSigner,
+               uint256 rewardAmount, uint256 bondAmount) payable
+EscrowERC20:  (address token, address recipient, uint256 amount,
+               address blindedSigner, uint256 rewardAmount) payable
+EscrowBatch:  (address rewardAsset,
+               (address asset, address recipient, uint256 amount)[] transfers,
+               uint256 rewardAmount)
+```
+
+msg.value at deploy:
+- native single: `amount + reward + bondPot`
+- erc20 single: `bondPot`
+- batch: `sum(native rows) + (rewardAsset is native ? reward : 0)`
+
+The reward asset is the first ERC20 row, else row 0. This choice must agree
+across fee calculation, approval bucketing, constructor encoding, and the
+signal's `tokenContract`, or the deploy reverts.
+
+### Blinded Signer (internal)
+
+Each single escrow stores `blindedSigner = address(G + s*B)` on secp256k1,
+where `G` is the enclave's attested public key and `s` is a fresh random
+scalar. The enclave signs the escrow's BondAuth with `g + s`, which recovers
+to that address. The scalar is sent in the signal and must never be reused
+across escrows, since reuse links them to the network key.
+
+### Bond Pot (internal)
+
+Single escrows hold an ETH pot that funds the node's `bond()` and `collect()`
+transactions, replacing the previous reimbursement through the node reward.
+
+```
+bondPot = ceil((bondGas + collectGas) * margin) * maxFeePerGas
+```
+
+Batch escrows take no pot and keep bond + collect in the reward instead.
 
 ### Fee Calculation (internal)
 
@@ -409,16 +651,25 @@ using an on-chain price oracle (Uniswap `getAmountsOut`). For Tempo, gas costs a
 fixed (stablecoin native token at known gwei).
 
 ```
-networkFee   = maxFeePerGas * (approveGas + deployGas)
-nodeGasFee   = maxFeePerGas * (approveGas + bondGas + transferGas + collectGas)
-nodeFee      = nodeFeeBase + nodeGasFee                    [converted to token units]
-platformFee  = transferAmount * platformFeeRate / 10_000n
-totalFee     = networkFee + nodeFee + platformFee
-totalAmount  = transferAmount + totalFee
+networkFee   = maxFeePerGas * (approveGas * approvalCount + deployGas)
+nodeGasUnits = single ? fundGas : bondGas + fundGas + collectGas
+nodeFee      = nodeFeeBase + maxFeePerGas * nodeGasUnits   [converted to token units]
+platformFee  = platformFeeBase * platformFeeRate / 10_000n
+rewardAmount = nodeFee + platformFee
+totalFee     = networkFee + rewardAmount
+escrowAmount = transferAmount + rewardAmount               [what the escrow pulls]
+totalAmount  = transferAmount + totalFee + bondPot         [native: pot included]
 ```
+
+Single escrows bill only `fund` gas to the node because the bond pot covers
+bond and collect; including them would charge the user twice.
+
+The escrow pulls `escrowAmount`, not `totalAmount`: the network fee is paid as
+gas on the wallet's own transactions, so approving it would strand allowance.
 
 For native ETH: gas costs are already in wei, no price conversion needed.
 For ERC20 on EVM: gas costs (wei) are multiplied by ETH/token exchange rate.
+The bond pot stays in wei even for ERC20 escrows, since it is paid in ETH.
 For Tempo: gas price is fixed, native token is a stablecoin, no conversion needed.
 
 ## What is out of scope for the library?
@@ -434,4 +685,6 @@ For Tempo: gas price is fixed, native token is a stablecoin, no conversion neede
 
 - `viem`: peer dependency
 - `eciesjs`: direct dependency (encryption format must match node-side Rust `ecies` crate)
-
+- `@noble/curves`: direct dependency (secp256k1 point arithmetic for blinded signer derivation)
+- `@noble/hashes`: direct dependency (sha256 for the attestation payload commitment)
+- `@phala/dcap-qvl`: direct dependency (SGX quote verification; dynamically imported so it is only loaded when verifying)
