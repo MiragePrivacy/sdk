@@ -6,7 +6,7 @@ type DeepPartial<T> = {
 
 // Merged field-by-field rather than replaced, so a partial override cannot
 // silently drop sibling fields (e.g. attestation.required).
-const NESTED_KEYS = ["gas", "nativeGas", "attestation"] as const;
+const NESTED_KEYS = ["attestation"] as const;
 
 /**
  * Mirage's enclave signing identity. Stable across enclave releases, unlike
@@ -40,25 +40,7 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     rpcUrl: "https://ethereum-rpc.publicnode.com",
     nomadUrl: "https://sgx1.mirageprivacy.com",
     apiServer: "https://api.mirageprivacy.com",
-    enableCompliance: true,
     enableAtomicBatch: false,
-    nodeFeeUsd: 2_000000n, // $2.00 (6 decimals)
-    nodeFeeWei: 500_000_000_000_000n, // 0.0005 ETH
-    platformFeeRate: 50n, // 0.50%
-    gas: {
-      approve: 46_686n,
-      deploy: 2_167_182n,
-      bond: 109_816n,
-      fund: 120_000n,
-      collect: 250_000n,
-    },
-    nativeGas: {
-      deploy: 1_924_115n,
-      bond: 92_366n,
-      fund: 120_000n,
-      collect: 250_000n,
-    },
-    bondPotMarginBps: 150n,
     // Production: verified quotes only, no debug enclaves, and the enclave
     // must be signed by Mirage. MRENCLAVE is not pinned, since it changes on
     // every enclave release.
@@ -71,10 +53,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       // ISVSVN 2 identifies the deployed hardened Mirage enclave.
       minimumIsvSvn: 2,
     },
-    uniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
-    priceChainId: 1,
-    priceTokenContract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    priceUniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
   },
   sepolia: {
     id: "sepolia",
@@ -83,25 +61,7 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
     nomadUrl: "https://sgx1.mirageprivacy.com:8443",
     apiServer: "https://api.mirageprivacy.com",
-    enableCompliance: true,
     enableAtomicBatch: false,
-    nodeFeeUsd: 2_000000n,
-    nodeFeeWei: 500_000_000_000_000n,
-    platformFeeRate: 50n,
-    gas: {
-      approve: 46_686n,
-      deploy: 2_167_182n,
-      bond: 109_816n,
-      fund: 120_000n,
-      collect: 250_000n,
-    },
-    nativeGas: {
-      deploy: 1_924_115n,
-      bond: 92_366n,
-      fund: 120_000n,
-      collect: 250_000n,
-    },
-    bondPotMarginBps: 150n,
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
     // than turning verification off; the signer check still applies.
@@ -111,12 +71,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
       allowedTcbStatus: ALLOWED_TCB_STATUS,
       allowedAdvisoryIds: ALLOWED_ADVISORY_IDS,
     },
-    uniswapRouter: "0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3",
-    // Testnet has no liquid market; price from mainnet.
-    priceChainId: 1,
-    priceRpcUrl: "https://ethereum-rpc.publicnode.com",
-    priceTokenContract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    priceUniswapRouter: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
   },
   tempo: {
     id: "tempo",
@@ -125,25 +79,10 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     rpcUrl: "https://rpc.moderato.tempo.xyz",
     nomadUrl: "https://sgx1.mirageprivacy.com:8444",
     apiServer: "https://api.mirageprivacy.com",
-    enableCompliance: false,
-    enableAtomicBatch: true,
-    nodeFeeUsd: 200000n, // $0.20 (6 decimals)
-    nodeFeeWei: 0n,
-    platformFeeRate: 50n,
-    gas: {
-      approve: 279_126n,
-      deploy: 11_748_263n,
-      bond: 825_039n,
-      fund: 310_574n,
-      collect: 932_363n,
-    },
-    nativeGas: {
-      deploy: 11_748_263n,
-      bond: 825_039n,
-      fund: 310_574n,
-      collect: 932_363n,
-    },
-    bondPotMarginBps: 150n,
+    // The pricing-aware compliance endpoint currently verifies a top-level
+    // creation transaction. Keep separate approvals + exact deployment until
+    // it can inspect Tempo call-vector creation receipts.
+    enableAtomicBatch: false,
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
     // than turning verification off; the signer check still applies.
@@ -162,8 +101,6 @@ export function createNetworkConfig(
 ): NetworkConfig {
   const result = typeof base === "string" ? { ...networks[base] } : { ...base };
   // Deep-copy nested objects to prevent mutation of the source config.
-  result.gas = { ...result.gas };
-  result.nativeGas = { ...result.nativeGas };
   if (result.attestation) result.attestation = { ...result.attestation };
 
   if (!overrides) return result;
@@ -173,7 +110,7 @@ export function createNetworkConfig(
     if (value === undefined) continue;
 
     if ((NESTED_KEYS as readonly string[]).includes(key) && typeof value === "object") {
-      const target = result[key as "gas" | "nativeGas" | "attestation"];
+      const target = result[key as "attestation"];
       (result as Record<string, unknown>)[key] = { ...target, ...value };
     } else {
       (result as Record<string, unknown>)[key] = value;
