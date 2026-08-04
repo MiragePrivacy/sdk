@@ -40,7 +40,7 @@ function u64BigEndian(value: bigint): Uint8Array {
 
 /**
  * Canonical payload commitment, matching the enclave's
- * `sha256(public_key . chain_id_be . max_balance_usd_be . compliance_keys)`.
+ * `sha256(public_key . chain_id_be . max_balance_usd_be . compliance_keys . pricing_keys)`.
  *
  * Compliance keys are hashed in the order given; the enclave sorts and
  * deduplicates them when constructing the payload, so the served order is
@@ -55,22 +55,25 @@ export function hashAttestationPayload(payload: AttestationPayload): Uint8Array 
     );
   }
 
-  const keys = (payload.complianceKeys ?? []).map((key) => {
+  const parseKeys = (keys: string[], authority: string) => keys.map((key) => {
     const bytes = hexToBytes(key);
     if (bytes.length !== 32) {
       throw new MirageError(
         "INVALID_ATTESTATION",
-        `Expected a 32-byte compliance key, got ${bytes.length} bytes`,
+        `Expected a 32-byte ${authority} key, got ${bytes.length} bytes`,
       );
     }
     return bytes;
   });
+  const complianceKeys = parseKeys(payload.complianceKeys ?? [], "compliance");
+  const pricingKeys = parseKeys(payload.pricingKeys ?? [], "pricing");
 
   const parts = [
     publicKey,
     u64BigEndian(BigInt(payload.chainId)),
     u64BigEndian(BigInt(payload.maxBalanceUsd ?? 0)),
-    ...keys,
+    ...complianceKeys,
+    ...pricingKeys,
   ];
 
   const total = parts.reduce((sum, part) => sum + part.length, 0);
