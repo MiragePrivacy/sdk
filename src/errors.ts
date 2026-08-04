@@ -101,9 +101,9 @@ export class WhitelistRequiredError extends MirageError {
 }
 
 /**
- * Thrown when resuming a non-batch escrow without its blinding scalar. The
- * node cannot be authorized to bond without it, so the transfer can only be
- * completed from the device that deployed the escrow.
+ * Thrown when a priced EscrowBatch is resumed without its base blinding
+ * scalar. Nomad cannot derive the constructor's one-time bid signers without
+ * it, so completion must use the secrets retained at deployment.
  */
 export class MissingBlindingScalarError extends MirageError {
   escrowAddress?: Address;
