@@ -1,4 +1,4 @@
-import type { Address, PublicClient, WalletClient } from "viem";
+import { isAddress, type Address, type PublicClient, type WalletClient } from "viem";
 import type {
   ApprovalCheckpoint,
   FeeEstimate,
@@ -27,7 +27,7 @@ import {
   fetchNetworkKey,
   fetchObfuscation,
   fetchPricingQuote,
-  isWhitelistRejection,
+  whitelistRequirementFromError,
 } from "./internal/api.js";
 import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
@@ -176,18 +176,34 @@ interface TransferContext {
   obfuscation?: ObfuscationResult;
 }
 
-function quoteFromResume(params: TransferParams, rows: TransferRow[]): PricingQuote {
+function isValidFundingMap(value: unknown): value is Record<string, bigint> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(value).every(
+    ([asset, amount]) => isAddress(asset) && typeof amount === "bigint" && amount >= 0n,
+  );
+}
+
+function quoteFromResume(params: TransferParams): PricingQuote {
   const resume = params.resume!;
   if (
+    typeof resume.quoteCommitment !== "string" ||
     !resume.quoteCommitment ||
+    typeof resume.sealedPricingAuthorization !== "string" ||
     !resume.sealedPricingAuthorization ||
-    !resume.rewardAsset ||
-    resume.rewardAmount === undefined ||
-    !resume.serviceFee
+    !isAddress(resume.rewardAsset) ||
+    typeof resume.rewardAmount !== "bigint" ||
+    resume.rewardAmount < 0n ||
+    !resume.serviceFee ||
+    !isAddress(resume.serviceFee.asset) ||
+    typeof resume.serviceFee.amount !== "bigint" ||
+    resume.serviceFee.amount < 0n ||
+    !isValidFundingMap(resume.depositByAsset) ||
+    typeof resume.msgValue !== "bigint" ||
+    resume.msgValue < 0n
   ) {
     throw new MirageError(
       "INVALID_RESUME",
-      "Resume data is missing its pricing authorization or quoted fee",
+      "Resume data is missing or contains invalid pricing and funding values",
     );
   }
   return {
@@ -224,7 +240,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     if (!params.resume.blindingScalar) {
       throw new MissingBlindingScalarError(params.resume.escrowAddress);
     }
-    const quote = quoteFromResume(params, rows);
+    const quote = quoteFromResume(params);
     return {
       rows,
       sender,
@@ -487,7 +503,10 @@ async function* completeTransfer(
       accessToken: params.accessToken,
     });
   } catch (error) {
-    if (isWhitelistRejection(error)) throw new WhitelistRequiredError(0, 0);
+    const requirement = whitelistRequirementFromError(error);
+    if (requirement) {
+      throw new WhitelistRequiredError(requirement.amountUsd, requirement.thresholdUsd);
+    }
     throw error;
   }
   if (

@@ -14,7 +14,7 @@ import {
 } from "viem";
 import { ContractError } from "../errors.js";
 import { isNativeToken } from "../token.js";
-import type { ApprovalCheckpoint, TransferRow } from "../types.js";
+import type { ApprovalCheckpoint } from "../types.js";
 
 const escrowAbi = parseAbi(["function is_bonded() external view returns (bool)"]);
 
@@ -48,11 +48,6 @@ const CANCEL_REASON_MESSAGES: Record<string, string> = {
 export function predictContractAddress(deployerAddress: Address, nonce: number): Address {
   const rlpEncoded = toRlp([deployerAddress, nonce === 0 ? "0x" : toHex(nonce)]);
   return getAddress(`0x${keccak256(rlpEncoded).slice(26)}` as Address);
-}
-
-/** Reward denomination selected by the API from the first ordered Signal. */
-export function pickRewardToken(transfers: TransferRow[]): Address {
-  return transfers[0].tokenAddress;
 }
 
 /** Convert the API's exact funding map into ERC-20 approval calls. */

@@ -4,7 +4,6 @@ import {
   buildQuotedApprovalBuckets,
   approveQuotedForDeployment,
   deployQuotedApproved,
-  pickRewardToken,
   predictContractAddress,
 } from "../src/internal/escrow.js";
 
@@ -20,15 +19,6 @@ describe("quoted escrow funding", () => {
       { tokenAddress: USDC, amount: 1_025n },
       { tokenAddress: USDT, amount: 500n },
     ]);
-  });
-
-  it("keeps the first transfer asset as the reward denomination", () => {
-    expect(
-      pickRewardToken([
-        { tokenAddress: zeroAddress, recipientAddress: DEPLOYER, amount: 1n },
-        { tokenAddress: USDC, recipientAddress: DEPLOYER, amount: 2n },
-      ]),
-    ).toBe(zeroAddress);
   });
 
   it("predicts the standard CREATE address, including nonce zero", () => {

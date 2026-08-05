@@ -32,27 +32,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export interface GasAnalysis {
-  /** Estimated gas for deploying the obfuscated escrow contract. */
-  deploy?: bigint;
-  /** Estimated gas for the bond function. */
-  bond?: bigint;
-  /** Estimated gas for the collect function (fallback when no variant matches). */
-  collect?: bigint;
-  /** Collect gas for standard EVM networks. */
-  collectStandard?: bigint;
-  /** Collect gas for tempo. */
-  collectTempo?: bigint;
-  /** Estimated gas for the fund function. */
-  fund?: bigint;
-}
-
 export interface ObfuscationResult {
   obfuscatedBytecode: `0x${string}`;
   selectorMapping?: Record<string, string>;
   originalSize: number;
   obfuscatedSize: number;
-  gasAnalysis?: GasAnalysis;
   seed: string;
 }
 
@@ -72,20 +56,6 @@ export async function fetchObfuscation(
     selector_mapping?: Record<string, string>;
     original_size: number;
     obfuscated_size: number;
-    gas_analysis?: {
-      obfuscated_gas_estimate?: number | null;
-      original_gas_estimate?: number | null;
-      gas_overhead_percentage?: number | null;
-      function_gas?: {
-        bond?: number | null;
-        collect?: number | null;
-        fund?: number | null;
-        collect_variants?: {
-          standard?: number | null;
-          tempo?: number | null;
-        } | null;
-      } | null;
-    } | null;
   }>(`${apiServer}/obfuscate_escrow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -97,27 +67,11 @@ export async function fetchObfuscation(
 
   const bytecode = res.obfuscated_bytecode.trim();
 
-  let gasAnalysis: GasAnalysis | undefined;
-  if (res.gas_analysis) {
-    const ga = res.gas_analysis;
-    const fg = ga.function_gas;
-    gasAnalysis = {};
-    if (ga.obfuscated_gas_estimate != null) gasAnalysis.deploy = BigInt(ga.obfuscated_gas_estimate);
-    if (fg?.bond != null) gasAnalysis.bond = BigInt(fg.bond);
-    if (fg?.collect != null) gasAnalysis.collect = BigInt(fg.collect);
-    if (fg?.fund != null) gasAnalysis.fund = BigInt(fg.fund);
-    if (fg?.collect_variants?.standard != null)
-      gasAnalysis.collectStandard = BigInt(fg.collect_variants.standard);
-    if (fg?.collect_variants?.tempo != null)
-      gasAnalysis.collectTempo = BigInt(fg.collect_variants.tempo);
-  }
-
   return {
     obfuscatedBytecode: (bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`) as `0x${string}`,
     selectorMapping: res.selector_mapping,
     originalSize: res.original_size,
     obfuscatedSize: res.obfuscated_size,
-    gasAnalysis,
     seed,
   };
 }
@@ -242,9 +196,44 @@ export async function fetchComplianceApproval(
   });
 }
 
-/** True when a compliance rejection indicates whitelist verification is needed. */
-export function isWhitelistRejection(error: unknown): boolean {
-  return error instanceof ApiError && error.statusCode === 403 && /whitelist/i.test(error.message);
+export interface WhitelistRequirement {
+  amountUsd?: number;
+  thresholdUsd?: number;
+}
+
+function parseUsd(value: unknown): number | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const parsed = Number(String(value).replaceAll(",", ""));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Extract API-calculated whitelist values from a compliance rejection. */
+export function whitelistRequirementFromError(
+  error: unknown,
+): WhitelistRequirement | undefined {
+  if (!(error instanceof ApiError) || error.statusCode !== 403) return undefined;
+
+  const body =
+    error.body && typeof error.body === "object"
+      ? (error.body as Record<string, unknown>)
+      : undefined;
+  const errorText = typeof body?.error === "string" ? body.error : error.message;
+  const details = typeof body?.details === "string" ? body.details : "";
+  if (!/whitelist/i.test(`${errorText} ${details}`)) return undefined;
+
+  const amountMatch = details.match(
+    /transaction_value_usd=~?\$([0-9][0-9,]*(?:\.[0-9]+)?)/i,
+  );
+  const thresholdMatch = errorText.match(
+    /transactions?\s+above\s+\$([0-9][0-9,]*(?:\.[0-9]+)?)/i,
+  );
+
+  return {
+    amountUsd:
+      parseUsd(body?.amountUsd ?? body?.amount_usd) ?? parseUsd(amountMatch?.[1]),
+    thresholdUsd:
+      parseUsd(body?.thresholdUsd ?? body?.threshold_usd) ?? parseUsd(thresholdMatch?.[1]),
+  };
 }
 
 export interface AttestResponse {

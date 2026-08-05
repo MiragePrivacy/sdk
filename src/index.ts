@@ -3,7 +3,6 @@ export { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "./networks.js";
 export { prepareTransfer, executeTransfer } from "./transfer.js";
 export type { TransferParams } from "./transfer.js";
 export type {
-  GasAnalysis,
   ApiHealth,
   GasHistoryAverages,
   FetchNetworkKeyOptions,
@@ -37,7 +36,6 @@ export {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  TransferLimitError,
   WhitelistRequiredError,
   MissingBlindingScalarError,
 } from "./errors.js";

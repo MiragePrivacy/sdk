@@ -9,6 +9,24 @@ const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
 const RECIPIENT_A = "0x0000000000000000000000000000000000000011" as const;
 const RECIPIENT_B = "0x0000000000000000000000000000000000000012" as const;
 const COMMITMENT = `0x${"11".repeat(32)}` as `0x${string}`;
+const DEPLOY_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
+
+const VALID_RESUME = {
+  escrowAddress: SENDER,
+  escrowType: "batch" as const,
+  blindingScalar: `0x${"33".repeat(32)}` as `0x${string}`,
+  seed: `0x${"44".repeat(32)}`,
+  deployHash: DEPLOY_HASH,
+  deployedAt: 1_700_000_000,
+  rewardAmount: 25n,
+  rewardAsset: USDC,
+  quoteCommitment: COMMITMENT,
+  sealedPricingAuthorization: "0xabcd" as `0x${string}`,
+  serviceFee: { asset: USDC, amount: 25n },
+  depositByAsset: { [USDC]: 125n },
+  msgValue: 0n,
+  senderAddress: SENDER,
+};
 
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -132,5 +150,52 @@ describe("prepareTransfer pricing flow", () => {
         network,
       }),
     ).rejects.toMatchObject({ code: "SENDER_REQUIRED" });
+  });
+
+  it.each(["depositByAsset", "msgValue"] as const)(
+    "rejects resume data missing %s with INVALID_RESUME",
+    async (field) => {
+      await expect(
+        prepareTransfer({
+          tokenAddress: USDC,
+          recipientAddress: RECIPIENT_A,
+          amount: 100n,
+          publicClient: {} as any,
+          network,
+          resume: { ...VALID_RESUME, [field]: undefined } as any,
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_RESUME",
+        message: "Resume data is missing or contains invalid pricing and funding values",
+      });
+    },
+  );
+
+  it("surfaces real whitelist values returned by compliance", async () => {
+    const prepared = await prepareTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      publicClient: {} as any,
+      network,
+      resume: VALID_RESUME,
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      text: async () =>
+        JSON.stringify({
+          error: "Caller is not whitelisted for transactions above $1000",
+          details: "transaction_value_usd=~$1250.50",
+        }),
+    }) as any;
+
+    const completion = prepared.complete({ account: { address: SENDER } } as any);
+    await expect(completion.next()).rejects.toMatchObject({
+      code: "WHITELIST_REQUIRED",
+      amountUsd: 1_250.5,
+      thresholdUsd: 1_000,
+    });
   });
 });

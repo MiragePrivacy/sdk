@@ -235,7 +235,7 @@ import {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  TransferLimitError,
+  WhitelistRequiredError,
 } from "@mirageprivacy/sdk";
 
 try {
@@ -245,8 +245,8 @@ try {
     // e.escrowAddress - set if deploy completed before abort
   } else if (e instanceof TransferTimeoutError) {
     // Transfer event not observed within pollTimeout (default 2 min)
-  } else if (e instanceof TransferLimitError) {
-    // e.amountUsd, e.limitUsd
+  } else if (e instanceof WhitelistRequiredError) {
+    // e.amountUsd and e.thresholdUsd are present when supplied by the API
   } else if (e instanceof MirageError && e.code === "ACCOUNT_CHANGED") {
     // Wallet account switched mid-transfer
     // e.meta.expectedAccount, e.meta.actualAccount, e.meta.escrowAddress

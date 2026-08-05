@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchComplianceApproval, fetchPricingQuote } from "../src/internal/api.js";
+import {
+  fetchComplianceApproval,
+  fetchPricingQuote,
+  whitelistRequirementFromError,
+} from "../src/internal/api.js";
+import { ApiError } from "../src/errors.js";
 
 const SENDER = "0x0000000000000000000000000000000000000001" as const;
 const TOKEN = "0x0000000000000000000000000000000000000002" as const;
@@ -87,5 +92,29 @@ describe("fetchComplianceApproval", () => {
       escrow_type: "batch",
       quote_commitment: COMMITMENT,
     });
+  });
+});
+
+describe("whitelistRequirementFromError", () => {
+  it("extracts the API-calculated amount and configured threshold", () => {
+    const error = new ApiError(
+      403,
+      "Caller is not whitelisted for transactions above $1000",
+      {
+        error: "Caller is not whitelisted for transactions above $1000",
+        details: "transaction_value_usd=~$1,250.50",
+      },
+    );
+
+    expect(whitelistRequirementFromError(error)).toEqual({
+      amountUsd: 1_250.5,
+      thresholdUsd: 1_000,
+    });
+  });
+
+  it("does not classify unrelated forbidden responses as whitelist failures", () => {
+    expect(
+      whitelistRequirementFromError(new ApiError(403, "Predicate screening failed")),
+    ).toBeUndefined();
   });
 });

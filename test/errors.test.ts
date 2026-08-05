@@ -5,7 +5,7 @@ import {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  TransferLimitError,
+  WhitelistRequiredError,
 } from "../src/errors.js";
 
 describe("MirageError", () => {
@@ -95,15 +95,22 @@ describe("TransferTimeoutError", () => {
   });
 });
 
-describe("TransferLimitError", () => {
-  it("includes amount and limit", () => {
-    const err = new TransferLimitError(500, 100);
+describe("WhitelistRequiredError", () => {
+  it("includes API-provided amount and threshold", () => {
+    const err = new WhitelistRequiredError(1_250.5, 1_000);
     expect(err).toBeInstanceOf(MirageError);
-    expect(err.code).toBe("TRANSFER_LIMIT_EXCEEDED");
-    expect(err.name).toBe("TransferLimitError");
-    expect(err.amountUsd).toBe(500);
-    expect(err.limitUsd).toBe(100);
-    expect(err.message).toContain("500");
-    expect(err.message).toContain("100");
+    expect(err.code).toBe("WHITELIST_REQUIRED");
+    expect(err.name).toBe("WhitelistRequiredError");
+    expect(err.amountUsd).toBe(1_250.5);
+    expect(err.thresholdUsd).toBe(1_000);
+    expect(err.meta).toEqual({ amountUsd: 1_250.5, thresholdUsd: 1_000 });
+  });
+
+  it("does not invent dollar values when the API omits them", () => {
+    const err = new WhitelistRequiredError();
+    expect(err.amountUsd).toBeUndefined();
+    expect(err.thresholdUsd).toBeUndefined();
+    expect(err.message).toBe("Whitelist verification is required for this transfer");
+    expect(err.message).not.toContain("$0");
   });
 });

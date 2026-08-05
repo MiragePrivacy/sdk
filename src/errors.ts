@@ -60,39 +60,31 @@ export class TransferTimeoutError extends MirageError {
   }
 }
 
-export class TransferLimitError extends MirageError {
-  amountUsd: number;
-  limitUsd: number;
-  /** Index of the offending row. Limits apply per transfer, not per batch. */
-  rowIndex: number;
-
-  constructor(amountUsd: number, limitUsd: number, rowIndex = 0) {
-    super(
-      "TRANSFER_LIMIT_EXCEEDED",
-      `Transfer amount $${amountUsd} exceeds network limit of $${limitUsd}`,
-      { meta: { rowIndex } },
-    );
-    this.name = "TransferLimitError";
-    this.amountUsd = amountUsd;
-    this.limitUsd = limitUsd;
-    this.rowIndex = rowIndex;
-  }
-}
-
 /**
  * Thrown when a transfer exceeds the network's whitelist threshold and no
  * valid access token was supplied. Callers should run the whitelist flow and
  * retry with the resulting token.
  */
 export class WhitelistRequiredError extends MirageError {
-  amountUsd: number;
-  thresholdUsd: number;
+  /** API-calculated transaction value, when supplied by the API. */
+  amountUsd?: number;
+  /** API-configured whitelist threshold, when supplied by the API. */
+  thresholdUsd?: number;
 
-  constructor(amountUsd: number, thresholdUsd: number) {
+  constructor(amountUsd?: number, thresholdUsd?: number) {
+    const message =
+      thresholdUsd === undefined
+        ? "Whitelist verification is required for this transfer"
+        : amountUsd === undefined
+          ? `Transfers above $${thresholdUsd} require whitelist verification`
+          : `Transfers above $${thresholdUsd} require whitelist verification (amount: $${amountUsd})`;
+    const meta: Record<string, number> = {};
+    if (amountUsd !== undefined) meta.amountUsd = amountUsd;
+    if (thresholdUsd !== undefined) meta.thresholdUsd = thresholdUsd;
     super(
       "WHITELIST_REQUIRED",
-      `Transfers above $${thresholdUsd} require whitelist verification (amount: $${amountUsd})`,
-      { meta: { amountUsd, thresholdUsd } },
+      message,
+      { meta },
     );
     this.name = "WhitelistRequiredError";
     this.amountUsd = amountUsd;
