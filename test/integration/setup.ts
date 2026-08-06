@@ -79,10 +79,13 @@ export const NOMAD_PORT = parseInt(process.env.NOMAD_PORT || "8111", 10);
 function resolveUrls() {
   if (isTestnet) {
     const base = networks[TESTNET!];
+    const apiUrl = process.env.API_URL || base.apiServer;
     return {
       rpcUrl: process.env.RPC_URL || base.rpcUrl,
-      apiUrl: process.env.API_URL || base.apiServer,
-      nomadUrl: process.env.NOMAD_URL || base.nomadUrl,
+      apiUrl,
+      // No mock nomad runs on testnet; nodes are reachable only through the
+      // API's proxy, so the nomad base is the API server itself.
+      nomadUrl: process.env.NOMAD_URL || apiUrl,
     };
   }
   return {
@@ -139,7 +142,6 @@ export function getNetwork(): NetworkConfig {
   if (isTestnet) {
     return createNetworkConfig(TESTNET!, {
       rpcUrl: RPC_URL,
-      nomadUrl: NOMAD_URL,
       apiServer: API_URL,
       // Testnet enclaves are typically debug builds. Verification stays on;
       // only the debug-mode rejection is relaxed.
@@ -150,7 +152,6 @@ export function getNetwork(): NetworkConfig {
     id: "ethereum",
     chainId: 31337,
     rpcUrl: RPC_URL,
-    nomadUrl: NOMAD_URL,
     apiServer: API_URL,
     enableAtomicBatch: false,
     // The mock nomad runs outside SGX and serves no quote to verify.
@@ -270,7 +271,7 @@ let mockApiServer: http.Server | null = null;
 export function startMockApi(): Promise<void> {
   if (isTestnet) return Promise.resolve(); // Use real API
   if (mockApiServer) return Promise.resolve();
-  mockApiServer = createMockApi(API_PORT);
+  mockApiServer = createMockApi(API_PORT, NOMAD_URL);
   return new Promise((resolve) => {
     mockApiServer!.listen(API_PORT, () => {
       console.log(`[setup] Mock API started on port ${API_PORT}`);

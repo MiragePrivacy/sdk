@@ -6,6 +6,8 @@
  *   POST /obfuscate_escrow — returns real escrow bytecode (unobfuscated)
  *   POST /pricing/quote — returns an exact EscrowBatch deployment quote
  *   POST /compliance — returns a quote-bound mock execution approval
+ *   ANY  /nomad/{chainId}/* — forwarded to the mock nomad, mirroring the
+ *                            real API's nomad proxy
  */
 
 import http from "node:http";
@@ -21,7 +23,43 @@ function readBytecode(filename: string): string {
   return fs.readFileSync(path.join(ESCROW_DIR, filename), "utf-8").trim();
 }
 
-function createServer(port: number): http.Server {
+/** Forward a proxied nomad request to the mock nomad and pipe the response back. */
+async function proxyToNomad(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  nomadUrl: string,
+  path: string,
+): Promise<void> {
+  try {
+    const body =
+      req.method === "GET" || req.method === "HEAD"
+        ? undefined
+        : await new Promise<string>((resolve, reject) => {
+            let buf = "";
+            req.on("data", (chunk: Buffer) => {
+              buf += chunk.toString();
+            });
+            req.on("end", () => resolve(buf));
+            // Without this the promise never settles on a client abort,
+            // leaving the handler hung and the response never written.
+            req.on("error", reject);
+          });
+
+    const upstream = await fetch(`${nomadUrl}${path}`, {
+      method: req.method,
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    const text = await upstream.text();
+    res.writeHead(upstream.status, { "Content-Type": "application/json" });
+    res.end(text);
+  } catch (err) {
+    res.writeHead(502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: String(err) }));
+  }
+}
+
+function createServer(port: number, nomadUrl?: string): http.Server {
   // Lazy-load bytecode on first request
   let erc20Deployment: string | null = null;
   let erc20Runtime: string | null = null;
@@ -47,6 +85,14 @@ function createServer(port: number): http.Server {
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Forward the full /nomad/{chainId}/... path so the node sees which chain
+    // was requested, as it would behind the real proxy.
+    if (/^\/nomad\/\d+\//.test(req.url ?? "")) {
+      const target = nomadUrl ?? `http://127.0.0.1:${process.env.NOMAD_PORT || "8111"}`;
+      await proxyToNomad(req, res, target, req.url!);
       return;
     }
 

@@ -36,16 +36,21 @@ function toHex(bytes: Uint8Array): string {
 
 const networkKey = `0x${toHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true))}`;
 let pricingBody: any;
+let attestedChainId: number;
+let attestUrl: string | undefined;
 
 beforeEach(() => {
   pricingBody = undefined;
+  attestedChainId = 31337;
+  attestUrl = undefined;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/attest")) {
+      attestUrl = url;
       return {
         ok: true,
         json: async () => ({
-          payload: { publicKey: networkKey, chainId: 31337, pricingKeys: [] },
+          payload: { publicKey: networkKey, chainId: attestedChainId, pricingKeys: [] },
           attestation: null,
           isDebug: true,
         }),
@@ -90,7 +95,6 @@ beforeEach(() => {
 const network = createNetworkConfig("ethereum", {
   chainId: 31337,
   apiServer: "https://api.test",
-  nomadUrl: "https://nomad.test",
   attestation: { required: false },
 });
 
@@ -197,5 +201,34 @@ describe("prepareTransfer pricing flow", () => {
       amountUsd: 1_250.5,
       thresholdUsd: 1_000,
     });
+  });
+});
+
+describe("nomad proxy routing", () => {
+  const prepare = () =>
+    prepareTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      senderAddress: SENDER,
+      publicClient: {} as any,
+      network,
+    });
+
+  it("requests attestation through the per-chain proxy path", async () => {
+    await prepare();
+    expect(attestUrl).toBe("https://api.test/nomad/31337/attest");
+  });
+
+  it("rejects a key attested for a different chain than the one requested", async () => {
+    // The proxy picks the node, so a wrong-chain answer must fail rather than
+    // encrypt the signal to an enclave keyed to another chain.
+    attestedChainId = 1;
+    await expect(prepare()).rejects.toMatchObject({ code: "INVALID_NETWORK_KEY" });
+  });
+
+  it("accepts an attestation that reports no chain", async () => {
+    attestedChainId = 0;
+    await expect(prepare()).resolves.toBeDefined();
   });
 });
