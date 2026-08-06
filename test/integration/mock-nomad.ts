@@ -35,31 +35,25 @@ const NODE_PRIVATE_KEY =
   "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97" as const;
 const nodeAccount = privateKeyToAccount(NODE_PRIVATE_KEY);
 
-interface SignalTransfer {
+interface AuthorizationTransfer {
   asset: string;
   recipient: string;
   amount: string;
 }
 
-interface Signal {
-  escrowType: "erc20" | "native" | "batch";
+interface SignalEnvelope {
   escrowContract: string;
-  tokenContract: string;
-  recipient: string;
-  transferAmount: string;
-  transfers: SignalTransfer[];
-  totalTransferAmount: string;
-  rewardAmount: string;
-  blindingScalar?: string;
+  blindingScalar: string;
+  sealedPricingAuthorization: string;
+  executionApproval: { quoteCommitment: string };
   selectorMapping: Record<string, string> | null;
-  approval: { signature: string; timestamp: number } | null;
 }
 
 function getRpcUrl(): string {
   return process.env.RPC_URL || "http://127.0.0.1:8545";
 }
 
-async function executeTransfer(signal: Signal): Promise<void> {
+async function executeTransfer(rows: AuthorizationTransfer[]): Promise<void> {
   const rpcUrl = getRpcUrl();
   const publicClient = createPublicClient({
     chain: anvilChain,
@@ -73,16 +67,6 @@ async function executeTransfer(signal: Signal): Promise<void> {
 
   // The node delivers one transaction per recipient, so a batch lands
   // incrementally rather than all at once.
-  const rows: SignalTransfer[] = signal.transfers?.length
-    ? signal.transfers
-    : [
-        {
-          asset: signal.tokenContract,
-          recipient: signal.recipient,
-          amount: signal.transferAmount,
-        },
-      ];
-
   for (const row of rows) {
     const recipient = row.recipient as Address;
     const amount = BigInt(row.amount);
@@ -145,21 +129,23 @@ function createServer(port: number): http.Server {
           // Decrypt with our private key
           const decrypted = decrypt(MOCK_PRIVATE_KEY_HEX, encryptedBytes);
           const signalJson = new TextDecoder().decode(decrypted);
-          const signal: Signal = JSON.parse(signalJson);
-
-          if (signal.escrowType !== "batch" && !signal.blindingScalar) {
-            throw new Error("missing field blindingScalar");
+          const signal: SignalEnvelope = JSON.parse(signalJson);
+          if (!signal.blindingScalar) throw new Error("missing field blindingScalar");
+          const sealed = Buffer.from(signal.sealedPricingAuthorization.replace(/^0x/, ""), "hex");
+          const authorization = JSON.parse(
+            new TextDecoder().decode(decrypt(MOCK_PRIVATE_KEY_HEX, sealed)),
+          ) as { quoteCommitment: string; rows: AuthorizationTransfer[] };
+          if (authorization.quoteCommitment !== signal.executionApproval.quoteCommitment) {
+            throw new Error("pricing and execution approval commitments differ");
           }
 
           console.log("[mock-nomad] Received signal:", {
             escrow: signal.escrowContract,
-            escrowType: signal.escrowType,
-            rows: signal.transfers?.length ?? 1,
-            token: signal.tokenContract,
+            rows: authorization.rows.length,
           });
 
           // Execute the transfer
-          await executeTransfer(signal);
+          await executeTransfer(authorization.rows);
 
           res.writeHead(200, { "Content-Type": "text/plain" });
           res.end('"ok"');

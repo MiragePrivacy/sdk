@@ -78,17 +78,16 @@ describe("Full transfer flow", () => {
       expect(stepNames).toContain("approve");
     }
     expect(stepNames).toContain("deploy");
-    if (network.enableCompliance) {
-      expect(stepNames).toContain("compliance");
-    }
+    expect(stepNames).toContain("compliance");
     expect(stepNames).toContain("signal");
     expect(stepNames).toContain("transfer");
     expect(stepNames).toContain("complete");
 
     const deployStep = steps.find((s) => s.step === "deploy");
     if (deployStep?.step === "deploy") {
-      expect(deployStep.escrowType).toBe("erc20");
-      // Single escrows carry a scalar the caller must retain to resume.
+      expect(deployStep.escrowType).toBe("batch");
+      expect(deployStep.secrets.quoteCommitment).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(deployStep.secrets.sealedPricingAuthorization).toMatch(/^0x[0-9a-f]+$/);
       expect(deployStep.secrets.blindingScalar).toMatch(/^0x[0-9a-f]{64}$/);
     }
 
@@ -135,8 +134,7 @@ describe("Full transfer flow", () => {
       const deployStep = steps.find((s) => s.step === "deploy");
       if (deployStep?.step === "deploy") {
         expect(deployStep.escrowType).toBe("batch");
-        // Batch escrows have no blinded signer.
-        expect(deployStep.secrets.blindingScalar).toBeUndefined();
+        expect(deployStep.secrets.blindingScalar).toMatch(/^0x[0-9a-f]{64}$/);
       }
 
       const transferSteps = steps.filter((s) => s.step === "transfer");
@@ -194,7 +192,7 @@ describe("Full transfer flow", () => {
 
       const deployStep = steps.find((s) => s.step === "deploy");
       if (deployStep?.step === "deploy") {
-        expect(deployStep.escrowType).toBe("native");
+        expect(deployStep.escrowType).toBe("batch");
       }
 
       const balanceAfter = await getTokenBalance(

@@ -152,12 +152,7 @@ export function getNetwork(): NetworkConfig {
     rpcUrl: RPC_URL,
     nomadUrl: NOMAD_URL,
     apiServer: API_URL,
-    enableCompliance: false,
     enableAtomicBatch: false,
-    nodeFeeUsd: 2_000000n,
-    platformFeeRate: 50n,
-    // Anvil has no Uniswap deployment; price the local chain directly.
-    ethToTokenRate: 4500,
     // The mock nomad runs outside SGX and serves no quote to verify.
     attestation: { required: false },
   });
@@ -229,8 +224,7 @@ export async function startAnvil(): Promise<void> {
   }
 
   await new Promise<void>((resolve, reject) => {
-    anvilProcess = spawn("nix", [
-      "shell", "nixpkgs#foundry", "-c", "anvil",
+    anvilProcess = spawn(process.env.ANVIL_BINARY || "anvil", [
       "--chain-id", "31337",
       "--host", "0.0.0.0",
       "--port", String(ANVIL_PORT),

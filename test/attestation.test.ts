@@ -12,7 +12,7 @@ const PUBLIC_KEY = `0x${Array.from({ length: 33 }, (_, i) => ((i * 7 + 2) & 0xff
 
 describe("hashAttestationPayload", () => {
   // Vectors produced by the enclave's own sha2 implementation:
-  //   sha256(public_key . chain_id_be . max_balance_usd_be . compliance_keys)
+  //   sha256(public_key . chain_id_be . max_balance_usd_be . compliance_keys . pricing_keys)
   // A mismatch here rejects every otherwise-valid attestation.
   it("matches the enclave hash with no compliance keys", () => {
     expect(toHex(hashAttestationPayload({ publicKey: PUBLIC_KEY, chainId: 1 }))).toBe(
@@ -42,6 +42,21 @@ describe("hashAttestationPayload", () => {
         }),
       ),
     ).toBe("a43b16d9af6946efbfa6fcef0cc7c2dca952bce8ef68c540309309d6eaf693e2");
+  });
+
+  it("binds the pricing signer set after the compliance signer set", () => {
+    const withoutPricing = hashAttestationPayload({
+      publicKey: PUBLIC_KEY,
+      chainId: 1,
+      complianceKeys: [`0x${"11".repeat(32)}`],
+    });
+    const withPricing = hashAttestationPayload({
+      publicKey: PUBLIC_KEY,
+      chainId: 1,
+      complianceKeys: [`0x${"11".repeat(32)}`],
+      pricingKeys: [`0x${"22".repeat(32)}`],
+    });
+    expect(toHex(withPricing)).not.toBe(toHex(withoutPricing));
   });
 
   it("treats a missing maxBalanceUsd as zero", () => {
@@ -88,6 +103,16 @@ describe("hashAttestationPayload", () => {
         complianceKeys: ["0x1234"],
       }),
     ).toThrow(/32-byte/);
+  });
+
+  it("rejects a malformed pricing key", () => {
+    expect(() =>
+      hashAttestationPayload({
+        publicKey: PUBLIC_KEY,
+        chainId: 1,
+        pricingKeys: ["0x1234"],
+      }),
+    ).toThrow(/pricing key/);
   });
 
   it("rejects non-hex input", () => {

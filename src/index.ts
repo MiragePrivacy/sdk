@@ -3,7 +3,6 @@ export { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "./networks.js";
 export { prepareTransfer, executeTransfer } from "./transfer.js";
 export type { TransferParams } from "./transfer.js";
 export type {
-  GasAnalysis,
   ApiHealth,
   GasHistoryAverages,
   FetchNetworkKeyOptions,
@@ -37,7 +36,6 @@ export {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  TransferLimitError,
   WhitelistRequiredError,
   MissingBlindingScalarError,
 } from "./errors.js";
@@ -48,9 +46,8 @@ export type {
   NetworkKind,
   NetworkConfig,
   EscrowKind,
-  GasConstants,
-  NativeGasConstants,
   FeeEstimate,
+  AssetAmount,
   FeeRefreshOverrides,
   AssetRequirement,
   TransferEvent,
@@ -65,4 +62,5 @@ export type {
   TcbStatus,
   TokenMetadata,
   GasPrice,
+  ExecutionApproval,
 } from "./types.js";
