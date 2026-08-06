@@ -130,7 +130,12 @@ function createServer(port: number, nomadUrl?: string): http.Server {
             original_size: size,
             obfuscated_size: size,
             size_increase_percentage: 0,
-            gas_analysis: null,
+            gas_analysis: {
+              original_gas_estimate: 1_200_000,
+              obfuscated_gas_estimate: 1_234_567,
+              gas_overhead_percentage: 2.88,
+              function_gas: null,
+            },
             metadata: {
               transforms_applied: [],
               execution_time_ms: 0,
