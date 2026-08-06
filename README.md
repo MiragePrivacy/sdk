@@ -109,6 +109,11 @@ const custom = createNetworkConfig("ethereum", {
 });
 ```
 
+Attestation and Signal submission are routed through the API server's nomad
+proxy at `{apiServer}/nomad/{chainId}`, so `NetworkConfig` has no `nomadUrl`
+field and nodes are never contacted directly. Pointing at a local nomad node
+now requires an API server with the proxy configured.
+
 ## Transfer lifecycle
 
 `prepareTransfer` returns a `PreparedTransfer` with the API quote in `.fees` and an async `.execute()` pipeline:
@@ -198,12 +203,13 @@ isNativeToken(NATIVE_TOKEN_ADDRESS); // true
 ```ts
 import { fetchNetworkKey, fetchApiHealth, fetchTransferLimit } from "@mirageprivacy/sdk";
 
-// SGX attestation status
-const key = await fetchNetworkKey("https://sgx1.mirageprivacy.com");
+// SGX attestation status, fetched through the API's nomad proxy at
+// {apiServer}/nomad/{chainId}. Nodes are not addressed directly.
+const key = await fetchNetworkKey("https://api.mirageprivacy.com", 1);
 // { publicKey, attested, debug, chainId, mrenclave?, mrsigner?, verification? }
 
 // Tune the verification policy for a known hardened enclave release.
-const hardenedKey = await fetchNetworkKey("https://sgx1.mirageprivacy.com", {
+const hardenedKey = await fetchNetworkKey("https://api.mirageprivacy.com", 1, {
   verify: {
     allowedTcbStatus: [
       "UpToDate",

@@ -126,7 +126,8 @@ The encrypted Nomad envelope contains the escrow address, base blinding scalar, 
 
 - Fetches escrow obfuscation
 - Requests pricing quotes and execution approvals
-- Retrieves and verifies Nomad attestation payloads
+- Retrieves and verifies Nomad attestation payloads through the nomad proxy
+- Builds nomad proxy URLs (`nomadProxyUrl`)
 - Provides health, whitelist, transfer-limit, and gas-history utilities
 - Extracts real whitelist amount/threshold information from compliance errors
 
@@ -141,7 +142,7 @@ The encrypted Nomad envelope contains the escrow address, base blinding scalar, 
 
 - Builds the minimal Signal envelope
 - Encrypts it with ECIES
-- Submits it to Nomad
+- Submits it through the API's nomad proxy, which forwards to an indexed node. The proxy is not trusted for the network key: the quote is re-verified client-side and the key comes from the attested payload
 
 **Attestation** (`src/internal/attestation.ts`)
 
@@ -164,7 +165,7 @@ The encrypted Nomad envelope contains the escrow address, base blinding scalar, 
 Built-in network configuration lives in `src/networks.ts`. Each network defines:
 
 - Chain ID and network kind
-- RPC, Nomad, and API URLs
+- RPC and API URLs. Nomad is reached through the API's proxy at `{apiServer}/nomad/{chainId}`, so there is no per-node URL
 - Whether native atomic deployment is supported
 - SGX attestation policy
 

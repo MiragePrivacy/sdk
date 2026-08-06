@@ -38,7 +38,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     kind: "ethereum",
     chainId: 1,
     rpcUrl: "https://ethereum-rpc.publicnode.com",
-    nomadUrl: "https://sgx1.mirageprivacy.com",
     apiServer: "https://api.mirageprivacy.com",
     enableAtomicBatch: false,
     // Production: verified quotes only, no debug enclaves, and the enclave
@@ -59,7 +58,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     kind: "ethereum",
     chainId: 11155111,
     rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
-    nomadUrl: "https://sgx1.mirageprivacy.com:8443",
     apiServer: "https://api.mirageprivacy.com",
     enableAtomicBatch: false,
     // Testnet nodes may run debug-mode enclaves depending on how they were
@@ -77,7 +75,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     kind: "tempo",
     chainId: 42431,
     rpcUrl: "https://rpc.moderato.tempo.xyz",
-    nomadUrl: "https://sgx1.mirageprivacy.com:8444",
     apiServer: "https://api.mirageprivacy.com",
     // The pricing-aware compliance endpoint currently verifies a top-level
     // creation transaction. Keep separate approvals + exact deployment until

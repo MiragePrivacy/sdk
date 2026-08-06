@@ -265,11 +265,20 @@ export interface FetchNetworkKeyOptions {
   verify?: boolean | VerifyAttestationOptions;
 }
 
+/**
+ * Nomad proxy base for a chain. The API server forwards to a node it has
+ * indexed; nodes are not addressed directly, so there is no per-node URL.
+ */
+export function nomadProxyUrl(apiServer: string, chainId: number): string {
+  return `${apiServer.replace(/\/+$/, "")}/nomad/${chainId}`;
+}
+
 export async function fetchNetworkKey(
-  nomadUrl: string,
+  apiServer: string,
+  chainId: number,
   options: FetchNetworkKeyOptions = {},
 ): Promise<NetworkKeyStatus> {
-  const res = await request<AttestResponse>(`${nomadUrl}/attest`);
+  const res = await request<AttestResponse>(`${nomadProxyUrl(apiServer, chainId)}/attest`);
 
   const publicKey = res.payload?.publicKey ?? res.publicKey ?? res.public_key ?? "";
   if (!publicKey) {
@@ -331,7 +340,7 @@ export async function fetchNetworkKey(
 /** Fetch and verify the node key using a network's declared trust policy. */
 export function fetchNetworkStatus(network: NetworkConfig): Promise<NetworkKeyStatus> {
   const policy = network.attestation;
-  return fetchNetworkKey(network.nomadUrl, {
+  return fetchNetworkKey(network.apiServer, network.chainId, {
     verify:
       policy?.required === false
         ? false

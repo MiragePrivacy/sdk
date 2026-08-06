@@ -1,5 +1,6 @@
 import type { Address } from "viem";
 import { ApiError, MissingBlindingScalarError } from "../errors.js";
+import { nomadProxyUrl } from "./api.js";
 import type { ExecutionApproval, NetworkKeyStatus } from "../types.js";
 
 async function encryptSignal(payload: Uint8Array, publicKeyHex: string): Promise<Uint8Array> {
@@ -23,7 +24,8 @@ export interface SignalParams {
   userApproveGas?: bigint;
   userDeployGas?: bigint;
   userGasPrice?: bigint;
-  nomadUrl: string;
+  apiServer: string;
+  chainId: number;
   networkKey: NetworkKeyStatus;
 }
 
@@ -53,7 +55,9 @@ export async function submitSignal(params: SignalParams): Promise<string> {
     new TextEncoder().encode(JSON.stringify(signal)),
     params.networkKey.publicKey,
   );
-  const res = await fetch(`${params.nomadUrl}/signal`, {
+  // Submitted through the proxy, which forwards to a node it has indexed for
+  // this chain.
+  const res = await fetch(`${nomadProxyUrl(params.apiServer, params.chainId)}/signal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(`0x${toHexString(encrypted)}`),
