@@ -101,12 +101,16 @@ const network = createNetworkConfig("ethereum", {
 
 describe("prepareTransfer pricing flow", () => {
   it("quotes a one-row transfer as an EscrowBatch with one blinded signer", async () => {
+    const publicClient = {
+      getTransactionCount: vi.fn().mockResolvedValue(5),
+      estimateContractGas: vi.fn().mockResolvedValue(46_000n),
+    } as any;
     const prepared = await prepareTransfer({
       tokenAddress: USDC,
       recipientAddress: RECIPIENT_A,
       amount: 100n,
       senderAddress: SENDER,
-      publicClient: {} as any,
+      publicClient,
       network,
     });
 
@@ -120,7 +124,26 @@ describe("prepareTransfer pricing flow", () => {
       },
     ]);
     expect(prepared.fees.serviceFee).toEqual({ asset: USDC, amount: 25n });
+    expect(prepared.fees.approvalGasEstimate).toBe(46_000n);
     expect(prepared.fees.deploymentGasEstimate).toBe(1_234_567n);
+    expect(prepared.fees.totalWalletGasEstimate).toBe(1_280_567n);
+  });
+
+  it("keeps preparation available when approval gas simulation is unavailable", async () => {
+    const prepared = await prepareTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      senderAddress: SENDER,
+      publicClient: {
+        getTransactionCount: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+      } as any,
+      network,
+    });
+
+    expect(prepared.fees.approvalGasEstimate).toBeUndefined();
+    expect(prepared.fees.deploymentGasEstimate).toBe(1_234_567n);
+    expect(prepared.fees.totalWalletGasEstimate).toBeUndefined();
   });
 
   it("groups rows by asset while preserving the first asset as the reward asset", async () => {

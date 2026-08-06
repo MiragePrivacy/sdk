@@ -175,10 +175,12 @@ Pricing rates, node fees, gas profiles, price oracles, and bond margins do not b
 
 Public interfaces live in `src/types.ts` and are exported through `src/index.ts`.
 
-`FeeEstimate` exposes only API-authored values:
+`FeeEstimate` exposes the API-authored fee/funding values and wallet gas simulations:
 
 - `serviceFee`
+- `approvalGasEstimate` (optional sum of exact ERC-20 approval gas units)
 - `deploymentGasEstimate` (optional API-simulated escrow deployment gas units)
+- `totalWalletGasEstimate` (optional approvals plus deployment gas units)
 - `rewardAsset`
 - `rewardAmount`
 - `depositByAsset`

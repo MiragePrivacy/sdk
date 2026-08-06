@@ -34,6 +34,7 @@ import {
   approveQuotedForDeployment,
   deployQuotedApproved,
   deployQuotedAtomic,
+  estimateQuotedApprovalGas,
 } from "./internal/escrow.js";
 import { deriveBatchBlindedSigners } from "./internal/bond.js";
 import { submitSignal } from "./internal/nomad.js";
@@ -148,6 +149,7 @@ function buildPricingSignals(rows: TransferRow[]): PricingSignalRequest[] {
 function feeEstimate(
   rows: TransferRow[],
   quote: PricingQuote,
+  approvalGasEstimate?: bigint,
   deploymentGasEstimate?: bigint,
 ): FeeEstimate {
   const principal = new Map<string, bigint>();
@@ -155,9 +157,15 @@ function feeEstimate(
     const key = row.tokenAddress.toLowerCase();
     principal.set(key, (principal.get(key) ?? 0n) + row.amount);
   }
+  const totalWalletGasEstimate =
+    approvalGasEstimate !== undefined && deploymentGasEstimate !== undefined
+      ? approvalGasEstimate + deploymentGasEstimate
+      : undefined;
   return {
     serviceFee: quote.serviceFee,
+    approvalGasEstimate,
     deploymentGasEstimate,
+    totalWalletGasEstimate,
     rewardAsset: quote.deployment.rewardAsset,
     rewardAmount: quote.deployment.rewardAmount,
     depositByAsset: { ...quote.deployment.depositByAsset },
@@ -268,6 +276,12 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     }),
     fetchObfuscation(params.network.apiServer, "batch"),
   ]);
+  const approvalGasEstimate = await estimateQuotedApprovalGas({
+    depositByAsset: quote.deployment.depositByAsset,
+    publicClient: params.publicClient,
+    account: sender,
+  }).catch(() => undefined);
+
   return {
     rows,
     sender,
@@ -275,7 +289,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     blindedSigners: blinded.blindedSigners,
     blindingScalar: blinded.blindingScalar,
     quote,
-    fees: feeEstimate(rows, quote, obfuscation.deploymentGasEstimate),
+    fees: feeEstimate(rows, quote, approvalGasEstimate, obfuscation.deploymentGasEstimate),
     obfuscation,
   };
 }
@@ -446,9 +460,15 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       blindedSigners: context.blindedSigners,
       signals: buildPricingSignals(context.rows),
     });
+    const approvalGasEstimate = await estimateQuotedApprovalGas({
+      depositByAsset: context.quote.deployment.depositByAsset,
+      publicClient: params.publicClient,
+      account: context.sender,
+    }).catch(() => undefined);
     context.fees = feeEstimate(
       context.rows,
       context.quote,
+      approvalGasEstimate,
       context.obfuscation?.deploymentGasEstimate,
     );
     return context.fees;
