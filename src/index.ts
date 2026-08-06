@@ -19,6 +19,7 @@ export {
 export {
   fetchNetworkKey,
   fetchNetworkStatus,
+  nomadProxyUrl,
   fetchApiHealth,
   fetchTransferLimit,
   fetchGasHistoryAverages,

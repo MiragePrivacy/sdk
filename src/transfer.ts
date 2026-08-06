@@ -226,7 +226,8 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
   const rows = resolveRows(params);
   const sender = resolveSender(params);
   const networkKey = await fetchNetworkKey(
-    params.network.nomadUrl,
+    params.network.apiServer,
+    params.network.chainId,
     attestationOptions(params.network),
   );
   if (networkKey.chainId !== 0 && networkKey.chainId !== params.network.chainId) {
@@ -531,7 +532,8 @@ async function* completeTransfer(
     userApproveGas: resume.userApproveGas,
     userDeployGas: resume.userDeployGas,
     userGasPrice: resume.userGasPrice,
-    nomadUrl: network.nomadUrl,
+    apiServer: network.apiServer,
+    chainId: network.chainId,
     networkKey: context.networkKey,
   });
   yield { step: "signal", response };

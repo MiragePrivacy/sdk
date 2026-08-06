@@ -102,12 +102,20 @@ function createServer(port: number): http.Server {
       return;
     }
 
-    if (req.method === "GET" && req.url === "/attest") {
+    // Stands in for the API's nomad proxy: routes are served both at the root
+    // and under /nomad/{chainId}, so either base resolves here.
+    const proxied = /^\/nomad\/(\d+)/.exec(req.url ?? "");
+    const path = (req.url ?? "").replace(/^\/nomad\/\d+/, "") || "/";
+    // Attest for the chain that was asked for, so the SDK's chainId check
+    // passes on any chain the tests run against.
+    const chainId = proxied ? Number(proxied[1]) : anvilChain.id;
+
+    if (req.method === "GET" && path === "/attest") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
           // Current nodes nest these in a hash-committed payload.
-          payload: { publicKey: mockPublicKeyHex, chainId: 31337 },
+          payload: { publicKey: mockPublicKeyHex, chainId },
           attestation: null,
           isDebug: true,
         }),
@@ -115,7 +123,7 @@ function createServer(port: number): http.Server {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/signal") {
+    if (req.method === "POST" && path === "/signal") {
       let body = "";
       req.on("data", (chunk: Buffer) => {
         body += chunk.toString();

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { submitSignal } from "../src/internal/nomad.js";
+import { nomadProxyUrl } from "../src/internal/api.js";
 import { MissingBlindingScalarError } from "../src/errors.js";
 import type { ExecutionApproval, NetworkKeyStatus } from "../src/types.js";
 
@@ -42,7 +43,8 @@ const baseParams = {
   blindingScalar: SCALAR,
   sealedPricingAuthorization: SEALED,
   executionApproval,
-  nomadUrl: "http://nomad.test",
+  apiServer: "http://api.test",
+  chainId: 31337,
   networkKey,
 };
 
@@ -95,7 +97,19 @@ describe("submitSignal", () => {
   it("posts the ciphertext as a JSON hex string", async () => {
     await submitSignal(baseParams);
     const [url, init] = vi.mocked(globalThis.fetch).mock.calls[0];
-    expect(url).toBe("http://nomad.test/signal");
+    expect(url).toBe("http://api.test/nomad/31337/signal");
     expect(init!.body).toBe(JSON.stringify("0x010203"));
+  });
+});
+
+describe("nomadProxyUrl", () => {
+  it("builds the per-chain proxy base", () => {
+    expect(nomadProxyUrl("https://api.mirageprivacy.com", 1)).toBe(
+      "https://api.mirageprivacy.com/nomad/1",
+    );
+  });
+
+  it("does not double up the separator on a trailing slash", () => {
+    expect(nomadProxyUrl("http://api.test/", 31337)).toBe("http://api.test/nomad/31337");
   });
 });

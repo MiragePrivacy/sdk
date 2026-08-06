@@ -14,7 +14,10 @@ export interface NetworkConfig {
   kind: NetworkKind;
   chainId: number;
   rpcUrl: string;
-  nomadUrl: string;
+  /**
+   * API server base. Attestation and signal submission go through its nomad
+   * proxy at `/nomad/{chainId}`, so nodes are never contacted directly.
+   */
   apiServer: string;
   /** Submit exact quoted approvals and deployment as one native call vector (Tempo). */
   enableAtomicBatch: boolean;
