@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchComplianceApproval,
+  fetchObfuscation,
   fetchPricingQuote,
   whitelistRequirementFromError,
 } from "../src/internal/api.js";
@@ -14,6 +15,24 @@ const COMMITMENT = `0x${"11".repeat(32)}` as `0x${string}`;
 const DEPLOY_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
 
 beforeEach(() => vi.restoreAllMocks());
+
+describe("fetchObfuscation", () => {
+  it("exposes the API-simulated deployment gas units", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        obfuscated_bytecode: "0x6000",
+        original_size: 2,
+        obfuscated_size: 2,
+        gas_analysis: { obfuscated_gas_estimate: 1_234_567 },
+      }),
+    }) as any;
+
+    await expect(fetchObfuscation("https://api.test", "batch")).resolves.toMatchObject({
+      deploymentGasEstimate: 1_234_567n,
+    });
+  });
+});
 
 describe("fetchPricingQuote", () => {
   it("sends batch signers and Signals and parses exact deployment funding", async () => {

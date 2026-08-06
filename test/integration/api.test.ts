@@ -31,6 +31,7 @@ describe("API server", () => {
   it("obfuscates batch escrow bytecode", async () => {
     const result = await fetchObfuscation(API_URL, "batch");
     expect(result.obfuscatedBytecode).toMatch(/^0x[0-9a-fA-F]+$/);
+    expect(result.deploymentGasEstimate).toBe(1_234_567n);
   });
 
   it("returns a fresh seed per request", async () => {

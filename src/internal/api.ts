@@ -37,6 +37,8 @@ export interface ObfuscationResult {
   selectorMapping?: Record<string, string>;
   originalSize: number;
   obfuscatedSize: number;
+  /** API-simulated gas units for deploying the obfuscated escrow. */
+  deploymentGasEstimate?: bigint;
   seed: string;
 }
 
@@ -56,6 +58,9 @@ export async function fetchObfuscation(
     selector_mapping?: Record<string, string>;
     original_size: number;
     obfuscated_size: number;
+    gas_analysis?: {
+      obfuscated_gas_estimate?: number | null;
+    } | null;
   }>(`${apiServer}/obfuscate_escrow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -72,6 +77,10 @@ export async function fetchObfuscation(
     selectorMapping: res.selector_mapping,
     originalSize: res.original_size,
     obfuscatedSize: res.obfuscated_size,
+    deploymentGasEstimate:
+      res.gas_analysis?.obfuscated_gas_estimate == null
+        ? undefined
+        : BigInt(res.gas_analysis.obfuscated_gas_estimate),
     seed,
   };
 }

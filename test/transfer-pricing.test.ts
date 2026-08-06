@@ -63,6 +63,7 @@ beforeEach(() => {
           obfuscated_bytecode: "0x6000",
           original_size: 2,
           obfuscated_size: 2,
+          gas_analysis: { obfuscated_gas_estimate: 1_234_567 },
           selector_mapping: null,
         }),
       } as Response;
@@ -119,6 +120,7 @@ describe("prepareTransfer pricing flow", () => {
       },
     ]);
     expect(prepared.fees.serviceFee).toEqual({ asset: USDC, amount: 25n });
+    expect(prepared.fees.deploymentGasEstimate).toBe(1_234_567n);
   });
 
   it("groups rows by asset while preserving the first asset as the reward asset", async () => {

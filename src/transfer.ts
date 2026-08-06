@@ -145,7 +145,11 @@ function buildPricingSignals(rows: TransferRow[]): PricingSignalRequest[] {
   return [...signals.values()];
 }
 
-function feeEstimate(rows: TransferRow[], quote: PricingQuote): FeeEstimate {
+function feeEstimate(
+  rows: TransferRow[],
+  quote: PricingQuote,
+  deploymentGasEstimate?: bigint,
+): FeeEstimate {
   const principal = new Map<string, bigint>();
   for (const row of rows) {
     const key = row.tokenAddress.toLowerCase();
@@ -153,6 +157,7 @@ function feeEstimate(rows: TransferRow[], quote: PricingQuote): FeeEstimate {
   }
   return {
     serviceFee: quote.serviceFee,
+    deploymentGasEstimate,
     rewardAsset: quote.deployment.rewardAsset,
     rewardAmount: quote.deployment.rewardAmount,
     depositByAsset: { ...quote.deployment.depositByAsset },
@@ -270,7 +275,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     blindedSigners: blinded.blindedSigners,
     blindingScalar: blinded.blindingScalar,
     quote,
-    fees: feeEstimate(rows, quote),
+    fees: feeEstimate(rows, quote, obfuscation.deploymentGasEstimate),
     obfuscation,
   };
 }
@@ -441,7 +446,11 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       blindedSigners: context.blindedSigners,
       signals: buildPricingSignals(context.rows),
     });
-    context.fees = feeEstimate(context.rows, context.quote);
+    context.fees = feeEstimate(
+      context.rows,
+      context.quote,
+      context.obfuscation?.deploymentGasEstimate,
+    );
     return context.fees;
   }
 

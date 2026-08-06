@@ -178,6 +178,7 @@ Public interfaces live in `src/types.ts` and are exported through `src/index.ts`
 `FeeEstimate` exposes only API-authored values:
 
 - `serviceFee`
+- `deploymentGasEstimate` (optional API-simulated escrow deployment gas units)
 - `rewardAsset`
 - `rewardAmount`
 - `depositByAsset`

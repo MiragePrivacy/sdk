@@ -59,6 +59,8 @@ export interface NetworkConfig {
 export interface FeeEstimate {
   /** Single public fee quoted by the API; no node/platform split is exposed. */
   serviceFee: AssetAmount;
+  /** API-simulated gas units for deploying the obfuscated escrow. */
+  deploymentGasEstimate?: bigint;
   /** Escrow reward denomination selected from the first ordered Signal. */
   rewardAsset: Address;
   /** Complete reward pot; equal to the public service fee amount. */
