@@ -59,8 +59,12 @@ export interface NetworkConfig {
 export interface FeeEstimate {
   /** Single public fee quoted by the API; no node/platform split is exposed. */
   serviceFee: AssetAmount;
+  /** Sum of gas units for every exact ERC-20 approval required by the quote. */
+  approvalGasEstimate?: bigint;
   /** API-simulated gas units for deploying the obfuscated escrow. */
   deploymentGasEstimate?: bigint;
+  /** Complete wallet gas units: approvals plus escrow deployment. */
+  totalWalletGasEstimate?: bigint;
   /** Escrow reward denomination selected from the first ordered Signal. */
   rewardAsset: Address;
   /** Complete reward pot; equal to the public service fee amount. */

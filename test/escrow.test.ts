@@ -4,6 +4,7 @@ import {
   buildQuotedApprovalBuckets,
   approveQuotedForDeployment,
   deployQuotedApproved,
+  estimateQuotedApprovalGas,
   predictContractAddress,
 } from "../src/internal/escrow.js";
 
@@ -28,6 +29,52 @@ describe("quoted escrow funding", () => {
     expect(predictContractAddress(DEPLOYER, 3)).toBe(
       getContractAddress({ from: DEPLOYER, nonce: 3n }),
     );
+  });
+
+  it("sums exact approval simulations and ignores native funding", async () => {
+    const estimateContractGas = vi
+      .fn()
+      .mockResolvedValueOnce(40_000n)
+      .mockResolvedValueOnce(60_000n);
+    const publicClient = {
+      getTransactionCount: vi.fn().mockResolvedValue(5),
+      estimateContractGas,
+    } as any;
+
+    await expect(
+      estimateQuotedApprovalGas({
+        depositByAsset: { [USDC]: 1_025n, [USDT]: 500n, [zeroAddress]: 2n },
+        publicClient,
+        account: DEPLOYER,
+      }),
+    ).resolves.toBe(100_000n);
+
+    const predicted = predictContractAddress(DEPLOYER, 7);
+    expect(estimateContractGas).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ address: USDC, args: [predicted, 1_025n], account: DEPLOYER }),
+    );
+    expect(estimateContractGas).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ address: USDT, args: [predicted, 500n], account: DEPLOYER }),
+    );
+  });
+
+  it("returns zero approval gas for native-only funding without RPC calls", async () => {
+    const publicClient = {
+      getTransactionCount: vi.fn(),
+      estimateContractGas: vi.fn(),
+    } as any;
+
+    await expect(
+      estimateQuotedApprovalGas({
+        depositByAsset: { [zeroAddress]: 2n },
+        publicClient,
+        account: DEPLOYER,
+      }),
+    ).resolves.toBe(0n);
+    expect(publicClient.getTransactionCount).not.toHaveBeenCalled();
+    expect(publicClient.estimateContractGas).not.toHaveBeenCalled();
   });
 });
 

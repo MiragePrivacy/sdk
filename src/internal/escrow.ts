@@ -59,6 +59,32 @@ export function buildQuotedApprovalBuckets(
     .filter(({ tokenAddress, amount }) => !isNativeToken(tokenAddress) && amount > 0n);
 }
 
+/** Simulate every exact ERC-20 approval required before escrow deployment. */
+export async function estimateQuotedApprovalGas(params: {
+  depositByAsset: Record<string, bigint>;
+  publicClient: PublicClient;
+  account: Address;
+}): Promise<bigint> {
+  const { depositByAsset, publicClient, account } = params;
+  const buckets = buildQuotedApprovalBuckets(depositByAsset);
+  if (buckets.length === 0) return 0n;
+
+  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
+  const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
+  const estimates = await Promise.all(
+    buckets.map((bucket) =>
+      publicClient.estimateContractGas({
+        address: bucket.tokenAddress,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [predictedEscrowAddress, bucket.amount],
+        account,
+      }),
+    ),
+  );
+  return estimates.reduce((total, estimate) => total + estimate, 0n);
+}
+
 async function approveToken(params: {
   tokenAddress: Address;
   spender: Address;

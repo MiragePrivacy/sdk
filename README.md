@@ -167,15 +167,18 @@ const prepared = await prepareTransfer({ /* ... */ });
 const { fees } = prepared;
 
 fees.serviceFee;      // one public { asset, amount } quote
+fees.approvalGasEstimate; // optional sum of exact ERC-20 approval gas units
 fees.deploymentGasEstimate; // optional API-simulated escrow deployment gas units
+fees.totalWalletGasEstimate; // optional approvals + deployment gas units
 fees.rewardAsset;     // escrow reward denomination
 fees.rewardAmount;    // complete reward pot; internal split remains private
 fees.depositByAsset;  // exact principal + reward funding by asset
 fees.msgValue;        // exact native amount supplied during deployment
 ```
 
-`deploymentGasEstimate` is a gas-unit estimate for escrow deployment only. Multiply it by the
-current chain gas price to estimate its native-token cost; ERC-20 approval gas is not included.
+Multiply `totalWalletGasEstimate` by the current chain gas price to estimate the wallet's
+native-token cost before private execution. It includes the exact quoted ERC-20 approvals and
+escrow deployment; node execution is already funded by the service fee.
 
 The SDK does not calculate or publish a platform/node split. Pricing formulas,
 gas profiles, floors, ceilings, and execution limits are owned and signed by
