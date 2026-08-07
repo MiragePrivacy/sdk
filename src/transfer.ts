@@ -208,7 +208,7 @@ function quoteFromResume(params: TransferParams): PricingQuote {
   const resume = params.resume!;
   const rows = resolveRows(params);
   const escrowMatchesRows =
-    resume.escrowType === "batch" ||
+    (resume.escrowType === "batch" && rows.length > 1) ||
     (rows.length === 1 &&
       ((resume.escrowType === "native" && isNativeToken(rows[0].tokenAddress)) ||
         (resume.escrowType === "erc20" && !isNativeToken(rows[0].tokenAddress))));

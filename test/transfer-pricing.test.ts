@@ -13,7 +13,7 @@ const DEPLOY_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
 
 const VALID_RESUME = {
   escrowAddress: SENDER,
-  escrowType: "batch" as const,
+  escrowType: "erc20" as const,
   blindingScalar: `0x${"33".repeat(32)}` as `0x${string}`,
   seed: `0x${"44".repeat(32)}`,
   deployHash: DEPLOY_HASH,
@@ -253,6 +253,33 @@ describe("prepareTransfer pricing flow", () => {
       escrowType: "erc20",
       secrets: { escrowType: "erc20" },
     });
+  });
+
+  it("rejects a batch resume with only one row", async () => {
+    await expect(
+      prepareTransfer({
+        tokenAddress: USDC,
+        recipientAddress: RECIPIENT_A,
+        amount: 100n,
+        publicClient: {} as any,
+        network,
+        resume: { ...VALID_RESUME, escrowType: "batch" },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_RESUME" });
+  });
+
+  it("accepts a batch resume with multiple rows", async () => {
+    await expect(
+      prepareTransfer({
+        transfers: [
+          { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 40n },
+          { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 60n },
+        ],
+        publicClient: {} as any,
+        network,
+        resume: { ...VALID_RESUME, escrowType: "batch" },
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("surfaces real whitelist values returned by compliance", async () => {
