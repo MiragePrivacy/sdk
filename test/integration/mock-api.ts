@@ -191,6 +191,9 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           }
           const rewardAsset = request.signals[0].asset;
           const rewardAmount = 25n;
+          const gasBudgetAmount = 5n;
+          const freshPathOverheadAmount = 5n;
+          const maxGasAdvance = gasBudgetAmount + freshPathOverheadAmount;
           const deposits = new Map<string, bigint>();
           for (const row of rows) {
             const key = row.asset.toLowerCase();
@@ -208,6 +211,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
                     { type: "uint256" },
                     { type: "address" },
                     { type: "uint256" },
+                    { type: "uint256" },
                   ],
                   [
                     firstRow.asset as `0x${string}`,
@@ -215,6 +219,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
                     BigInt(firstRow.amount),
                     request.blinded_signers[0] as `0x${string}`,
                     rewardAmount,
+                    maxGasAdvance,
                   ],
                 )
               : request.escrow_type === "native"
@@ -224,12 +229,14 @@ function createServer(port: number, nomadUrl?: string): http.Server {
                       { type: "uint256" },
                       { type: "address" },
                       { type: "uint256" },
+                      { type: "uint256" },
                     ],
                     [
                       firstRow.recipient as `0x${string}`,
                       BigInt(firstRow.amount),
                       request.blinded_signers[0] as `0x${string}`,
                       rewardAmount,
+                      maxGasAdvance,
                     ],
                   )
                 : encodeAbiParameters(
@@ -245,6 +252,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
                         ],
                       },
                       { type: "uint256" },
+                      { type: "uint256" },
                       { type: "address[]" },
                     ],
                     [
@@ -256,6 +264,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
                         valueWeight: BigInt(row.valueWeight),
                       })),
                       rewardAmount,
+                      maxGasAdvance,
                       request.blinded_signers as `0x${string}`[],
                     ],
                   );
@@ -269,6 +278,9 @@ function createServer(port: number, nomadUrl?: string): http.Server {
             sender: request.sender,
             rewardAsset,
             rewardAmount: rewardAmount.toString(),
+            maxGasAdvance: maxGasAdvance.toString(),
+            gasBudgetAmount: gasBudgetAmount.toString(),
+            freshPathOverheadAmount: freshPathOverheadAmount.toString(),
             rows: rows.map((row, rowIndex) => ({ ...row, rowIndex })),
             quoteCommitment,
           };
