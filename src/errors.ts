@@ -93,9 +93,9 @@ export class WhitelistRequiredError extends MirageError {
 }
 
 /**
- * Thrown when a priced EscrowBatch is resumed without its base blinding
- * scalar. Nomad cannot derive the constructor's one-time bid signers without
- * it, so completion must use the secrets retained at deployment.
+ * Thrown when a priced escrow is resumed without its blinding scalar. Nomad
+ * cannot derive its one-time signer or batch signer set without it, so
+ * completion must use the secrets retained at deployment.
  */
 export class MissingBlindingScalarError extends MirageError {
   escrowAddress?: Address;

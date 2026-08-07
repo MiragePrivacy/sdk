@@ -109,7 +109,7 @@ export interface PricingQuote {
   chainId: number;
   serviceFee: { asset: Address; amount: bigint };
   deployment: {
-    escrowType: "batch";
+    escrowType: EscrowKind;
     constructorArgs: `0x${string}`;
     quoteCommitment: `0x${string}`;
     rewardAsset: Address;
@@ -120,12 +120,13 @@ export interface PricingQuote {
   sealedPricingAuthorization: `0x${string}`;
 }
 
-/** Request the API-authored economics and exact EscrowBatch constructor. */
+/** Request the API-authored economics and exact escrow constructor. */
 export async function fetchPricingQuote(
   apiServer: string,
   params: {
     chainId: number;
     sender: Address;
+    escrowType: EscrowKind;
     blindedSigners: Address[];
     signals: PricingSignalRequest[];
   },
@@ -134,7 +135,7 @@ export async function fetchPricingQuote(
     chain_id: number;
     service_fee: { asset: Address; amount: string };
     deployment: {
-      escrow_type: "batch";
+      escrow_type: EscrowKind;
       constructor_args: `0x${string}`;
       quote_commitment: `0x${string}`;
       reward_asset: Address;
@@ -149,7 +150,7 @@ export async function fetchPricingQuote(
     body: JSON.stringify({
       chain_id: params.chainId,
       sender: params.sender,
-      escrow_type: "batch",
+      escrow_type: params.escrowType,
       blinded_signers: params.blindedSigners,
       signals: params.signals,
     }),

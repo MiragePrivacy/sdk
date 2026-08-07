@@ -3,10 +3,10 @@ import { publicKeyToAddress } from "viem/utils";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { MirageError } from "../errors.js";
 
-export interface BatchBlindedSigners {
-  /** Ordered one-time bid signers committed into EscrowBatch. */
+export interface BlindedSigners {
+  /** One signer for a single escrow or ordered one-time signers for EscrowBatch. */
   blindedSigners: Address[];
-  /** Base scalar needed by Nomad to derive each corresponding private key. */
+  /** Scalar needed by Nomad to derive each corresponding private key. */
   blindingScalar: `0x${string}`;
 }
 
@@ -17,16 +17,17 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
- * Derive `G + (s + i)B` for every batch row from one fresh base scalar.
+ * Derive `G + (s + i)B` for each escrow signer from one fresh base scalar.
+ * A single escrow uses only index zero, which reduces to `G + sB`.
  * Nomad receives only `s` inside the encrypted Signal; the pricing API receives
  * only the resulting public addresses.
  */
-export function deriveBatchBlindedSigners(
+export function deriveBlindedSigners(
   globalKeyHex: string,
   signerCount: number,
-): BatchBlindedSigners {
+): BlindedSigners {
   if (!Number.isSafeInteger(signerCount) || signerCount < 1) {
-    throw new MirageError("INVALID_PARAMS", "At least one batch signer is required");
+    throw new MirageError("INVALID_PARAMS", "At least one escrow signer is required");
   }
 
   let globalPoint;
