@@ -1,6 +1,6 @@
 {
   "name": "@mirageprivacy/sdk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "SDK for private transfers on Mirage",
   "type": "module",
   "main": "./dist/index.cjs",

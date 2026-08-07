@@ -3,6 +3,7 @@ import { getContractAddress, zeroAddress } from "viem";
 import {
   buildQuotedApprovalBuckets,
   approveQuotedForDeployment,
+  bufferedGasLimit,
   deployQuotedApproved,
   estimateQuotedApprovalGas,
   predictContractAddress,
@@ -13,6 +14,11 @@ const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as const;
 
 describe("quoted escrow funding", () => {
+  it("adds a 30% gas-limit buffer and rounds up", () => {
+    expect(bufferedGasLimit(10n)).toBe(13n);
+    expect(bufferedGasLimit(11n)).toBe(15n);
+  });
+
   it("uses exact API deposits and excludes native msg.value from approvals", () => {
     expect(
       buildQuotedApprovalBuckets({ [USDC]: 1_025n, [USDT]: 500n, [zeroAddress]: 2n }),
@@ -94,14 +100,23 @@ describe("quoted escrow transactions", () => {
     } as any;
     const publicClient = {
       getTransactionCount: vi.fn(async () => 5),
+      estimateContractGas: vi
+        .fn()
+        .mockResolvedValueOnce(40_000n)
+        .mockResolvedValueOnce(60_000n),
       waitForTransactionReceipt: vi.fn(async () => ({ status: "success", gasUsed: 50_000n })),
     } as any;
+    const gasPrice = {
+      maxFeePerGas: 2_000_000_000n,
+      maxPriorityFeePerGas: 100_000_000n,
+    };
 
     const iterator = approveQuotedForDeployment({
       depositByAsset: { [USDC]: 1_025n, [USDT]: 500n, [zeroAddress]: 2n },
       walletClient,
       publicClient,
       account: DEPLOYER,
+      gasPrice,
     });
     let checkpoint;
     while (true) {
@@ -119,6 +134,10 @@ describe("quoted escrow transactions", () => {
       [predicted, 1_025n],
       [predicted, 500n],
     ]);
+    expect(writes).toEqual([
+      expect.objectContaining({ gas: 52_000n, ...gasPrice }),
+      expect.objectContaining({ gas: 78_000n, ...gasPrice }),
+    ]);
   });
 
   it("appends the exact constructor suffix and uses quoted msg.value", async () => {
@@ -127,6 +146,7 @@ describe("quoted escrow transactions", () => {
     const sendTransaction = vi.fn(async () => hash);
     const walletClient = { chain: undefined, sendTransaction } as any;
     const publicClient = {
+      estimateGas: vi.fn(),
       waitForTransactionReceipt: vi.fn(async () => ({
         status: "success",
         contractAddress: predicted,
@@ -144,6 +164,11 @@ describe("quoted escrow transactions", () => {
       walletClient,
       publicClient,
       account: DEPLOYER,
+      gasEstimate: 1_000_000n,
+      gasPrice: {
+        maxFeePerGas: 2_000_000_000n,
+        maxPriorityFeePerGas: 100_000_000n,
+      },
       checkpoint: {
         stage: "approved",
         account: DEPLOYER,
@@ -154,8 +179,16 @@ describe("quoted escrow transactions", () => {
     });
 
     expect(sendTransaction).toHaveBeenCalledWith(
-      expect.objectContaining({ to: null, data: "0x60001234", value: 7n }),
+      expect.objectContaining({
+        to: null,
+        data: "0x60001234",
+        value: 7n,
+        gas: 1_300_000n,
+        maxFeePerGas: 2_000_000_000n,
+        maxPriorityFeePerGas: 100_000_000n,
+      }),
     );
+    expect(publicClient.estimateGas).not.toHaveBeenCalled();
     expect(result.escrowAddress).toBe(predicted);
   });
 });

@@ -62,7 +62,7 @@ export interface TransferParams {
   /** Exact pricing authorization and scalar retained after deployment. */
   resume?: TransferSecrets;
   accessToken?: string;
-  /** @deprecated Pricing gas inputs are resolved by the API. */
+  /** Recommended EIP-1559 fees for wallet approval and deployment transactions. */
   gasPrice?: GasPrice;
   abortSignal?: AbortSignal;
   pollTimeout?: number;
@@ -330,6 +330,7 @@ function assertQuotedAccount(walletClient: WalletClient, sender: Address): Addre
 
 export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
   const context = await buildContext(params);
+  let transactionGasPrice = params.gasPrice;
   let checkpoint: ApprovalCheckpoint | undefined;
   let deployedSecrets: TransferSecrets | undefined = params.resume;
   let approvalBroadcast = false;
@@ -349,6 +350,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
         walletClient,
         publicClient: params.publicClient,
         account,
+        gasPrice: transactionGasPrice,
         onAbortCheck: () => {
           checkAbort(params.abortSignal);
           assertAccountUnchanged(walletClient, account);
@@ -403,6 +405,8 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       walletClient,
       publicClient: params.publicClient,
       account,
+      gasEstimate: context.obfuscation.deploymentGasEstimate,
+      gasPrice: transactionGasPrice,
     };
     const result =
       params.network.enableAtomicBatch && !approved
@@ -476,10 +480,11 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     yield* complete(walletClient, deployed.secrets);
   }
 
-  async function refreshFees(_overrides: FeeRefreshOverrides = {}): Promise<FeeEstimate> {
+  async function refreshFees(overrides: FeeRefreshOverrides = {}): Promise<FeeEstimate> {
     if (approvalBroadcast || approvalInProgress || checkpoint || deployedSecrets) {
       throw new MirageError("INVALID_STAGE", "The quote is locked once approval has begun");
     }
+    if (overrides.gasPrice) transactionGasPrice = overrides.gasPrice;
     const refreshedQuote = await fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender: context.sender,
