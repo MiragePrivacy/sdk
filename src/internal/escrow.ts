@@ -16,10 +16,10 @@ import { ContractError } from "../errors.js";
 import { isNativeToken } from "../token.js";
 import type { ApprovalCheckpoint, GasPrice } from "../types.js";
 
-const GAS_BUFFER_NUMERATOR = 13n;
+const GAS_BUFFER_NUMERATOR = 12n;
 const GAS_BUFFER_DENOMINATOR = 10n;
 
-/** Add the same 30% transaction gas-limit buffer used before the SDK migration. */
+/** Add 20% headroom to simulated wallet transaction gas limits. */
 export function bufferedGasLimit(estimate: bigint): bigint {
   return (
     (estimate * GAS_BUFFER_NUMERATOR + GAS_BUFFER_DENOMINATOR - 1n) / GAS_BUFFER_DENOMINATOR

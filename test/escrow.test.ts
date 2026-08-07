@@ -14,9 +14,9 @@ const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
 const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as const;
 
 describe("quoted escrow funding", () => {
-  it("adds a 30% gas-limit buffer and rounds up", () => {
-    expect(bufferedGasLimit(10n)).toBe(13n);
-    expect(bufferedGasLimit(11n)).toBe(15n);
+  it("adds a 20% gas-limit buffer and rounds up", () => {
+    expect(bufferedGasLimit(10n)).toBe(12n);
+    expect(bufferedGasLimit(11n)).toBe(14n);
   });
 
   it("uses exact API deposits and excludes native msg.value from approvals", () => {
@@ -135,8 +135,8 @@ describe("quoted escrow transactions", () => {
       [predicted, 500n],
     ]);
     expect(writes).toEqual([
-      expect.objectContaining({ gas: 52_000n, ...gasPrice }),
-      expect.objectContaining({ gas: 78_000n, ...gasPrice }),
+      expect.objectContaining({ gas: 48_000n, ...gasPrice }),
+      expect.objectContaining({ gas: 72_000n, ...gasPrice }),
     ]);
   });
 
@@ -183,7 +183,7 @@ describe("quoted escrow transactions", () => {
         to: null,
         data: "0x60001234",
         value: 7n,
-        gas: 1_300_000n,
+        gas: 1_200_000n,
         maxFeePerGas: 2_000_000_000n,
         maxPriorityFeePerGas: 100_000_000n,
       }),
@@ -230,6 +230,6 @@ describe("quoted escrow transactions", () => {
       },
     });
 
-    expect(sendTransaction).toHaveBeenCalledWith(expect.objectContaining({ gas: 1_950_000n }));
+    expect(sendTransaction).toHaveBeenCalledWith(expect.objectContaining({ gas: 1_800_000n }));
   });
 });
