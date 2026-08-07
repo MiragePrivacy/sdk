@@ -35,14 +35,14 @@ describe("fetchObfuscation", () => {
 });
 
 describe("fetchPricingQuote", () => {
-  it("sends batch signers and Signals and parses exact deployment funding", async () => {
+  it("sends the selected escrow type, signers, and Signals", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         chain_id: 1,
         service_fee: { asset: TOKEN, amount: "25" },
         deployment: {
-          escrow_type: "batch",
+          escrow_type: "erc20",
           constructor_args: "0x1234",
           quote_commitment: COMMITMENT,
           reward_asset: TOKEN,
@@ -64,6 +64,7 @@ describe("fetchPricingQuote", () => {
     const quote = await fetchPricingQuote("https://api.test", {
       chainId: 1,
       sender: SENDER,
+      escrowType: "erc20",
       blindedSigners: [SIGNER],
       signals,
     });
@@ -75,7 +76,7 @@ describe("fetchPricingQuote", () => {
     expect(JSON.parse(String(init!.body))).toEqual({
       chain_id: 1,
       sender: SENDER,
-      escrow_type: "batch",
+      escrow_type: "erc20",
       blinded_signers: [SIGNER],
       signals,
     });
