@@ -14,7 +14,17 @@ import {
 } from "viem";
 import { ContractError } from "../errors.js";
 import { isNativeToken } from "../token.js";
-import type { ApprovalCheckpoint } from "../types.js";
+import type { ApprovalCheckpoint, GasPrice } from "../types.js";
+
+const GAS_BUFFER_NUMERATOR = 12n;
+const GAS_BUFFER_DENOMINATOR = 10n;
+
+/** Add 20% headroom to simulated wallet transaction gas limits. */
+export function bufferedGasLimit(estimate: bigint): bigint {
+  return (
+    (estimate * GAS_BUFFER_NUMERATOR + GAS_BUFFER_DENOMINATOR - 1n) / GAS_BUFFER_DENOMINATOR
+  );
+}
 
 const escrowAbi = parseAbi(["function is_bonded() external view returns (bool)"]);
 
@@ -92,8 +102,16 @@ async function approveToken(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
+  gasPrice?: GasPrice;
 }): Promise<{ hash: Hash; gasUsed: bigint }> {
-  const { tokenAddress, spender, amount, walletClient, publicClient, account } = params;
+  const { tokenAddress, spender, amount, walletClient, publicClient, account, gasPrice } = params;
+  const gasEstimate = await publicClient.estimateContractGas({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: "approve",
+    args: [spender, amount],
+    account,
+  });
   const hash = await walletClient.writeContract({
     address: tokenAddress,
     abi: erc20Abi,
@@ -101,6 +119,8 @@ async function approveToken(params: {
     args: [spender, amount],
     chain: walletClient.chain,
     account,
+    gas: bufferedGasLimit(gasEstimate),
+    ...gasPrice,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") {
@@ -115,12 +135,13 @@ export async function* approveQuotedForDeployment(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
+  gasPrice?: GasPrice;
   onAbortCheck?: () => void;
 }): AsyncGenerator<
   { hash: Hash; tokenAddress: Address; gasUsed: bigint; index: number; total: number },
   ApprovalCheckpoint
 > {
-  const { depositByAsset, walletClient, publicClient, account, onAbortCheck } = params;
+  const { depositByAsset, walletClient, publicClient, account, gasPrice, onAbortCheck } = params;
   const buckets = buildQuotedApprovalBuckets(depositByAsset);
   const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
@@ -136,6 +157,7 @@ export async function* approveQuotedForDeployment(params: {
       walletClient,
       publicClient,
       account,
+      gasPrice,
     });
     approveGasUsed += result.gasUsed;
     const approval = { ...result, tokenAddress: bucket.tokenAddress };
@@ -169,6 +191,8 @@ export async function deployQuotedApproved(params: {
   walletClient: WalletClient;
   publicClient: PublicClient;
   account: Address;
+  gasEstimate?: bigint;
+  gasPrice?: GasPrice;
   checkpoint?: ApprovalCheckpoint;
 }): Promise<DeployResult> {
   const {
@@ -179,6 +203,8 @@ export async function deployQuotedApproved(params: {
     walletClient,
     publicClient,
     account,
+    gasEstimate,
+    gasPrice,
     checkpoint,
   } = params;
   if (buildQuotedApprovalBuckets(depositByAsset).length > 0 && !checkpoint) {
@@ -194,12 +220,29 @@ export async function deployQuotedApproved(params: {
       account,
       await publicClient.getTransactionCount({ address: account, blockTag: "pending" }),
     );
-  const hash = await walletClient.sendTransaction({
+  const transaction = {
     to: null,
     data: `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`,
     value: msgValue,
     chain: walletClient.chain,
     account,
+  } as const;
+  // The API simulation is used for the quote and fee display, while this live
+  // simulation sees the sender's confirmed approvals and current chain state.
+  // Enforce the larger estimate so a stale API profile cannot create an
+  // under-gassed deployment transaction.
+  const localGasEstimate = await publicClient.estimateGas({
+    account,
+    to: null,
+    data: transaction.data,
+    value: msgValue,
+  });
+  const estimatedGas =
+    gasEstimate === undefined || localGasEstimate > gasEstimate ? localGasEstimate : gasEstimate;
+  const hash = await walletClient.sendTransaction({
+    ...transaction,
+    gas: bufferedGasLimit(estimatedGas),
+    ...gasPrice,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") {

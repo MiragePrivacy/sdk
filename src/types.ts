@@ -237,7 +237,7 @@ export type TransferStep =
   | { step: "complete"; transfers: TransferEvent[] };
 
 export interface FeeRefreshOverrides {
-  /** @deprecated Pricing inputs are owned by the API and cannot be overridden. */
+  /** Updated EIP-1559 recommendation for wallet transactions; it does not alter quoted fees. */
   gasPrice?: GasPrice;
   /** @deprecated Pricing inputs are owned by the API and cannot be overridden. */
   ethToTokenRate?: number;
