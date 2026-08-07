@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { publicKeyToAddress } from "viem/utils";
-import {
-  deriveBatchBlindedSigners,
-} from "../src/internal/bond.js";
+import { deriveBlindedSigners } from "../src/internal/bond.js";
 
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -11,12 +9,12 @@ function toHex(bytes: Uint8Array): string {
     .join("");
 }
 
-describe("deriveBatchBlindedSigners", () => {
+describe("deriveBlindedSigners", () => {
   const secret = secp256k1.utils.randomSecretKey();
   const globalKey = `0x${toHex(secp256k1.getPublicKey(secret, true))}`;
 
   it("derives one ordered signer per row from s + index", () => {
-    const result = deriveBatchBlindedSigners(globalKey, 3);
+    const result = deriveBlindedSigners(globalKey, 3);
     const scalarBytes = Uint8Array.from(
       (result.blindingScalar.slice(2).match(/../g) ?? []).map((byte) => parseInt(byte, 16)),
     );
@@ -36,6 +34,6 @@ describe("deriveBatchBlindedSigners", () => {
   });
 
   it("rejects an empty signer set", () => {
-    expect(() => deriveBatchBlindedSigners(globalKey, 0)).toThrow(/at least one/i);
+    expect(() => deriveBlindedSigners(globalKey, 0)).toThrow(/at least one/i);
   });
 });

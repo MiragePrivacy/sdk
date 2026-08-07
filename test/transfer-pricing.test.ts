@@ -13,7 +13,7 @@ const DEPLOY_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
 
 const VALID_RESUME = {
   escrowAddress: SENDER,
-  escrowType: "batch" as const,
+  escrowType: "erc20" as const,
   blindingScalar: `0x${"33".repeat(32)}` as `0x${string}`,
   seed: `0x${"44".repeat(32)}`,
   deployHash: DEPLOY_HASH,
@@ -36,11 +36,15 @@ function toHex(bytes: Uint8Array): string {
 
 const networkKey = `0x${toHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true))}`;
 let pricingBody: any;
+let obfuscationBody: any;
+let quotedEscrowType: "erc20" | "native" | "batch" | undefined;
 let attestedChainId: number;
 let attestUrl: string | undefined;
 
 beforeEach(() => {
   pricingBody = undefined;
+  obfuscationBody = undefined;
+  quotedEscrowType = undefined;
   attestedChainId = 31337;
   attestUrl = undefined;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,6 +61,7 @@ beforeEach(() => {
       } as Response;
     }
     if (url.endsWith("/obfuscate_escrow")) {
+      obfuscationBody = JSON.parse(String(init?.body));
       return {
         ok: true,
         json: async () => ({
@@ -77,7 +82,7 @@ beforeEach(() => {
           chain_id: 31337,
           service_fee: { asset: rewardAsset, amount: "25" },
           deployment: {
-            escrow_type: "batch",
+            escrow_type: quotedEscrowType ?? pricingBody.escrow_type,
             constructor_args: "0x1234",
             quote_commitment: COMMITMENT,
             reward_asset: rewardAsset,
@@ -100,7 +105,7 @@ const network = createNetworkConfig("ethereum", {
 });
 
 describe("prepareTransfer pricing flow", () => {
-  it("quotes a one-row transfer as an EscrowBatch with one blinded signer", async () => {
+  it("quotes a one-row ERC-20 transfer with one blinded signer", async () => {
     const publicClient = {
       getTransactionCount: vi.fn().mockResolvedValue(5),
       estimateContractGas: vi.fn().mockResolvedValue(46_000n),
@@ -114,7 +119,8 @@ describe("prepareTransfer pricing flow", () => {
       network,
     });
 
-    expect(pricingBody.escrow_type).toBe("batch");
+    expect(pricingBody.escrow_type).toBe("erc20");
+    expect(obfuscationBody.escrow_type).toBe("erc20");
     expect(pricingBody.blinded_signers).toHaveLength(1);
     expect(pricingBody.signals).toEqual([
       {
@@ -127,6 +133,37 @@ describe("prepareTransfer pricing flow", () => {
     expect(prepared.fees.approvalGasEstimate).toBe(46_000n);
     expect(prepared.fees.deploymentGasEstimate).toBe(1_234_567n);
     expect(prepared.fees.totalWalletGasEstimate).toBe(1_280_567n);
+  });
+
+  it("quotes a one-row native transfer as a native escrow", async () => {
+    const prepared = await prepareTransfer({
+      tokenAddress: NATIVE_TOKEN_ADDRESS,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      senderAddress: SENDER,
+      publicClient: {} as any,
+      network,
+    });
+
+    expect(pricingBody.escrow_type).toBe("native");
+    expect(obfuscationBody.escrow_type).toBe("native");
+    expect(pricingBody.blinded_signers).toHaveLength(1);
+    expect(prepared.fees.rewardAsset).toBe(NATIVE_TOKEN_ADDRESS);
+  });
+
+  it("rejects a quote for a different escrow artifact", async () => {
+    quotedEscrowType = "batch";
+
+    await expect(
+      prepareTransfer({
+        tokenAddress: USDC,
+        recipientAddress: RECIPIENT_A,
+        amount: 100n,
+        senderAddress: SENDER,
+        publicClient: {} as any,
+        network,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_PRICING_QUOTE" });
   });
 
   it("keeps preparation available when approval gas simulation is unavailable", async () => {
@@ -159,6 +196,8 @@ describe("prepareTransfer pricing flow", () => {
     });
 
     expect(pricingBody.blinded_signers).toHaveLength(3);
+    expect(pricingBody.escrow_type).toBe("batch");
+    expect(obfuscationBody.escrow_type).toBe("batch");
     expect(pricingBody.signals.map((signal: any) => signal.asset)).toEqual([
       NATIVE_TOKEN_ADDRESS,
       USDC,
@@ -199,6 +238,49 @@ describe("prepareTransfer pricing flow", () => {
       });
     },
   );
+
+  it("retains the deployed escrow type when resuming", async () => {
+    const prepared = await prepareTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      publicClient: {} as any,
+      network,
+      resume: { ...VALID_RESUME, escrowType: "erc20" },
+    });
+
+    await expect(prepared.deploy({} as any)).resolves.toMatchObject({
+      escrowType: "erc20",
+      secrets: { escrowType: "erc20" },
+    });
+  });
+
+  it("rejects a batch resume with only one row", async () => {
+    await expect(
+      prepareTransfer({
+        tokenAddress: USDC,
+        recipientAddress: RECIPIENT_A,
+        amount: 100n,
+        publicClient: {} as any,
+        network,
+        resume: { ...VALID_RESUME, escrowType: "batch" },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_RESUME" });
+  });
+
+  it("accepts a batch resume with multiple rows", async () => {
+    await expect(
+      prepareTransfer({
+        transfers: [
+          { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 40n },
+          { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 60n },
+        ],
+        publicClient: {} as any,
+        network,
+        resume: { ...VALID_RESUME, escrowType: "batch" },
+      }),
+    ).resolves.toBeDefined();
+  });
 
   it("surfaces real whitelist values returned by compliance", async () => {
     const prepared = await prepareTransfer({

@@ -39,6 +39,7 @@ const executionApproval: ExecutionApproval = {
 };
 
 const baseParams = {
+  escrowType: "batch" as const,
   escrowAddress: ESCROW,
   blindingScalar: SCALAR,
   sealedPricingAuthorization: SEALED,
@@ -58,6 +59,7 @@ describe("submitSignal", () => {
     await submitSignal(baseParams);
 
     expect(captured.payload).toEqual({
+      escrowType: "batch",
       escrowContract: ESCROW,
       blindingScalar: SCALAR,
       sealedPricingAuthorization: SEALED,

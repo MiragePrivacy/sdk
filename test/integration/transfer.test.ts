@@ -85,7 +85,7 @@ describe("Full transfer flow", () => {
 
     const deployStep = steps.find((s) => s.step === "deploy");
     if (deployStep?.step === "deploy") {
-      expect(deployStep.escrowType).toBe("batch");
+      expect(deployStep.escrowType).toBe("erc20");
       expect(deployStep.secrets.quoteCommitment).toMatch(/^0x[0-9a-f]{64}$/);
       expect(deployStep.secrets.sealedPricingAuthorization).toMatch(/^0x[0-9a-f]+$/);
       expect(deployStep.secrets.blindingScalar).toMatch(/^0x[0-9a-f]{64}$/);
@@ -192,7 +192,7 @@ describe("Full transfer flow", () => {
 
       const deployStep = steps.find((s) => s.step === "deploy");
       if (deployStep?.step === "deploy") {
-        expect(deployStep.escrowType).toBe("batch");
+        expect(deployStep.escrowType).toBe("native");
       }
 
       const balanceAfter = await getTokenBalance(

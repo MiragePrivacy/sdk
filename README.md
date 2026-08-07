@@ -1,6 +1,6 @@
 # @mirageprivacy/sdk
 
-TypeScript SDK for private transfers on the Mirage protocol. It requests API-authored pricing, deploys the exact quoted EscrowBatch, obtains a quote-bound execution approval, submits the encrypted Nomad Signal, and polls recipient transfers.
+TypeScript SDK for private transfers on the Mirage protocol. It requests API-authored pricing, deploys the exact quoted escrow, obtains a quote-bound execution approval, submits the encrypted Nomad Signal, and polls recipient transfers.
 
 ## Install
 
@@ -88,7 +88,7 @@ for await (const event of prepared.complete(walletClient, deployed.secrets)) {
 ```
 
 `ApprovalCheckpoint` and `TransferSecrets` are serializable stage boundaries.
-The latter includes the batch scalar, quote commitment, and opaque sealed
+The latter includes the blinding scalar, quote commitment, and opaque sealed
 pricing authorization. Persist it immediately: a reload must submit the same
 authorization that produced the deployed constructor.
 
@@ -120,10 +120,12 @@ now requires an API server with the proxy configured.
 
 1. **fees** - Public API service fee and exact funding requirements
 2. **approve** - One exact approval per ERC-20 funding asset
-3. **deploy** - Exact API-quoted EscrowBatch deployment
+3. **deploy** - Exact API-quoted escrow deployment
 4. **compliance** - Execution approval bound to the deployment and quote
 5. **signal** - Minimal encrypted Signal envelope submission to Nomad
 6. **complete** - Transfer event observed on-chain
+
+One ERC-20 row deploys `EscrowERC20`, one native row deploys `EscrowNative`, and two or more rows deploy `EscrowBatch`.
 
 ### Cancellation
 

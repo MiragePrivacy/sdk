@@ -164,7 +164,7 @@ export interface GasPrice {
   maxPriorityFeePerGas: bigint;
 }
 
-/** A single recipient row. A plain transfer is internally a one-row batch. */
+/** One recipient transfer. A one-row request uses a single escrow. */
 export interface TransferRow {
   tokenAddress: Address;
   recipientAddress: Address;
@@ -178,8 +178,8 @@ export interface TransferRow {
  */
 export interface TransferSecrets {
   escrowAddress: Address;
-  escrowType: "batch";
-  /** Base scalar for the batch's ordered one-time bid signers. */
+  escrowType: EscrowKind;
+  /** Scalar used for a single signer or the batch's ordered one-time bid signers. */
   blindingScalar: `0x${string}`;
   seed: string;
   selectorMapping?: Record<string, string>;

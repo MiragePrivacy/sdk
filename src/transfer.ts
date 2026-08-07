@@ -1,6 +1,7 @@
 import { isAddress, type Address, type PublicClient, type WalletClient } from "viem";
 import type {
   ApprovalCheckpoint,
+  EscrowKind,
   FeeEstimate,
   FeeRefreshOverrides,
   GasPrice,
@@ -36,7 +37,7 @@ import {
   deployQuotedAtomic,
   estimateQuotedApprovalGas,
 } from "./internal/escrow.js";
-import { deriveBatchBlindedSigners } from "./internal/bond.js";
+import { deriveBlindedSigners } from "./internal/bond.js";
 import { submitSignal } from "./internal/nomad.js";
 import { pollTransfers } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
@@ -48,7 +49,7 @@ export interface TransferParams {
   tokenAddress?: Address;
   recipientAddress?: Address;
   amount?: bigint;
-  /** Multi-recipient form. Every transfer uses EscrowBatch, including n = 1. */
+  /** Multi-recipient form. Two or more rows use EscrowBatch. */
   transfers?: TransferRow[];
   /**
    * Sender committed into the API quote. Required when walletClient is not
@@ -88,6 +89,12 @@ function resolveRows(params: TransferParams): TransferRow[] {
     );
   }
   return rows;
+}
+
+/** Select the contract variant before requesting its quote and bytecode. */
+function selectEscrowType(rows: TransferRow[]): EscrowKind {
+  if (rows.length > 1) return "batch";
+  return isNativeToken(rows[0].tokenAddress) ? "native" : "erc20";
 }
 
 function resolveSender(params: TransferParams): Address {
@@ -180,6 +187,7 @@ function feeEstimate(
 
 interface TransferContext {
   rows: TransferRow[];
+  escrowType: EscrowKind;
   sender: Address;
   networkKey: NetworkKeyStatus;
   blindedSigners: Address[];
@@ -198,7 +206,15 @@ function isValidFundingMap(value: unknown): value is Record<string, bigint> {
 
 function quoteFromResume(params: TransferParams): PricingQuote {
   const resume = params.resume!;
+  const rows = resolveRows(params);
+  const escrowMatchesRows =
+    (resume.escrowType === "batch" && rows.length > 1) ||
+    (rows.length === 1 &&
+      ((resume.escrowType === "native" && isNativeToken(rows[0].tokenAddress)) ||
+        (resume.escrowType === "erc20" && !isNativeToken(rows[0].tokenAddress))));
   if (
+    !["erc20", "native", "batch"].includes(resume.escrowType) ||
+    !escrowMatchesRows ||
     typeof resume.quoteCommitment !== "string" ||
     !resume.quoteCommitment ||
     typeof resume.sealedPricingAuthorization !== "string" ||
@@ -223,7 +239,7 @@ function quoteFromResume(params: TransferParams): PricingQuote {
     chainId: params.network.chainId,
     serviceFee: resume.serviceFee,
     deployment: {
-      escrowType: "batch",
+      escrowType: resume.escrowType,
       constructorArgs: "0x",
       quoteCommitment: resume.quoteCommitment,
       rewardAsset: resume.rewardAsset,
@@ -237,6 +253,7 @@ function quoteFromResume(params: TransferParams): PricingQuote {
 
 async function buildContext(params: TransferParams): Promise<TransferContext> {
   const rows = resolveRows(params);
+  const escrowType = params.resume?.escrowType ?? selectEscrowType(rows);
   const sender = resolveSender(params);
   const networkKey = await fetchNetworkKey(
     params.network.apiServer,
@@ -257,6 +274,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     const quote = quoteFromResume(params);
     return {
       rows,
+      escrowType,
       sender,
       networkKey,
       blindedSigners: [],
@@ -266,16 +284,23 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     };
   }
 
-  const blinded = deriveBatchBlindedSigners(networkKey.publicKey, rows.length);
+  const blinded = deriveBlindedSigners(networkKey.publicKey, rows.length);
   const [quote, obfuscation] = await Promise.all([
     fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender,
+      escrowType,
       blindedSigners: blinded.blindedSigners,
       signals: buildPricingSignals(rows),
     }),
-    fetchObfuscation(params.network.apiServer, "batch"),
+    fetchObfuscation(params.network.apiServer, escrowType),
   ]);
+  if (quote.deployment.escrowType !== escrowType) {
+    throw new MirageError(
+      "INVALID_PRICING_QUOTE",
+      "Pricing quote returned a different escrow type than the requested artifact",
+    );
+  }
   const approvalGasEstimate = await estimateQuotedApprovalGas({
     depositByAsset: quote.deployment.depositByAsset,
     publicClient: params.publicClient,
@@ -284,6 +309,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
 
   return {
     rows,
+    escrowType,
     sender,
     networkKey,
     blindedSigners: blinded.blindedSigners,
@@ -357,7 +383,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
         step: "deploy",
         hash: deployedSecrets.deployHash,
         escrowAddress: deployedSecrets.escrowAddress,
-        escrowType: "batch",
+        escrowType: deployedSecrets.escrowType,
         secrets: deployedSecrets,
       };
     }
@@ -384,7 +410,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
         : await deployQuotedApproved({ ...deployParams, checkpoint: approved });
     deployedSecrets = {
       escrowAddress: result.escrowAddress,
-      escrowType: "batch",
+      escrowType: context.escrowType,
       blindingScalar: context.blindingScalar,
       seed: context.obfuscation.seed,
       selectorMapping: context.obfuscation.selectorMapping,
@@ -407,7 +433,7 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
       step: "deploy",
       hash: result.hash,
       escrowAddress: result.escrowAddress,
-      escrowType: "batch",
+      escrowType: context.escrowType,
       secrets: deployedSecrets,
     };
   }
@@ -454,12 +480,20 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     if (approvalBroadcast || approvalInProgress || checkpoint || deployedSecrets) {
       throw new MirageError("INVALID_STAGE", "The quote is locked once approval has begun");
     }
-    context.quote = await fetchPricingQuote(params.network.apiServer, {
+    const refreshedQuote = await fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender: context.sender,
+      escrowType: context.escrowType,
       blindedSigners: context.blindedSigners,
       signals: buildPricingSignals(context.rows),
     });
+    if (refreshedQuote.deployment.escrowType !== context.escrowType) {
+      throw new MirageError(
+        "INVALID_PRICING_QUOTE",
+        "Pricing quote returned a different escrow type than the requested artifact",
+      );
+    }
+    context.quote = refreshedQuote;
     const approvalGasEstimate = await estimateQuotedApprovalGas({
       depositByAsset: context.quote.deployment.depositByAsset,
       publicClient: params.publicClient,
@@ -528,7 +562,7 @@ async function* completeTransfer(
       txHash: resume.deployHash,
       chainId: network.chainId,
       seed: resume.seed,
-      escrowType: "batch",
+      escrowType: resume.escrowType,
       quoteCommitment: resume.quoteCommitment,
       accessToken: params.accessToken,
     });
@@ -552,6 +586,7 @@ async function* completeTransfer(
   checkAbort(params.abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
   const response = await submitSignal({
+    escrowType: resume.escrowType,
     escrowAddress: escrow,
     blindingScalar: resume.blindingScalar,
     sealedPricingAuthorization: resume.sealedPricingAuthorization,

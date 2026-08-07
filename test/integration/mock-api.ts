@@ -4,7 +4,7 @@
  * Implements:
  *   GET  /           — health check
  *   POST /obfuscate_escrow — returns real escrow bytecode (unobfuscated)
- *   POST /pricing/quote — returns an exact EscrowBatch deployment quote
+ *   POST /pricing/quote — returns an exact escrow deployment quote
  *   POST /compliance — returns a quote-bound mock execution approval
  *   ANY  /nomad/{chainId}/* — forwarded to the mock nomad, mirroring the
  *                            real API's nomad proxy
@@ -163,6 +163,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           const request = JSON.parse(body) as {
             chain_id: number;
             sender: string;
+            escrow_type: "erc20" | "native" | "batch";
             blinded_signers: string[];
             signals: Array<{
               asset: string;
@@ -185,8 +186,14 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           if (rows.length === 0 || request.blinded_signers.length !== rows.length) {
             throw new Error("pricing requires one blinded signer per row");
           }
+          if (request.escrow_type !== "batch" && rows.length !== 1) {
+            throw new Error("single escrow pricing requires exactly one row");
+          }
           const rewardAsset = request.signals[0].asset;
           const rewardAmount = 25n;
+          const gasBudgetAmount = 5n;
+          const freshPathOverheadAmount = 5n;
+          const maxGasAdvance = gasBudgetAmount + freshPathOverheadAmount;
           const deposits = new Map<string, bigint>();
           for (const row of rows) {
             const key = row.asset.toLowerCase();
@@ -194,42 +201,86 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           }
           const rewardKey = rewardAsset.toLowerCase();
           deposits.set(rewardKey, (deposits.get(rewardKey) ?? 0n) + rewardAmount);
-          const constructorArgs = encodeAbiParameters(
-            [
-              { type: "address" },
-              {
-                type: "tuple[]",
-                components: [
-                  { type: "address", name: "asset" },
-                  { type: "address", name: "recipient" },
-                  { type: "uint256", name: "amount" },
-                  { type: "uint256", name: "valueWeight" },
-                ],
-              },
-              { type: "uint256" },
-              { type: "address[]" },
-            ],
-            [
-              rewardAsset as `0x${string}`,
-              rows.map((row) => ({
-                asset: row.asset as `0x${string}`,
-                recipient: row.recipient as `0x${string}`,
-                amount: BigInt(row.amount),
-                valueWeight: BigInt(row.valueWeight),
-              })),
-              rewardAmount,
-              request.blinded_signers as `0x${string}`[],
-            ],
-          );
+          const firstRow = rows[0];
+          const constructorArgs =
+            request.escrow_type === "erc20"
+              ? encodeAbiParameters(
+                  [
+                    { type: "address" },
+                    { type: "address" },
+                    { type: "uint256" },
+                    { type: "address" },
+                    { type: "uint256" },
+                    { type: "uint256" },
+                  ],
+                  [
+                    firstRow.asset as `0x${string}`,
+                    firstRow.recipient as `0x${string}`,
+                    BigInt(firstRow.amount),
+                    request.blinded_signers[0] as `0x${string}`,
+                    rewardAmount,
+                    maxGasAdvance,
+                  ],
+                )
+              : request.escrow_type === "native"
+                ? encodeAbiParameters(
+                    [
+                      { type: "address" },
+                      { type: "uint256" },
+                      { type: "address" },
+                      { type: "uint256" },
+                      { type: "uint256" },
+                    ],
+                    [
+                      firstRow.recipient as `0x${string}`,
+                      BigInt(firstRow.amount),
+                      request.blinded_signers[0] as `0x${string}`,
+                      rewardAmount,
+                      maxGasAdvance,
+                    ],
+                  )
+                : encodeAbiParameters(
+                    [
+                      { type: "address" },
+                      {
+                        type: "tuple[]",
+                        components: [
+                          { type: "address", name: "asset" },
+                          { type: "address", name: "recipient" },
+                          { type: "uint256", name: "amount" },
+                          { type: "uint256", name: "valueWeight" },
+                        ],
+                      },
+                      { type: "uint256" },
+                      { type: "uint256" },
+                      { type: "address[]" },
+                    ],
+                    [
+                      rewardAsset as `0x${string}`,
+                      rows.map((row) => ({
+                        asset: row.asset as `0x${string}`,
+                        recipient: row.recipient as `0x${string}`,
+                        amount: BigInt(row.amount),
+                        valueWeight: BigInt(row.valueWeight),
+                      })),
+                      rewardAmount,
+                      maxGasAdvance,
+                      request.blinded_signers as `0x${string}`[],
+                    ],
+                  );
           const quoteCommitment = keccak256(
             stringToHex(`${body}:${crypto.randomUUID()}`),
           );
           const authorization = {
             version: 1,
+            escrowType: request.escrow_type,
             chainId: request.chain_id,
             sender: request.sender,
             rewardAsset,
             rewardAmount: rewardAmount.toString(),
+            maxGasAdvance: maxGasAdvance.toString(),
+            gasBudgetAmount: gasBudgetAmount.toString(),
+            freshPathOverheadAmount: freshPathOverheadAmount.toString(),
             rows: rows.map((row, rowIndex) => ({ ...row, rowIndex })),
             quoteCommitment,
           };
@@ -246,7 +297,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
             chain_id: request.chain_id,
             service_fee: { asset: rewardAsset, amount: rewardAmount.toString() },
             deployment: {
-              escrow_type: "batch",
+              escrow_type: request.escrow_type,
               constructor_args: constructorArgs,
               quote_commitment: quoteCommitment,
               reward_asset: rewardAsset,

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`@mirageprivacy/sdk` is the TypeScript SDK for private transfers through Mirage. It coordinates wallet approvals, API-authored pricing, EscrowBatch deployment, compliance approval, encrypted Signal submission to Nomad, and recipient-transfer polling.
+`@mirageprivacy/sdk` is the TypeScript SDK for private transfers through Mirage. It coordinates wallet approvals, API-authored pricing, escrow deployment, compliance approval, encrypted Signal submission to Nomad, and recipient-transfer polling.
 
 The API owns pricing and funding calculations. Nomad verifies the signed pricing and compliance authorizations and performs private execution. The SDK must not recreate the private platform/node fee split or accept executable economics from the application.
 
@@ -84,12 +84,12 @@ The SDK implements the following private transfer flow:
 1. **Prepare**: Preserve row order, group rows into Signals by asset, fetch Nomad's attested network key, and derive one blinded signer per row.
 2. **Quote**: Send the chain, sender, ordered Signals, execution modes, and blinded signers to `/pricing/quote`.
 3. **Approve**: Approve each non-native asset using the exact amount returned in `depositByAsset`.
-4. **Deploy**: Deploy the API-provided EscrowBatch constructor with the exact quoted native `msgValue`.
+4. **Deploy**: Deploy the API-provided escrow constructor with the exact quoted native `msgValue`.
 5. **Compliance**: Submit the deployment transaction and quote commitment to `/compliance` and receive a quote-bound execution approval.
 6. **Signal**: Encrypt a minimal Signal envelope with Nomad's attested network key and submit it to `/signal`.
 7. **Complete**: Poll and emit each recipient delivery, followed by the final completion event.
 
-Every transfer uses `EscrowBatch`, including a one-row transfer. The SDK does not fall back to the legacy ERC-20 or native escrow formats.
+A one-row ERC-20 request uses `EscrowERC20`, a one-row native request uses `EscrowNative`, and two or more rows use `EscrowBatch`. The selected type is sent to both pricing and obfuscation and is retained for compliance and resume.
 
 ### Pricing and Signal Construction
 
@@ -106,7 +106,7 @@ The pricing response provides:
 - Reward asset and reward amount
 - Exact deposits required per asset
 - Exact native `msgValue`
-- Exact EscrowBatch constructor arguments
+- Exact constructor arguments for the selected escrow
 - Quote commitment
 - Pricing authorization sealed directly for Nomad
 
@@ -152,8 +152,8 @@ The encrypted Nomad envelope contains the escrow address, base blinding scalar, 
 
 **Blinded signers** (`src/internal/bond.ts`)
 
-- Generates the local batch scalar
-- Derives one ordered blinded signer for every row
+- Generates the local blinding scalar
+- Derives one signer for a single escrow or one ordered blinded signer per batch row
 
 **Polling** (`src/internal/poll.ts`)
 
@@ -193,7 +193,7 @@ Public interfaces live in `src/types.ts` and are exported through `src/index.ts`
 
 - **API-owned pricing**: Never calculate the platform fee, node fee, reward pot, floor, ceiling, gas buffer, or capital component in the SDK.
 - **Exact deployment**: Approval amounts, constructor arguments, and `msgValue` must come directly from the quote used for that deployment.
-- **One-row batches**: A single transfer is the `n = 1` EscrowBatch case, not a separate protocol path.
+- **Escrow selection**: One ERC-20 row uses `EscrowERC20`, one native row uses `EscrowNative`, and multiple rows use `EscrowBatch`.
 - **Row ordering**: Reordering rows changes signer derivation, Signal grouping, and potentially the reward denomination. Preserve the caller's order.
 - **No linked mode**: Do not add linked execution to API requests or Nomad Signals.
 - **Attestation hash**: The payload commitment is `sha256(publicKey . chainId_be . maxBalanceUsd_be . complianceKeys . pricingKeys)`. Preserve both signer arrays in served order.
