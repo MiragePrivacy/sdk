@@ -227,14 +227,18 @@ export async function deployQuotedApproved(params: {
     chain: walletClient.chain,
     account,
   } as const;
+  // The API simulation is used for the quote and fee display, while this live
+  // simulation sees the sender's confirmed approvals and current chain state.
+  // Enforce the larger estimate so a stale API profile cannot create an
+  // under-gassed deployment transaction.
+  const localGasEstimate = await publicClient.estimateGas({
+    account,
+    to: null,
+    data: transaction.data,
+    value: msgValue,
+  });
   const estimatedGas =
-    gasEstimate ??
-    (await publicClient.estimateGas({
-      account,
-      to: null,
-      data: transaction.data,
-      value: msgValue,
-    }));
+    gasEstimate === undefined || localGasEstimate > gasEstimate ? localGasEstimate : gasEstimate;
   const hash = await walletClient.sendTransaction({
     ...transaction,
     gas: bufferedGasLimit(estimatedGas),

@@ -146,7 +146,7 @@ describe("quoted escrow transactions", () => {
     const sendTransaction = vi.fn(async () => hash);
     const walletClient = { chain: undefined, sendTransaction } as any;
     const publicClient = {
-      estimateGas: vi.fn(),
+      estimateGas: vi.fn().mockResolvedValue(900_000n),
       waitForTransactionReceipt: vi.fn(async () => ({
         status: "success",
         contractAddress: predicted,
@@ -188,7 +188,48 @@ describe("quoted escrow transactions", () => {
         maxPriorityFeePerGas: 100_000_000n,
       }),
     );
-    expect(publicClient.estimateGas).not.toHaveBeenCalled();
+    expect(publicClient.estimateGas).toHaveBeenCalledWith({
+      account: DEPLOYER,
+      to: null,
+      data: "0x60001234",
+      value: 7n,
+    });
     expect(result.escrowAddress).toBe(predicted);
+  });
+
+  it("buffers the live deployment estimate when it exceeds the API simulation", async () => {
+    const hash = `0x${"44".repeat(32)}` as const;
+    const predicted = predictContractAddress(DEPLOYER, 5);
+    const sendTransaction = vi.fn(async () => hash);
+    const publicClient = {
+      estimateGas: vi.fn().mockResolvedValue(1_500_000n),
+      waitForTransactionReceipt: vi.fn(async () => ({
+        status: "success",
+        contractAddress: predicted,
+        gasUsed: 1_400_000n,
+        effectiveGasPrice: 2n,
+        blockNumber: 9n,
+      })),
+    } as any;
+
+    await deployQuotedApproved({
+      bytecode: "0x6000",
+      constructorArgs: "0x1234",
+      depositByAsset: { [USDC]: 1_025n },
+      msgValue: 7n,
+      walletClient: { chain: undefined, sendTransaction } as any,
+      publicClient,
+      account: DEPLOYER,
+      gasEstimate: 1_000_000n,
+      checkpoint: {
+        stage: "approved",
+        account: DEPLOYER,
+        predictedEscrowAddress: predicted,
+        approvals: [],
+        approveGasUsed: 0n,
+      },
+    });
+
+    expect(sendTransaction).toHaveBeenCalledWith(expect.objectContaining({ gas: 1_950_000n }));
   });
 });
