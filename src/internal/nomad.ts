@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 import { ApiError, MissingBlindingScalarError } from "../errors.js";
 import { nomadProxyUrl } from "./api.js";
-import type { ExecutionApproval, NetworkKeyStatus } from "../types.js";
+import type { EscrowKind, ExecutionApproval, NetworkKeyStatus } from "../types.js";
 
 async function encryptSignal(payload: Uint8Array, publicKeyHex: string): Promise<Uint8Array> {
   const { encrypt } = await import("eciesjs");
@@ -15,6 +15,7 @@ function toHexString(bytes: Uint8Array): string {
 }
 
 export interface SignalParams {
+  escrowType: EscrowKind;
   escrowAddress: Address;
   blindingScalar: `0x${string}`;
   sealedPricingAuthorization: `0x${string}`;
@@ -36,6 +37,7 @@ export async function submitSignal(params: SignalParams): Promise<string> {
   }
 
   const signal = {
+    escrowType: params.escrowType,
     escrowContract: params.escrowAddress,
     blindingScalar: params.blindingScalar,
     sealedPricingAuthorization: params.sealedPricingAuthorization,

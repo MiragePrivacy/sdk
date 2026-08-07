@@ -586,6 +586,7 @@ async function* completeTransfer(
   checkAbort(params.abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
   const response = await submitSignal({
+    escrowType: resume.escrowType,
     escrowAddress: escrow,
     blindingScalar: resume.blindingScalar,
     sealedPricingAuthorization: resume.sealedPricingAuthorization,
