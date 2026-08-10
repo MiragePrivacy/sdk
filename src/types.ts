@@ -78,6 +78,24 @@ export interface FeeEstimate {
   assetRequirements: AssetRequirement[];
 }
 
+/**
+ * Display-only fees for a transfer with no committed sender. Carries the same
+ * API-authored economics as a quoted transfer, but omits wallet gas estimates
+ * and every deployable field. Re-quote with `prepareTransfer` once a wallet is
+ * connected: the sender is committed into the real quote, so a preview can
+ * never be executed.
+ */
+export interface TransferPreview {
+  serviceFee: AssetAmount;
+  /** API-simulated gas units for deploying the obfuscated escrow. */
+  deploymentGasEstimate?: bigint;
+  rewardAsset: Address;
+  rewardAmount: bigint;
+  depositByAsset: Record<string, bigint>;
+  msgValue: bigint;
+  assetRequirements: AssetRequirement[];
+}
+
 export interface AssetAmount {
   asset: Address;
   amount: bigint;
