@@ -346,7 +346,7 @@ describe("nomad proxy routing", () => {
 });
 
 describe("previewTransfer", () => {
-  it("quotes fees with no sender, wallet, public client, or attestation", async () => {
+  it("quotes fees with no sender, wallet, or attestation", async () => {
     const preview = await previewTransfer({
       tokenAddress: USDC,
       recipientAddress: RECIPIENT_A,
@@ -364,6 +364,57 @@ describe("previewTransfer", () => {
     expect(preview.assetRequirements).toEqual([
       { tokenAddress: USDC, transferAmount: 100n, escrowAmount: 125n },
     ]);
+  });
+
+  it("simulates wallet gas against a stand-in sender when given a public client", async () => {
+    const estimateContractGas = vi.fn().mockResolvedValue(46_000n);
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+      publicClient: {
+        getTransactionCount: vi.fn().mockResolvedValue(0),
+        estimateContractGas,
+      } as any,
+    });
+
+    // Approve gas does not depend on the caller's balance, so a stand-in
+    // sender yields the same estimate the connected wallet will pay.
+    expect(estimateContractGas).toHaveBeenCalledWith(
+      expect.objectContaining({ account: "0x0000000000000000000000000000000000000001" }),
+    );
+    expect(preview.approvalGasEstimate).toBe(46_000n);
+    expect(preview.deploymentGasEstimate).toBe(1_234_567n);
+    expect(preview.totalWalletGasEstimate).toBe(1_280_567n);
+  });
+
+  it("omits wallet gas when no public client is supplied", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+    });
+
+    expect(preview.approvalGasEstimate).toBeUndefined();
+    expect(preview.totalWalletGasEstimate).toBeUndefined();
+  });
+
+  it("keeps previewing when approval gas simulation fails", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+      publicClient: {
+        getTransactionCount: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+      } as any,
+    });
+
+    expect(preview.approvalGasEstimate).toBeUndefined();
+    expect(preview.totalWalletGasEstimate).toBeUndefined();
+    expect(preview.serviceFee).toEqual({ asset: USDC, amount: 25n });
   });
 
   it("exposes no deployable field", async () => {
@@ -384,17 +435,26 @@ describe("previewTransfer", () => {
       { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
       { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 200n },
     ];
-    const preview = await previewTransfer({ transfers: rows, network });
+    const publicClient = () =>
+      ({
+        getTransactionCount: vi.fn().mockResolvedValue(5),
+        estimateContractGas: vi.fn().mockResolvedValue(46_000n),
+      }) as any;
+    const preview = await previewTransfer({
+      transfers: rows,
+      network,
+      publicClient: publicClient(),
+    });
     const prepared = await prepareTransfer({
       transfers: rows,
       senderAddress: SENDER,
-      publicClient: {
-        getTransactionCount: vi.fn().mockResolvedValue(5),
-        estimateContractGas: vi.fn().mockResolvedValue(46_000n),
-      } as any,
+      publicClient: publicClient(),
       network,
     });
 
+    expect(preview.approvalGasEstimate).toBe(prepared.fees.approvalGasEstimate);
+    expect(preview.deploymentGasEstimate).toBe(prepared.fees.deploymentGasEstimate);
+    expect(preview.totalWalletGasEstimate).toBe(prepared.fees.totalWalletGasEstimate);
     expect(preview.serviceFee).toEqual(prepared.fees.serviceFee);
     expect(preview.rewardAsset).toBe(prepared.fees.rewardAsset);
     expect(preview.rewardAmount).toBe(prepared.fees.rewardAmount);

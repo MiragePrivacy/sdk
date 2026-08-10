@@ -344,19 +344,30 @@ function assertQuotedAccount(walletClient: WalletClient, sender: Address): Addre
   return account;
 }
 
+/**
+ * Stand-in sender for preview gas simulation. ERC-20 `approve` writes an
+ * allowance slot without reading the caller's balance, so its gas is the same
+ * for any address; only the allowance slot's prior value matters, and a fresh
+ * address matches the zero-to-nonzero cost a first-time approver pays.
+ */
+const PREVIEW_SENDER = "0x0000000000000000000000000000000000000001" as const;
+
 export interface PreviewParams {
   tokenAddress?: Address;
   recipientAddress?: Address;
   amount?: bigint;
   transfers?: TransferRow[];
   network: NetworkConfig;
+  /** Enables approval gas simulation. Omit to return fees without wallet gas. */
+  publicClient?: PublicClient;
   abortSignal?: AbortSignal;
 }
 
 /**
- * Quote fees before a wallet is connected. Requires no sender, wallet, public
- * client, or attestation fetch, and the API returns nothing deployable. Call
- * `prepareTransfer` once the wallet connects to obtain the real sender-bound
+ * Quote fees before a wallet is connected. Requires no sender, wallet, or
+ * attestation fetch, and the API returns nothing deployable. Supply a
+ * `publicClient` to include wallet gas, simulated against a stand-in sender.
+ * Call `prepareTransfer` once the wallet connects for the real sender-bound
  * quote; the two agree on fees for identical rows.
  */
 export async function previewTransfer(params: PreviewParams): Promise<TransferPreview> {
@@ -372,9 +383,23 @@ export async function previewTransfer(params: PreviewParams): Promise<TransferPr
   ]);
   checkAbort(params.abortSignal);
 
+  const approvalGasEstimate = params.publicClient
+    ? await estimateQuotedApprovalGas({
+        depositByAsset: preview.depositByAsset,
+        publicClient: params.publicClient,
+        account: PREVIEW_SENDER,
+      }).catch(() => undefined)
+    : undefined;
+
+  const deploymentGasEstimate = obfuscation?.deploymentGasEstimate;
   return {
     serviceFee: preview.serviceFee,
-    deploymentGasEstimate: obfuscation?.deploymentGasEstimate,
+    approvalGasEstimate,
+    deploymentGasEstimate,
+    totalWalletGasEstimate:
+      approvalGasEstimate !== undefined && deploymentGasEstimate !== undefined
+        ? approvalGasEstimate + deploymentGasEstimate
+        : undefined,
     rewardAsset: preview.rewardAsset,
     rewardAmount: preview.rewardAmount,
     depositByAsset: { ...preview.depositByAsset },
