@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { prepareTransfer } from "../src/transfer.js";
+import { prepareTransfer, previewTransfer } from "../src/transfer.js";
 import { createNetworkConfig } from "../src/networks.js";
 import { NATIVE_TOKEN_ADDRESS } from "../src/token.js";
 
@@ -40,6 +40,7 @@ let obfuscationBody: any;
 let quotedEscrowType: "erc20" | "native" | "batch" | undefined;
 let attestedChainId: number;
 let attestUrl: string | undefined;
+let forceUnsignedQuote: boolean;
 
 beforeEach(() => {
   pricingBody = undefined;
@@ -47,6 +48,7 @@ beforeEach(() => {
   quotedEscrowType = undefined;
   attestedChainId = 31337;
   attestUrl = undefined;
+  forceUnsignedQuote = false;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/attest")) {
@@ -76,6 +78,9 @@ beforeEach(() => {
     if (url.endsWith("/pricing/quote")) {
       pricingBody = JSON.parse(String(init?.body));
       const rewardAsset = pricingBody.signals[0].asset;
+      // A request without a sender receives an unsigned preview, matching the
+      // API contract.
+      const preview = forceUnsignedQuote || pricingBody.sender === undefined;
       return {
         ok: true,
         json: async () => ({
@@ -83,14 +88,14 @@ beforeEach(() => {
           service_fee: { asset: rewardAsset, amount: "25" },
           deployment: {
             escrow_type: quotedEscrowType ?? pricingBody.escrow_type,
-            constructor_args: "0x1234",
-            quote_commitment: COMMITMENT,
+            constructor_args: preview ? null : "0x1234",
+            quote_commitment: preview ? null : COMMITMENT,
             reward_asset: rewardAsset,
             reward_amount: "25",
             deposit_by_asset: { [rewardAsset]: "125" },
             msg_value: rewardAsset === NATIVE_TOKEN_ADDRESS ? "125" : "0",
           },
-          sealed_pricing_authorization: "0xabcd",
+          sealed_pricing_authorization: preview ? null : "0xabcd",
         }),
       } as Response;
     }
@@ -337,5 +342,155 @@ describe("nomad proxy routing", () => {
   it("accepts an attestation that reports no chain", async () => {
     attestedChainId = 0;
     await expect(prepare()).resolves.toBeDefined();
+  });
+});
+
+describe("previewTransfer", () => {
+  it("quotes fees with no sender, wallet, or attestation", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+    });
+
+    expect(pricingBody.sender).toBeUndefined();
+    expect(pricingBody.blinded_signers).toBeUndefined();
+    expect(pricingBody.escrow_type).toBe("erc20");
+    expect(attestUrl).toBeUndefined();
+    expect(preview.serviceFee).toEqual({ asset: USDC, amount: 25n });
+    expect(preview.rewardAmount).toBe(25n);
+    expect(preview.depositByAsset).toEqual({ [USDC]: 125n });
+    expect(preview.assetRequirements).toEqual([
+      { tokenAddress: USDC, transferAmount: 100n, escrowAmount: 125n },
+    ]);
+  });
+
+  it("simulates wallet gas against a stand-in sender when given a public client", async () => {
+    const estimateContractGas = vi.fn().mockResolvedValue(46_000n);
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+      publicClient: {
+        getTransactionCount: vi.fn().mockResolvedValue(0),
+        estimateContractGas,
+      } as any,
+    });
+
+    // Approve gas does not depend on the caller's balance, so a stand-in
+    // sender yields the same estimate the connected wallet will pay.
+    expect(estimateContractGas).toHaveBeenCalledWith(
+      expect.objectContaining({ account: "0x0000000000000000000000000000000000000001" }),
+    );
+    expect(preview.approvalGasEstimate).toBe(46_000n);
+    expect(preview.deploymentGasEstimate).toBe(1_234_567n);
+    expect(preview.totalWalletGasEstimate).toBe(1_280_567n);
+  });
+
+  it("omits wallet gas when no public client is supplied", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+    });
+
+    expect(preview.approvalGasEstimate).toBeUndefined();
+    expect(preview.totalWalletGasEstimate).toBeUndefined();
+  });
+
+  it("keeps previewing when approval gas simulation fails", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+      publicClient: {
+        getTransactionCount: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+      } as any,
+    });
+
+    expect(preview.approvalGasEstimate).toBeUndefined();
+    expect(preview.totalWalletGasEstimate).toBeUndefined();
+    expect(preview.serviceFee).toEqual({ asset: USDC, amount: 25n });
+  });
+
+  it("exposes no deployable field", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+    });
+
+    expect(preview).not.toHaveProperty("quoteCommitment");
+    expect(preview).not.toHaveProperty("constructorArgs");
+    expect(preview).not.toHaveProperty("sealedPricingAuthorization");
+  });
+
+  it("agrees with the sender-bound quote on fees for identical rows", async () => {
+    const rows = [
+      { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
+      { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 200n },
+    ];
+    const publicClient = () =>
+      ({
+        getTransactionCount: vi.fn().mockResolvedValue(5),
+        estimateContractGas: vi.fn().mockResolvedValue(46_000n),
+      }) as any;
+    const preview = await previewTransfer({
+      transfers: rows,
+      network,
+      publicClient: publicClient(),
+    });
+    const prepared = await prepareTransfer({
+      transfers: rows,
+      senderAddress: SENDER,
+      publicClient: publicClient(),
+      network,
+    });
+
+    expect(preview.approvalGasEstimate).toBe(prepared.fees.approvalGasEstimate);
+    expect(preview.deploymentGasEstimate).toBe(prepared.fees.deploymentGasEstimate);
+    expect(preview.totalWalletGasEstimate).toBe(prepared.fees.totalWalletGasEstimate);
+    expect(preview.serviceFee).toEqual(prepared.fees.serviceFee);
+    expect(preview.rewardAsset).toBe(prepared.fees.rewardAsset);
+    expect(preview.rewardAmount).toBe(prepared.fees.rewardAmount);
+    expect(preview.depositByAsset).toEqual(prepared.fees.depositByAsset);
+    expect(preview.msgValue).toBe(prepared.fees.msgValue);
+    expect(preview.assetRequirements).toEqual(prepared.fees.assetRequirements);
+  });
+
+  it("still previews a native transfer", async () => {
+    const preview = await previewTransfer({
+      tokenAddress: NATIVE_TOKEN_ADDRESS,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      network,
+    });
+
+    expect(pricingBody.escrow_type).toBe("native");
+    expect(preview.msgValue).toBe(125n);
+  });
+
+  it("rejects an unsigned quote returned for a committed sender", async () => {
+    // Guards against a downgrade: a sender-bound request must never be
+    // satisfied by a preview response.
+    forceUnsignedQuote = true;
+    await expect(
+      prepareTransfer({
+        tokenAddress: USDC,
+        recipientAddress: RECIPIENT_A,
+        amount: 100n,
+        senderAddress: SENDER,
+        publicClient: {
+          getTransactionCount: vi.fn().mockResolvedValue(5),
+          estimateContractGas: vi.fn().mockResolvedValue(46_000n),
+        } as any,
+        network,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_PRICING_QUOTE" });
   });
 });

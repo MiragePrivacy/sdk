@@ -78,6 +78,31 @@ export interface FeeEstimate {
   assetRequirements: AssetRequirement[];
 }
 
+/**
+ * Display-only fees for a transfer with no committed sender. Carries the same
+ * API-authored economics and wallet gas as a quoted transfer, but omits every
+ * deployable field. Re-quote with `prepareTransfer` once a wallet is
+ * connected: the sender is committed into the real quote, so a preview can
+ * never be executed.
+ */
+export interface TransferPreview {
+  serviceFee: AssetAmount;
+  /**
+   * Sum of gas units for every exact ERC-20 approval, simulated against a
+   * stand-in sender. Present only when a `publicClient` was supplied.
+   */
+  approvalGasEstimate?: bigint;
+  /** API-simulated gas units for deploying the obfuscated escrow. */
+  deploymentGasEstimate?: bigint;
+  /** Complete wallet gas units: approvals plus escrow deployment. */
+  totalWalletGasEstimate?: bigint;
+  rewardAsset: Address;
+  rewardAmount: bigint;
+  depositByAsset: Record<string, bigint>;
+  msgValue: bigint;
+  assetRequirements: AssetRequirement[];
+}
+
 export interface AssetAmount {
   asset: Address;
   amount: bigint;

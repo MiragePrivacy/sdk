@@ -1,7 +1,7 @@
 // Public API
 export { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "./networks.js";
-export { prepareTransfer, executeTransfer } from "./transfer.js";
-export type { TransferParams } from "./transfer.js";
+export { prepareTransfer, previewTransfer, executeTransfer } from "./transfer.js";
+export type { TransferParams, PreviewParams } from "./transfer.js";
 export type {
   ApiHealth,
   GasHistoryAverages,
@@ -52,6 +52,7 @@ export type {
   FeeRefreshOverrides,
   AssetRequirement,
   TransferEvent,
+  TransferPreview,
   TransferRow,
   TransferSecrets,
   TransferStep,

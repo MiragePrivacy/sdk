@@ -120,6 +120,80 @@ export interface PricingQuote {
   sealedPricingAuthorization: `0x${string}`;
 }
 
+/**
+ * Unsigned quote returned when no sender is supplied. Carries the same fees and
+ * funding as a signed quote but omits every deployable field.
+ */
+export interface PricingPreviewQuote {
+  chainId: number;
+  serviceFee: { asset: Address; amount: bigint };
+  rewardAsset: Address;
+  rewardAmount: bigint;
+  depositByAsset: Record<string, bigint>;
+  msgValue: bigint;
+}
+
+interface PricingQuoteResponse {
+  chain_id: number;
+  service_fee: { asset: Address; amount: string };
+  deployment: {
+    escrow_type: EscrowKind;
+    constructor_args: `0x${string}` | null;
+    quote_commitment: `0x${string}` | null;
+    reward_asset: Address;
+    reward_amount: string;
+    deposit_by_asset: Record<string, string>;
+    msg_value: string;
+  };
+  sealed_pricing_authorization: `0x${string}` | null;
+}
+
+function parseDepositByAsset(depositByAsset: Record<string, string>): Record<string, bigint> {
+  return Object.fromEntries(
+    Object.entries(depositByAsset).map(([asset, amount]) => [asset, BigInt(amount)]),
+  );
+}
+
+function postPricingQuote(
+  apiServer: string,
+  body: Record<string, unknown>,
+): Promise<PricingQuoteResponse> {
+  return request<PricingQuoteResponse>(`${apiServer}/pricing/quote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Request unsigned fees and funding for a transfer with no committed sender.
+ * The result is display-only: the API returns no commitment, constructor, or
+ * pricing authorization, so it can never be deployed.
+ */
+export async function fetchPricingPreview(
+  apiServer: string,
+  params: {
+    chainId: number;
+    escrowType: EscrowKind;
+    signals: PricingSignalRequest[];
+  },
+): Promise<PricingPreviewQuote> {
+  const res = await postPricingQuote(apiServer, {
+    chain_id: params.chainId,
+    escrow_type: params.escrowType,
+    signals: params.signals,
+  });
+
+  return {
+    chainId: res.chain_id,
+    serviceFee: { asset: res.service_fee.asset, amount: BigInt(res.service_fee.amount) },
+    rewardAsset: res.deployment.reward_asset,
+    rewardAmount: BigInt(res.deployment.reward_amount),
+    depositByAsset: parseDepositByAsset(res.deployment.deposit_by_asset),
+    msgValue: BigInt(res.deployment.msg_value),
+  };
+}
+
 /** Request the API-authored economics and exact escrow constructor. */
 export async function fetchPricingQuote(
   apiServer: string,
@@ -131,30 +205,25 @@ export async function fetchPricingQuote(
     signals: PricingSignalRequest[];
   },
 ): Promise<PricingQuote> {
-  const res = await request<{
-    chain_id: number;
-    service_fee: { asset: Address; amount: string };
-    deployment: {
-      escrow_type: EscrowKind;
-      constructor_args: `0x${string}`;
-      quote_commitment: `0x${string}`;
-      reward_asset: Address;
-      reward_amount: string;
-      deposit_by_asset: Record<string, string>;
-      msg_value: string;
-    };
-    sealed_pricing_authorization: `0x${string}`;
-  }>(`${apiServer}/pricing/quote`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chain_id: params.chainId,
-      sender: params.sender,
-      escrow_type: params.escrowType,
-      blinded_signers: params.blindedSigners,
-      signals: params.signals,
-    }),
+  const res = await postPricingQuote(apiServer, {
+    chain_id: params.chainId,
+    sender: params.sender,
+    escrow_type: params.escrowType,
+    blinded_signers: params.blindedSigners,
+    signals: params.signals,
   });
+  // A signed request must never yield preview fields. Reject rather than
+  // deploying against a partial quote.
+  if (
+    !res.sealed_pricing_authorization ||
+    !res.deployment.constructor_args ||
+    !res.deployment.quote_commitment
+  ) {
+    throw new MirageError(
+      "INVALID_PRICING_QUOTE",
+      "Pricing returned an unsigned preview quote for a committed sender",
+    );
+  }
 
   return {
     chainId: res.chain_id,
@@ -165,12 +234,7 @@ export async function fetchPricingQuote(
       quoteCommitment: res.deployment.quote_commitment,
       rewardAsset: res.deployment.reward_asset,
       rewardAmount: BigInt(res.deployment.reward_amount),
-      depositByAsset: Object.fromEntries(
-        Object.entries(res.deployment.deposit_by_asset).map(([asset, amount]) => [
-          asset,
-          BigInt(amount),
-        ]),
-      ),
+      depositByAsset: parseDepositByAsset(res.deployment.deposit_by_asset),
       msgValue: BigInt(res.deployment.msg_value),
     },
     sealedPricingAuthorization: res.sealed_pricing_authorization,

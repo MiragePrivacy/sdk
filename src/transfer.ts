@@ -1,6 +1,7 @@
 import { isAddress, type Address, type PublicClient, type WalletClient } from "viem";
 import type {
   ApprovalCheckpoint,
+  AssetRequirement,
   EscrowKind,
   FeeEstimate,
   FeeRefreshOverrides,
@@ -9,6 +10,7 @@ import type {
   NetworkKeyStatus,
   PreparedTransfer,
   TransferEvent,
+  TransferPreview,
   TransferRow,
   TransferSecrets,
   TransferStep,
@@ -27,6 +29,7 @@ import {
   fetchComplianceApproval,
   fetchNetworkKey,
   fetchObfuscation,
+  fetchPricingPreview,
   fetchPricingQuote,
   whitelistRequirementFromError,
 } from "./internal/api.js";
@@ -70,7 +73,12 @@ export interface TransferParams {
 
 const DEFAULT_POLL_TIMEOUT = 120_000;
 
-function resolveRows(params: TransferParams): TransferRow[] {
+function resolveRows(params: {
+  transfers?: TransferRow[];
+  tokenAddress?: Address;
+  recipientAddress?: Address;
+  amount?: bigint;
+}): TransferRow[] {
   const rows = params.transfers?.length
     ? params.transfers
     : params.tokenAddress && params.recipientAddress && params.amount !== undefined
@@ -153,17 +161,29 @@ function buildPricingSignals(rows: TransferRow[]): PricingSignalRequest[] {
   return [...signals.values()];
 }
 
+/** Pairs each API-required deposit with the principal the caller requested. */
+function assetRequirements(
+  rows: TransferRow[],
+  depositByAsset: Record<string, bigint>,
+): AssetRequirement[] {
+  const principal = new Map<string, bigint>();
+  for (const row of rows) {
+    const key = row.tokenAddress.toLowerCase();
+    principal.set(key, (principal.get(key) ?? 0n) + row.amount);
+  }
+  return Object.entries(depositByAsset).map(([asset, amount]) => ({
+    tokenAddress: asset as Address,
+    transferAmount: principal.get(asset.toLowerCase()) ?? 0n,
+    escrowAmount: amount,
+  }));
+}
+
 function feeEstimate(
   rows: TransferRow[],
   quote: PricingQuote,
   approvalGasEstimate?: bigint,
   deploymentGasEstimate?: bigint,
 ): FeeEstimate {
-  const principal = new Map<string, bigint>();
-  for (const row of rows) {
-    const key = row.tokenAddress.toLowerCase();
-    principal.set(key, (principal.get(key) ?? 0n) + row.amount);
-  }
   const totalWalletGasEstimate =
     approvalGasEstimate !== undefined && deploymentGasEstimate !== undefined
       ? approvalGasEstimate + deploymentGasEstimate
@@ -177,11 +197,7 @@ function feeEstimate(
     rewardAmount: quote.deployment.rewardAmount,
     depositByAsset: { ...quote.deployment.depositByAsset },
     msgValue: quote.deployment.msgValue,
-    assetRequirements: Object.entries(quote.deployment.depositByAsset).map(([asset, amount]) => ({
-      tokenAddress: asset as Address,
-      transferAmount: principal.get(asset.toLowerCase()) ?? 0n,
-      escrowAmount: amount,
-    })),
+    assetRequirements: assetRequirements(rows, quote.deployment.depositByAsset),
   };
 }
 
@@ -326,6 +342,70 @@ function assertQuotedAccount(walletClient: WalletClient, sender: Address): Addre
     throw new MirageError("ACCOUNT_CHANGED", "The active wallet does not match the quoted sender");
   }
   return account;
+}
+
+/**
+ * Stand-in sender for preview gas simulation. ERC-20 `approve` writes an
+ * allowance slot without reading the caller's balance, so its gas is the same
+ * for any address; only the allowance slot's prior value matters, and a fresh
+ * address matches the zero-to-nonzero cost a first-time approver pays.
+ */
+const PREVIEW_SENDER = "0x0000000000000000000000000000000000000001" as const;
+
+export interface PreviewParams {
+  tokenAddress?: Address;
+  recipientAddress?: Address;
+  amount?: bigint;
+  transfers?: TransferRow[];
+  network: NetworkConfig;
+  /** Enables approval gas simulation. Omit to return fees without wallet gas. */
+  publicClient?: PublicClient;
+  abortSignal?: AbortSignal;
+}
+
+/**
+ * Quote fees before a wallet is connected. Requires no sender, wallet, or
+ * attestation fetch, and the API returns nothing deployable. Supply a
+ * `publicClient` to include wallet gas, simulated against a stand-in sender.
+ * Call `prepareTransfer` once the wallet connects for the real sender-bound
+ * quote; the two agree on fees for identical rows.
+ */
+export async function previewTransfer(params: PreviewParams): Promise<TransferPreview> {
+  const rows = resolveRows(params);
+  const escrowType = selectEscrowType(rows);
+  const [preview, obfuscation] = await Promise.all([
+    fetchPricingPreview(params.network.apiServer, {
+      chainId: params.network.chainId,
+      escrowType,
+      signals: buildPricingSignals(rows),
+    }),
+    fetchObfuscation(params.network.apiServer, escrowType).catch(() => undefined),
+  ]);
+  checkAbort(params.abortSignal);
+
+  const approvalGasEstimate = params.publicClient
+    ? await estimateQuotedApprovalGas({
+        depositByAsset: preview.depositByAsset,
+        publicClient: params.publicClient,
+        account: PREVIEW_SENDER,
+      }).catch(() => undefined)
+    : undefined;
+
+  const deploymentGasEstimate = obfuscation?.deploymentGasEstimate;
+  return {
+    serviceFee: preview.serviceFee,
+    approvalGasEstimate,
+    deploymentGasEstimate,
+    totalWalletGasEstimate:
+      approvalGasEstimate !== undefined && deploymentGasEstimate !== undefined
+        ? approvalGasEstimate + deploymentGasEstimate
+        : undefined,
+    rewardAsset: preview.rewardAsset,
+    rewardAmount: preview.rewardAmount,
+    depositByAsset: { ...preview.depositByAsset },
+    msgValue: preview.msgValue,
+    assetRequirements: assetRequirements(rows, preview.depositByAsset),
+  };
 }
 
 export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
