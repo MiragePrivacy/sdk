@@ -10,6 +10,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version:
+    name: Version bump
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version is ahead of npm
+        run: |
+          name=$(jq -r .name package.json)
+          local=$(jq -r .version package.json)
+
+          # A package with no published release yet has nothing to be ahead of.
+          published=$(npm view "$name" version 2>/dev/null) || published=""
+          if [ -z "$published" ]; then
+            echo "$name is not published yet; skipping"
+            exit 0
+          fi
+
+          if [ -z "$(npx --yes semver -r ">$published" "$local")" ]; then
+            echo "::error file=package.json::version $local must be greater than the published $published"
+            exit 1
+          fi
+
+          echo "version bumped: $published -> $local"
+
   build:
     name: Typecheck, test, build
     runs-on: ubuntu-latest
