@@ -9,7 +9,11 @@ const R1 = "0x0000000000000000000000000000000000000001" as const;
 const R2 = "0x0000000000000000000000000000000000000002" as const;
 const R3 = "0x0000000000000000000000000000000000000003" as const;
 
-function row(tokenAddress: string, amount: bigint, recipientAddress: string): TransferRow {
+function row(
+  tokenAddress: string,
+  amount: bigint,
+  recipientAddress: string,
+): TransferRow {
   return {
     tokenAddress: tokenAddress as `0x${string}`,
     recipientAddress: recipientAddress as `0x${string}`,
@@ -44,7 +48,11 @@ function mockClient(rounds: any[][]) {
 
 describe("pollTransfers", () => {
   it("yields each recipient as it lands rather than waiting for all", async () => {
-    const rows = [row(USDC, 100n, R1), row(USDC, 200n, R2), row(USDC, 300n, R3)];
+    const rows = [
+      row(USDC, 100n, R1),
+      row(USDC, 200n, R2),
+      row(USDC, 300n, R3),
+    ];
 
     const client = mockClient([
       [log(R1, 100n, "0xaa")],
@@ -59,7 +67,10 @@ describe("pollTransfers", () => {
       timeout: 5_000,
       pollIntervalMs: 1,
     })) {
-      seen.push({ index: delivered.index, hash: delivered.transfer.transactionHash });
+      seen.push({
+        index: delivered.index,
+        hash: delivered.transfer.transactionHash,
+      });
       client.advance();
     }
 
@@ -91,7 +102,9 @@ describe("pollTransfers", () => {
   it("matches identical rows to distinct deliveries", async () => {
     // Two identical payments to the same recipient must consume two events.
     const rows = [row(USDC, 100n, R1), row(USDC, 100n, R1)];
-    const client = mockClient([[log(R1, 100n, "0xaa", 0), log(R1, 100n, "0xbb", 1)]]);
+    const client = mockClient([
+      [log(R1, 100n, "0xaa", 0), log(R1, 100n, "0xbb", 1)],
+    ]);
 
     const hashes = [];
     for await (const delivered of pollTransfers({
@@ -174,7 +187,12 @@ describe("pollTransfers", () => {
       getBlock: vi.fn().mockResolvedValue({
         number: 10n,
         transactions: [
-          { hash: "0xdd", to: R1, from: "0x00000000000000000000000000000000000000aa", value: 1_000n },
+          {
+            hash: "0xdd",
+            to: R1,
+            from: "0x00000000000000000000000000000000000000aa",
+            value: 1_000n,
+          },
         ],
       }),
       getLogs: vi.fn(),
@@ -203,7 +221,12 @@ describe("pollTransfers", () => {
       getBlock: vi.fn().mockResolvedValue({
         number: 10n,
         transactions: [
-          { hash: "0xbad", to: R1, from: "0x00000000000000000000000000000000000000aa", value: 1_000n },
+          {
+            hash: "0xbad",
+            to: R1,
+            from: "0x00000000000000000000000000000000000000aa",
+            value: 1_000n,
+          },
         ],
       }),
       getLogs: vi.fn(),
@@ -229,6 +252,100 @@ describe("pollTransfers", () => {
     ).rejects.toMatchObject({ code: "TRANSFER_ABORTED" });
   });
 
+  it("leaves toBlock unset so the node resolves its own head", async () => {
+    // A pinned toBlock can exceed the head of a lagging node behind a load
+    // balancer, which rejects the range outright.
+    const rows = [row(USDC, 100n, R1)];
+    const client = mockClient([[log(R1, 100n, "0xaa")]]);
+
+    for await (const _ of pollTransfers({
+      transfers: rows,
+      publicClient: client,
+      timeout: 5_000,
+      fromBlock: 50n,
+      pollIntervalMs: 1,
+    })) {
+      // single delivery
+    }
+
+    expect(client.getLogs).toHaveBeenCalledWith(
+      expect.objectContaining({ fromBlock: 50n }),
+    );
+    expect(client.getLogs.mock.calls[0][0]).not.toHaveProperty("toBlock");
+  });
+
+  it("retries the next tick when the RPC rejects a poll", async () => {
+    const rows = [row(USDC, 100n, R1)];
+    const client = mockClient([[log(R1, 100n, "0xaa")]]);
+    client.getLogs
+      .mockRejectedValueOnce(
+        new Error("block range extends beyond current head block"),
+      )
+      .mockResolvedValueOnce([log(R1, 100n, "0xaa")]);
+
+    const seen = [];
+    for await (const delivered of pollTransfers({
+      transfers: rows,
+      publicClient: client,
+      timeout: 5_000,
+      pollIntervalMs: 1,
+    })) {
+      seen.push(delivered.transfer.transactionHash);
+    }
+
+    // The rejection is absorbed and the delivery still lands.
+    expect(seen).toEqual(["0xaa"]);
+    expect(client.getLogs).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-walk native blocks already scanned", async () => {
+    const rows = [row(NATIVE_TOKEN_ADDRESS, 1_000n, R1)];
+    let head = 10n;
+    const client = {
+      getBlockNumber: vi.fn().mockImplementation(() => {
+        const current = head;
+        if (head < 12n) head += 1n;
+        return Promise.resolve(current);
+      }),
+      getBlock: vi.fn().mockImplementation(({ blockNumber }: any) =>
+        Promise.resolve({
+          number: blockNumber,
+          transactions:
+            blockNumber === 12n
+              ? [
+                  {
+                    hash: "0xdd",
+                    to: R1,
+                    from: "0x00000000000000000000000000000000000000aa",
+                    value: 1_000n,
+                  },
+                ]
+              : [],
+        }),
+      ),
+      getLogs: vi.fn(),
+      getTransactionReceipt: vi.fn().mockResolvedValue({ status: "success" }),
+    } as any;
+
+    // Head advances while polling; blocks 10-12 should each be fetched once.
+    const seen = [];
+    for await (const delivered of pollTransfers({
+      transfers: rows,
+      publicClient: client,
+      timeout: 5_000,
+      fromBlock: 10n,
+      pollIntervalMs: 1,
+    })) {
+      seen.push(delivered.transfer.transactionHash);
+    }
+
+    expect(seen).toEqual(["0xdd"]);
+    const scanned = client.getBlock.mock.calls.map(
+      (c: any) => c[0].blockNumber,
+    );
+    expect(scanned).toEqual([...new Set(scanned)]);
+  });
+
   it("ignores a native transaction whose value does not match exactly", async () => {
     const rows = [row(NATIVE_TOKEN_ADDRESS, 1_000n, R1)];
     const client = {
@@ -237,7 +354,12 @@ describe("pollTransfers", () => {
         number: 10n,
         // An unrelated, larger payment to the same recipient.
         transactions: [
-          { hash: "0xbig", to: R1, from: "0x00000000000000000000000000000000000000aa", value: 5_000n },
+          {
+            hash: "0xbig",
+            to: R1,
+            from: "0x00000000000000000000000000000000000000aa",
+            value: 5_000n,
+          },
         ],
       }),
       getLogs: vi.fn(),
