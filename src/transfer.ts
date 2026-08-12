@@ -1,4 +1,9 @@
-import { isAddress, type Address, type PublicClient, type WalletClient } from "viem";
+import {
+  isAddress,
+  type Address,
+  type PublicClient,
+  type WalletClient,
+} from "viem";
 import type {
   ApprovalCheckpoint,
   AssetRequirement,
@@ -69,6 +74,12 @@ export interface TransferParams {
   gasPrice?: GasPrice;
   abortSignal?: AbortSignal;
   pollTimeout?: number;
+  /**
+   * Largest block span one eth_getLogs may cover. Lower it for providers with
+   * a cap below the 10k default; a transfer resumed further back than this is
+   * scanned in windows.
+   */
+  maxBlockRange?: bigint;
 }
 
 const DEFAULT_POLL_TIMEOUT = 120_000;
@@ -81,7 +92,9 @@ function resolveRows(params: {
 }): TransferRow[] {
   const rows = params.transfers?.length
     ? params.transfers
-    : params.tokenAddress && params.recipientAddress && params.amount !== undefined
+    : params.tokenAddress &&
+        params.recipientAddress &&
+        params.amount !== undefined
       ? [
           {
             tokenAddress: params.tokenAddress,
@@ -106,8 +119,11 @@ function selectEscrowType(rows: TransferRow[]): EscrowKind {
 }
 
 function resolveSender(params: TransferParams): Address {
-  const walletSender = params.walletClient ? getAccount(params.walletClient) : undefined;
-  const sender = params.resume?.senderAddress ?? params.senderAddress ?? walletSender;
+  const walletSender = params.walletClient
+    ? getAccount(params.walletClient)
+    : undefined;
+  const sender =
+    params.resume?.senderAddress ?? params.senderAddress ?? walletSender;
   if (!sender) {
     throw new MirageError(
       "SENDER_REQUIRED",
@@ -115,12 +131,17 @@ function resolveSender(params: TransferParams): Address {
     );
   }
   if (walletSender && walletSender.toLowerCase() !== sender.toLowerCase()) {
-    throw new MirageError("ACCOUNT_CHANGED", "The active wallet does not match the quoted sender");
+    throw new MirageError(
+      "ACCOUNT_CHANGED",
+      "The active wallet does not match the quoted sender",
+    );
   }
   return sender;
 }
 
-function attestationOptions(network: NetworkConfig): { verify: VerifyAttestationOptions | false } {
+function attestationOptions(network: NetworkConfig): {
+  verify: VerifyAttestationOptions | false;
+} {
   const policy = network.attestation;
   if (policy?.required === false) return { verify: false };
   return {
@@ -216,7 +237,8 @@ interface TransferContext {
 function isValidFundingMap(value: unknown): value is Record<string, bigint> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   return Object.entries(value).every(
-    ([asset, amount]) => isAddress(asset) && typeof amount === "bigint" && amount >= 0n,
+    ([asset, amount]) =>
+      isAddress(asset) && typeof amount === "bigint" && amount >= 0n,
   );
 }
 
@@ -226,8 +248,10 @@ function quoteFromResume(params: TransferParams): PricingQuote {
   const escrowMatchesRows =
     (resume.escrowType === "batch" && rows.length > 1) ||
     (rows.length === 1 &&
-      ((resume.escrowType === "native" && isNativeToken(rows[0].tokenAddress)) ||
-        (resume.escrowType === "erc20" && !isNativeToken(rows[0].tokenAddress))));
+      ((resume.escrowType === "native" &&
+        isNativeToken(rows[0].tokenAddress)) ||
+        (resume.escrowType === "erc20" &&
+          !isNativeToken(rows[0].tokenAddress))));
   if (
     !["erc20", "native", "batch"].includes(resume.escrowType) ||
     !escrowMatchesRows ||
@@ -276,7 +300,10 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     params.network.chainId,
     attestationOptions(params.network),
   );
-  if (networkKey.chainId !== 0 && networkKey.chainId !== params.network.chainId) {
+  if (
+    networkKey.chainId !== 0 &&
+    networkKey.chainId !== params.network.chainId
+  ) {
     throw new MirageError(
       "INVALID_NETWORK_KEY",
       `Nomad attested chain ${networkKey.chainId}, expected ${params.network.chainId}`,
@@ -331,15 +358,26 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     blindedSigners: blinded.blindedSigners,
     blindingScalar: blinded.blindingScalar,
     quote,
-    fees: feeEstimate(rows, quote, approvalGasEstimate, obfuscation.deploymentGasEstimate),
+    fees: feeEstimate(
+      rows,
+      quote,
+      approvalGasEstimate,
+      obfuscation.deploymentGasEstimate,
+    ),
     obfuscation,
   };
 }
 
-function assertQuotedAccount(walletClient: WalletClient, sender: Address): Address {
+function assertQuotedAccount(
+  walletClient: WalletClient,
+  sender: Address,
+): Address {
   const account = getAccount(walletClient);
   if (account.toLowerCase() !== sender.toLowerCase()) {
-    throw new MirageError("ACCOUNT_CHANGED", "The active wallet does not match the quoted sender");
+    throw new MirageError(
+      "ACCOUNT_CHANGED",
+      "The active wallet does not match the quoted sender",
+    );
   }
   return account;
 }
@@ -370,7 +408,9 @@ export interface PreviewParams {
  * Call `prepareTransfer` once the wallet connects for the real sender-bound
  * quote; the two agree on fees for identical rows.
  */
-export async function previewTransfer(params: PreviewParams): Promise<TransferPreview> {
+export async function previewTransfer(
+  params: PreviewParams,
+): Promise<TransferPreview> {
   const rows = resolveRows(params);
   const escrowType = selectEscrowType(rows);
   const [preview, obfuscation] = await Promise.all([
@@ -379,7 +419,9 @@ export async function previewTransfer(params: PreviewParams): Promise<TransferPr
       escrowType,
       signals: buildPricingSignals(rows),
     }),
-    fetchObfuscation(params.network.apiServer, escrowType).catch(() => undefined),
+    fetchObfuscation(params.network.apiServer, escrowType).catch(
+      () => undefined,
+    ),
   ]);
   checkAbort(params.abortSignal);
 
@@ -408,7 +450,9 @@ export async function previewTransfer(params: PreviewParams): Promise<TransferPr
   };
 }
 
-export async function prepareTransfer(params: TransferParams): Promise<PreparedTransfer> {
+export async function prepareTransfer(
+  params: TransferParams,
+): Promise<PreparedTransfer> {
   const context = await buildContext(params);
   let transactionGasPrice = params.gasPrice;
   let checkpoint: ApprovalCheckpoint | undefined;
@@ -420,7 +464,10 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     walletClient: WalletClient,
   ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
     if (approvalInProgress) {
-      throw new MirageError("INVALID_STAGE", "An approval sequence is already in progress");
+      throw new MirageError(
+        "INVALID_STAGE",
+        "An approval sequence is already in progress",
+      );
     }
     approvalInProgress = true;
     try {
@@ -473,7 +520,10 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     checkAbort(params.abortSignal);
     assertAccountUnchanged(walletClient, account);
     if (!context.obfuscation) {
-      throw new MirageError("MISSING_OBFUSCATION", "Escrow bytecode was not fetched");
+      throw new MirageError(
+        "MISSING_OBFUSCATION",
+        "Escrow bytecode was not fetched",
+      );
     }
 
     const approved = suppliedCheckpoint ?? checkpoint;
@@ -528,14 +578,22 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
   ): AsyncGenerator<TransferStep> {
     const resume = secrets ?? deployedSecrets ?? params.resume;
     if (!resume) {
-      throw new MirageError("INVALID_STAGE", "Deploy the transfer before completing it");
+      throw new MirageError(
+        "INVALID_STAGE",
+        "Deploy the transfer before completing it",
+      );
     }
     yield* completeTransfer({ ...params, walletClient, resume }, context);
   }
 
-  async function* execute(walletClient = params.walletClient): AsyncGenerator<TransferStep> {
+  async function* execute(
+    walletClient = params.walletClient,
+  ): AsyncGenerator<TransferStep> {
     if (!walletClient) {
-      throw new MirageError("WALLET_REQUIRED", "A wallet client is required to execute a transfer");
+      throw new MirageError(
+        "WALLET_REQUIRED",
+        "A wallet client is required to execute a transfer",
+      );
     }
     yield { step: "fees", fees: context.fees };
     if (deployedSecrets) {
@@ -560,9 +618,19 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     yield* complete(walletClient, deployed.secrets);
   }
 
-  async function refreshFees(overrides: FeeRefreshOverrides = {}): Promise<FeeEstimate> {
-    if (approvalBroadcast || approvalInProgress || checkpoint || deployedSecrets) {
-      throw new MirageError("INVALID_STAGE", "The quote is locked once approval has begun");
+  async function refreshFees(
+    overrides: FeeRefreshOverrides = {},
+  ): Promise<FeeEstimate> {
+    if (
+      approvalBroadcast ||
+      approvalInProgress ||
+      checkpoint ||
+      deployedSecrets
+    ) {
+      throw new MirageError(
+        "INVALID_STAGE",
+        "The quote is locked once approval has begun",
+      );
     }
     if (overrides.gasPrice) transactionGasPrice = overrides.gasPrice;
     const refreshedQuote = await fetchPricingQuote(params.network.apiServer, {
@@ -597,14 +665,23 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
     transfers: TransferRow[],
     overrides: FeeRefreshOverrides = {},
   ): Promise<FeeEstimate> {
-    if (approvalBroadcast || approvalInProgress || checkpoint || deployedSecrets) {
-      throw new MirageError("INVALID_STAGE", "Transfers are locked once approval has begun");
+    if (
+      approvalBroadcast ||
+      approvalInProgress ||
+      checkpoint ||
+      deployedSecrets
+    ) {
+      throw new MirageError(
+        "INVALID_STAGE",
+        "Transfers are locked once approval has begun",
+      );
     }
     const layoutChanged =
       transfers.length !== context.rows.length ||
       transfers.some(
         (row, index) =>
-          row.tokenAddress.toLowerCase() !== context.rows[index].tokenAddress.toLowerCase(),
+          row.tokenAddress.toLowerCase() !==
+          context.rows[index].tokenAddress.toLowerCase(),
       );
     if (layoutChanged) {
       throw new MirageError(
@@ -630,7 +707,10 @@ export async function prepareTransfer(params: TransferParams): Promise<PreparedT
 }
 
 async function* completeTransfer(
-  params: TransferParams & { walletClient: WalletClient; resume: TransferSecrets },
+  params: TransferParams & {
+    walletClient: WalletClient;
+    resume: TransferSecrets;
+  },
   cached?: TransferContext,
 ): AsyncGenerator<TransferStep> {
   const context = cached ?? (await buildContext(params));
@@ -654,17 +734,25 @@ async function* completeTransfer(
   } catch (error) {
     const requirement = whitelistRequirementFromError(error);
     if (requirement) {
-      throw new WhitelistRequiredError(requirement.amountUsd, requirement.thresholdUsd);
+      throw new WhitelistRequiredError(
+        requirement.amountUsd,
+        requirement.thresholdUsd,
+      );
     }
     throw error;
   }
   if (
     executionApproval.chainId !== network.chainId ||
     executionApproval.escrowContract.toLowerCase() !== escrow.toLowerCase() ||
-    executionApproval.deploymentTxHash.toLowerCase() !== resume.deployHash.toLowerCase() ||
-    executionApproval.quoteCommitment.toLowerCase() !== resume.quoteCommitment.toLowerCase()
+    executionApproval.deploymentTxHash.toLowerCase() !==
+      resume.deployHash.toLowerCase() ||
+    executionApproval.quoteCommitment.toLowerCase() !==
+      resume.quoteCommitment.toLowerCase()
   ) {
-    throw new MirageError("INVALID_APPROVAL", "API execution approval does not match deployment");
+    throw new MirageError(
+      "INVALID_APPROVAL",
+      "API execution approval does not match deployment",
+    );
   }
   yield { step: "compliance", approval: executionApproval };
 
@@ -689,13 +777,15 @@ async function* completeTransfer(
 
   const fromBlock =
     resume.fromBlock ??
-    (await publicClient.getTransactionReceipt({ hash: resume.deployHash })).blockNumber;
+    (await publicClient.getTransactionReceipt({ hash: resume.deployHash }))
+      .blockNumber;
   const completed: TransferEvent[] = [];
   for await (const delivered of pollTransfers({
     transfers: context.rows,
     publicClient,
     timeout: params.pollTimeout ?? DEFAULT_POLL_TIMEOUT,
     fromBlock,
+    maxBlockRange: params.maxBlockRange,
     signal: params.abortSignal,
   })) {
     completed.push(delivered.transfer);
@@ -711,7 +801,9 @@ async function* completeTransfer(
 }
 
 /** Prepare and execute a transfer in one call. */
-export async function* executeTransfer(params: TransferParams): AsyncGenerator<TransferStep> {
+export async function* executeTransfer(
+  params: TransferParams,
+): AsyncGenerator<TransferStep> {
   const prepared = await prepareTransfer(params);
   yield* prepared.execute(params.walletClient);
 }

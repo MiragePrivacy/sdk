@@ -16,6 +16,39 @@ export interface DeliveredTransfer {
 }
 
 /**
+ * Providers cap how many blocks one eth_getLogs may span. 10k is the common
+ * ceiling (Alchemy, Infura); a resumed transfer deployed further back than
+ * that must be scanned in windows rather than one request.
+ */
+const DEFAULT_MAX_BLOCK_RANGE = 10_000n;
+
+/**
+ * Native deliveries cost one getBlock per block, so a far-behind resume is
+ * caught up across ticks rather than in one blocking sweep.
+ */
+const NATIVE_BLOCKS_PER_TICK = 200n;
+
+/**
+ * A malformed request fails identically on every retry, so it must surface
+ * instead of being absorbed until the poll deadline. Range and parameter
+ * rejections are permanent in that sense; a dropped connection or a node
+ * briefly behind the head is not.
+ */
+function isPermanentRpcError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  // A stale head resolves itself on the next tick, so it stays retryable even
+  // though the provider reports it as an invalid range.
+  if (message.includes("beyond current head")) return false;
+  return (
+    message.includes("exceed") ||
+    message.includes("more than") ||
+    message.includes("too large") ||
+    message.includes("range is too") ||
+    message.includes("query timeout")
+  );
+}
+
+/**
  * Watch for each recipient's delivery, yielding as they land. The node sends a
  * separate transaction per recipient, so a batch completes incrementally
  * rather than all at once.
@@ -29,6 +62,7 @@ export async function* pollTransfers(params: {
   timeout: number;
   fromBlock?: bigint;
   pollIntervalMs?: number;
+  maxBlockRange?: bigint;
   signal?: AbortSignal;
 }): AsyncGenerator<DeliveredTransfer> {
   const {
@@ -37,6 +71,7 @@ export async function* pollTransfers(params: {
     timeout,
     signal,
     pollIntervalMs = 2000,
+    maxBlockRange = DEFAULT_MAX_BLOCK_RANGE,
   } = params;
 
   const startBlock = params.fromBlock ?? (await publicClient.getBlockNumber());
@@ -44,9 +79,11 @@ export async function* pollTransfers(params: {
 
   const pending = new Set(transfers.map((_, i) => i));
   const claimed = new Set<string>();
-  // Per-row scan cursor for the native branch, so each poll resumes where the
-  // last one stopped instead of re-walking the whole range.
+  // Per-row scan cursors, so each poll resumes where the last one stopped
+  // instead of re-walking the whole range. A transfer resumed long after its
+  // deploy starts far behind the head and catches up across several ticks.
   const scanned = new Map<number, bigint>();
+  const scannedLogs = new Map<number, bigint>();
 
   while (pending.size > 0) {
     checkAbort(signal);
@@ -70,9 +107,15 @@ export async function* pollTransfers(params: {
           });
 
           // Blocks already walked are never re-fetched; anything past the head
-          // this tick is picked up by the next one.
+          // this tick is picked up by the next one. Each block costs a request,
+          // so a far-behind resume is capped per tick to stay responsive to
+          // abort and to the deadline rather than blocking on a long catch-up.
           let blockNum = scanned.get(index) ?? startBlock;
-          for (; blockNum <= currentBlock; blockNum++) {
+          const until =
+            currentBlock - blockNum > NATIVE_BLOCKS_PER_TICK
+              ? blockNum + NATIVE_BLOCKS_PER_TICK
+              : currentBlock;
+          for (; blockNum <= until; blockNum++) {
             const block = await publicClient.getBlock({
               blockNumber: blockNum,
               includeTransactions: true,
@@ -121,21 +164,46 @@ export async function* pollTransfers(params: {
           }
           scanned.set(index, blockNum);
         } else {
-          // No toBlock: the node resolves the upper bound against its own head.
-          // A pinned number can exceed the head of a lagging node behind a load
-          // balancer, which rejects the range outright.
-          const logs = await publicClient.getLogs({
-            address: row.tokenAddress,
-            event: transferEventAbi,
-            args: { to: row.recipientAddress },
-            fromBlock: startBlock,
-          });
+          const fetchWindow = (fromBlock: bigint, toBlock?: bigint) =>
+            publicClient.getLogs({
+              address: row.tokenAddress,
+              event: transferEventAbi,
+              args: { to: row.recipientAddress },
+              fromBlock,
+              ...(toBlock === undefined ? {} : { toBlock }),
+            });
 
-          const match = logs.find(
-            (log) =>
-              log.args.value === row.amount &&
-              !claimed.has(`${log.transactionHash}:${log.logIndex}`),
-          );
+          let from = scannedLogs.get(index) ?? startBlock;
+          let match:
+            Awaited<ReturnType<typeof fetchWindow>>[number] | undefined;
+
+          // Walk in windows until the remainder fits under the provider's cap.
+          // Only a bounded window pins toBlock; the window that reaches the
+          // head is left open so the node resolves its own tip, since a pinned
+          // number can exceed the head of a lagging node behind a load
+          // balancer and be rejected outright.
+          while (!match) {
+            const head = await publicClient.getBlockNumber({ cacheTime: 0 });
+            const bounded = head - from >= maxBlockRange;
+            if (!bounded && from > head) break;
+
+            const logs = await fetchWindow(
+              from,
+              bounded ? from + maxBlockRange - 1n : undefined,
+            );
+
+            match = logs.find(
+              (log) =>
+                log.args.value === row.amount &&
+                !claimed.has(`${log.transactionHash}:${log.logIndex}`),
+            );
+
+            if (!bounded) break;
+            // Only a fully-scanned window may be skipped on the next pass.
+            from += maxBlockRange;
+            scannedLogs.set(index, from);
+            checkAbort(signal);
+          }
 
           if (match) {
             claimed.add(`${match.transactionHash}:${match.logIndex}`);
@@ -144,7 +212,7 @@ export async function* pollTransfers(params: {
               row,
               transfer: {
                 transactionHash: match.transactionHash!,
-                blockNumber: match.blockNumber,
+                blockNumber: match.blockNumber!,
                 amount: match.args.value!,
                 from: match.args.from!,
                 to: match.args.to!,
@@ -159,6 +227,9 @@ export async function* pollTransfers(params: {
         // next tick, still bounded by the deadline above.
         checkAbort(signal);
         if (error instanceof TransferTimeoutError) throw error;
+        // A request the provider will reject every time must surface now
+        // rather than be retried until the deadline yields a bare timeout.
+        if (isPermanentRpcError(error)) throw error;
       }
     }
 
