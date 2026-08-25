@@ -29,6 +29,7 @@ import type {
   ObfuscationResult,
   PricingQuote,
   PricingSignalRequest,
+  ZkIntentRequest,
 } from "./internal/api.js";
 import {
   fetchComplianceApproval,
@@ -41,11 +42,15 @@ import {
 import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
   approveQuotedForDeployment,
+  buildQuotedApprovalBuckets,
   deployQuotedApproved,
   deployQuotedAtomic,
   estimateQuotedApprovalGas,
+  predictContractAddress,
 } from "./internal/escrow.js";
 import { deriveBlindedSigners } from "./internal/bond.js";
+import { deriveSalt, intentCommitment, randomBytes32 } from "./internal/zk.js";
+import type { IntentOpening as ZkIntentOpening } from "./internal/zk.js";
 import { submitSignal } from "./internal/nomad.js";
 import { pollTransfers } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
@@ -153,6 +158,64 @@ function attestationOptions(network: NetworkConfig): {
       allowDebug: policy?.allowDebug,
       maxAgeSecs: policy?.maxAgeSecs,
     },
+  };
+}
+
+/**
+ * Builds the intent an ERC-20 escrow settles against.
+ *
+ * The commitment binds the escrow address, so the deployment nonce is read here
+ * and the resulting address must be the one the deployment actually takes. The
+ * salt is derived from the blinding scalar rather than transmitted: the enclave
+ * already receives the scalar inside the Signal and recovers the same value.
+ */
+async function buildZkIntent(params: {
+  network: NetworkConfig;
+  sender: Address;
+  rows: TransferRow[];
+  row: TransferRow;
+  blindingScalar: `0x${string}`;
+  publicClient: PublicClient;
+}): Promise<{ request: ZkIntentRequest; opening: ZkIntentOpening }> {
+  const instanceDomain = randomBytes32();
+  const requestId = randomBytes32();
+  // Deployment follows its approvals, so the escrow lands that many nonces
+  // ahead. An atomic batch spends one nonce for the whole sequence. The deposits
+  // that set the count come from an unsigned preview, since the signed quote is
+  // what this commitment is being built for.
+  const preview = await fetchPricingPreview(params.network.apiServer, {
+    chainId: params.network.chainId,
+    escrowType: "erc20",
+    signals: buildPricingSignals(params.rows),
+  });
+  const nonceOffset = params.network.enableAtomicBatch
+    ? 0
+    : buildQuotedApprovalBuckets(preview.depositByAsset).length;
+  const escrow = predictContractAddress(
+    params.sender,
+    (await params.publicClient.getTransactionCount({
+      address: params.sender,
+      blockTag: "pending",
+    })) + nonceOffset,
+  );
+  const opening = {
+    instanceDomain,
+    chainId: params.network.chainId,
+    escrow,
+    requestId,
+    rowIndex: 0,
+    asset: params.row.tokenAddress,
+    recipient: params.row.recipientAddress,
+    amount: params.row.amount,
+    salt: deriveSalt(params.blindingScalar, instanceDomain, requestId, 0),
+  };
+  return {
+    request: {
+      commitment: intentCommitment(opening),
+      instance_domain: instanceDomain,
+      request_id: requestId,
+    },
+    opening,
   };
 }
 
@@ -328,12 +391,27 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
   }
 
   const blinded = deriveBlindedSigners(networkKey.publicKey, rows.length);
+  // An ERC-20 escrow settles against a commitment rather than stored transfer
+  // details, and the commitment binds the escrow address, so it must be
+  // predicted before the constructor is priced.
+  const intent =
+    escrowType === "erc20"
+      ? await buildZkIntent({
+          network: params.network,
+          sender,
+          rows,
+          row: rows[0],
+          blindingScalar: blinded.blindingScalar,
+          publicClient: params.publicClient,
+        })
+      : undefined;
   const [quote, obfuscation] = await Promise.all([
     fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender,
       escrowType,
       blindedSigners: blinded.blindedSigners,
+      intent: intent?.request,
       signals: buildPricingSignals(rows),
     }),
     fetchObfuscation(params.network.apiServer, escrowType),

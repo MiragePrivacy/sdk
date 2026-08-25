@@ -146,7 +146,7 @@ describe("prepareTransfer pricing flow", () => {
       recipientAddress: RECIPIENT_A,
       amount: 100n,
       senderAddress: SENDER,
-      publicClient: {} as any,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
     });
 
@@ -165,7 +165,7 @@ describe("prepareTransfer pricing flow", () => {
         recipientAddress: RECIPIENT_A,
         amount: 100n,
         senderAddress: SENDER,
-        publicClient: {} as any,
+        publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
         network,
       }),
     ).rejects.toMatchObject({ code: "INVALID_PRICING_QUOTE" });
@@ -178,7 +178,8 @@ describe("prepareTransfer pricing flow", () => {
       amount: 100n,
       senderAddress: SENDER,
       publicClient: {
-        getTransactionCount: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
+        getTransactionCount: vi.fn().mockResolvedValue(5),
+        estimateContractGas: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
       } as any,
       network,
     });
@@ -196,7 +197,7 @@ describe("prepareTransfer pricing flow", () => {
         { tokenAddress: NATIVE_TOKEN_ADDRESS, recipientAddress: RECIPIENT_B, amount: 50n },
       ],
       senderAddress: SENDER,
-      publicClient: {} as any,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
     });
 
@@ -219,7 +220,7 @@ describe("prepareTransfer pricing flow", () => {
         tokenAddress: USDC,
         recipientAddress: RECIPIENT_A,
         amount: 100n,
-        publicClient: {} as any,
+        publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
         network,
       }),
     ).rejects.toMatchObject({ code: "SENDER_REQUIRED" });
@@ -233,7 +234,7 @@ describe("prepareTransfer pricing flow", () => {
           tokenAddress: USDC,
           recipientAddress: RECIPIENT_A,
           amount: 100n,
-          publicClient: {} as any,
+          publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
           network,
           resume: { ...VALID_RESUME, [field]: undefined } as any,
         }),
@@ -249,7 +250,7 @@ describe("prepareTransfer pricing flow", () => {
       tokenAddress: USDC,
       recipientAddress: RECIPIENT_A,
       amount: 100n,
-      publicClient: {} as any,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
       resume: { ...VALID_RESUME, escrowType: "erc20" },
     });
@@ -266,7 +267,7 @@ describe("prepareTransfer pricing flow", () => {
         tokenAddress: USDC,
         recipientAddress: RECIPIENT_A,
         amount: 100n,
-        publicClient: {} as any,
+        publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
         network,
         resume: { ...VALID_RESUME, escrowType: "batch" },
       }),
@@ -280,7 +281,7 @@ describe("prepareTransfer pricing flow", () => {
           { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 40n },
           { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 60n },
         ],
-        publicClient: {} as any,
+        publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
         network,
         resume: { ...VALID_RESUME, escrowType: "batch" },
       }),
@@ -292,7 +293,7 @@ describe("prepareTransfer pricing flow", () => {
       tokenAddress: USDC,
       recipientAddress: RECIPIENT_A,
       amount: 100n,
-      publicClient: {} as any,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
       resume: VALID_RESUME,
     });
@@ -323,7 +324,7 @@ describe("nomad proxy routing", () => {
       recipientAddress: RECIPIENT_A,
       amount: 100n,
       senderAddress: SENDER,
-      publicClient: {} as any,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
     });
 
@@ -492,5 +493,71 @@ describe("previewTransfer", () => {
         network,
       }),
     ).rejects.toMatchObject({ code: "INVALID_PRICING_QUOTE" });
+  });
+});
+
+describe("zk intent", () => {
+  it("sends an intent for an ERC-20 escrow", async () => {
+    await prepareTransfer({
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      senderAddress: SENDER,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
+      network,
+    });
+
+    expect(pricingBody.escrow_type).toBe("erc20");
+    expect(pricingBody.intent.commitment).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(pricingBody.intent.instance_domain).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(pricingBody.intent.request_id).toMatch(/^0x[0-9a-f]{64}$/);
+    // A zero commitment is openable by anyone who guesses the empty preimage.
+    expect(pricingBody.intent.commitment).not.toBe(`0x${"00".repeat(32)}`);
+  });
+
+  it("omits the intent for native and batch escrows", async () => {
+    await prepareTransfer({
+      tokenAddress: NATIVE_TOKEN_ADDRESS,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      senderAddress: SENDER,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
+      network,
+    });
+    expect(pricingBody.intent).toBeUndefined();
+
+    await prepareTransfer({
+      transfers: [
+        { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
+        { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 200n },
+      ],
+      senderAddress: SENDER,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
+      network,
+    });
+    expect(pricingBody.intent).toBeUndefined();
+  });
+
+  it("binds a fresh domain and request id per preparation", async () => {
+    const args = {
+      tokenAddress: USDC,
+      recipientAddress: RECIPIENT_A,
+      amount: 100n,
+      senderAddress: SENDER,
+      network,
+    };
+    await prepareTransfer({
+      ...args,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
+    });
+    const first = pricingBody.intent;
+    await prepareTransfer({
+      ...args,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
+    });
+
+    expect(pricingBody.intent.instance_domain).not.toBe(first.instance_domain);
+    expect(pricingBody.intent.request_id).not.toBe(first.request_id);
+    expect(pricingBody.intent.commitment).not.toBe(first.commitment);
   });
 });
