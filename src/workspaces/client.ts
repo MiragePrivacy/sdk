@@ -4,7 +4,7 @@ import {ApiError} from "../errors.js";
 import {bytes,canonicalJson,uint,type Json} from "./encoding";
 import {signWorkspaceChallenge,type WorkspaceChallenge} from "./challenge";
 import type {MemberKeys} from "./keys";
-import {applyPolicyOp,currentMemberKey,policyAuthorCheck,policyOpHash,replayPolicy,type Policy,type PolicyOp} from "./policy";
+import {applyPolicyOp,currentMemberKey,policyAuthorCheck,policyOpHash,replayPolicy,type InviteAcceptance,type InviteGrant,type Policy,type PolicyOp} from "./policy";
 import {verifyRecord,type EncryptedRecord,type RecordType} from "./records";
 import {verifyIdentityLink,verifyIdentityRotation,linkedKeyBranches,linkHash,createIdentityUnlink,type IdentityLinkState,type SignedIdentityLink,type SignedIdentityRotation} from "./identity";
 import type {KeyEnvelope} from "./hpke";
@@ -20,6 +20,9 @@ export interface PolicyResponse {policy:Policy;ops:PolicyOp[]}
 export interface RecordRow {record:EncryptedRecord;changeSequence:number;createdAt:string;updatedAt:string}
 export interface RecordPage {records:RecordRow[];nextCursor:string;hasMore:boolean}
 export interface Discovery {workspaceIds:Hex[];rotations:SignedIdentityRotation[];links?:IdentityLinkState[]}
+export interface InviteCiphertext {nonce:Hex;ciphertext:Hex}
+export interface InviteBundle {grant:InviteGrant;ciphertext:InviteCiphertext;policy:PolicyResponse}
+export interface PendingInvite {grant:InviteGrant;acceptance:InviteAcceptance}
 const same=(a:unknown,b:unknown)=>canonicalJson(a as Json)===canonicalJson(b as Json);
 
 /** Per-sign-in client. Tokens, policy pins and keys are never persisted here. */
@@ -176,6 +179,41 @@ export class WorkspaceClient {
     // A successful self-replacement returns the exact signed state that revokes
     // this client. Accept that acknowledgement and discard its cached session.
     return this.pin(op.workspaceId,{policy,ops:[...previous.ops,op]},true);
+  }
+  async createInvite(workspace:Hex,grant:InviteGrant,ciphertext:InviteCiphertext,policyOp?:PolicyOp):Promise<InviteBundle> {
+    const bundle=await this.workspace<InviteBundle>(workspace,"/invites",{method:"POST",body:JSON.stringify({grant,ciphertext,...(policyOp?{policyOp}:{})})});
+    this.verifyInviteBundle(bundle,grant.grantId);return bundle;
+  }
+  async invite(grantId:Hex):Promise<InviteBundle> {
+    bytes(grantId,16);const bundle=await this.principal<InviteBundle>(`/invites/${grantId}`);
+    this.verifyInviteBundle(bundle,grantId);return bundle;
+  }
+  async acceptInvite(grantId:Hex,op:PolicyOp):Promise<PolicyResponse> {
+    bytes(grantId,16);const bundle=await this.invite(grantId);
+    if(op.workspaceId!==bundle.grant.workspaceId||op.kind!=="add_member")throw new Error("Invalid invite acceptance operation");
+    const expected=applyPolicyOp(bundle.policy.policy,op);
+    const actual=await this.principal<Policy>(`/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(op)});
+    if(!same(actual,expected))throw new Error("Invalid invite acceptance response");
+    return this.pin(op.workspaceId,{policy:actual,ops:[...bundle.policy.ops,op]});
+  }
+  async submitPendingInvite(grantId:Hex,acceptance:InviteAcceptance):Promise<void> {
+    bytes(grantId,16);const result=await this.principal<{status:string}>(`/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(acceptance)});
+    if(result.status!=="pending")throw new Error("Invalid pending invite response");
+  }
+  async pendingInvites(workspace:Hex):Promise<PendingInvite[]> {
+    const values=await this.workspace<PendingInvite[]>(workspace,"/invites");
+    if(!Array.isArray(values))throw new Error("Invalid pending invites response");return values;
+  }
+  async finalizeInvite(grantId:Hex,op:PolicyOp):Promise<PolicyResponse> {
+    bytes(grantId,16);const previous=await this.policy(op.workspaceId),expected=applyPolicyOp(previous.policy,op);
+    const actual=await this.workspace<Policy>(op.workspaceId,`/invites/${grantId}/finalize`,{method:"POST",body:JSON.stringify(op)});
+    if(!same(actual,expected))throw new Error("Invalid invite finalization response");
+    return this.pin(op.workspaceId,{policy:actual,ops:[...previous.ops,op]});
+  }
+  private verifyInviteBundle(bundle:InviteBundle,grantId:Hex):void {
+    const policy=replayPolicy(bundle.policy.ops);
+    if(!same(policy,bundle.policy.policy)||bundle.grant.grantId!==grantId||bundle.grant.workspaceId!==policy.workspaceId)throw new Error("Invalid invite bundle");
+    bytes(bundle.ciphertext.nonce,12);bytes(bundle.ciphertext.ciphertext);
   }
   async envelopes(workspace:Hex):Promise<KeyEnvelope[]> {
     const verified=await this.policy(workspace);

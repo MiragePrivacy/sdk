@@ -1,12 +1,13 @@
 import {ed25519} from "@noble/curves/ed25519.js";
 import {bytesToHex,type Hex} from "viem";
 import {ApiError} from "../errors.js";
-import {canonicalJson,randomBytes,randomId,uint,type Json} from "./encoding";
+import {bytes,canonicalJson,randomBytes,randomId,uint,type Json} from "./encoding";
 import {WorkspaceClient,type PolicyResponse} from "./client";
 import {openKey,sealKey} from "./hpke";
+import {openRecord,sealRecord,type EncryptedRecord,type RecordType} from "./records";
 import type {MemberKeys} from "./keys";
 import {linkedKeyBranches,createIdentityRotation,verifyIdentityRotation,type SignedIdentityRotation,type IdentityLinkState,type SignedIdentityLink} from "./identity";
-import {applyPolicyOp,currentMemberKey,policyOpHash,replayPolicy,signPolicyOp,ZERO_HASH,type PolicyOp,type Policy,type MemberKey,type RotationMaterial} from "./policy";
+import {applyPolicyOp,currentMemberKey,policyAuthorCheck,policyOpHash,replayPolicy,signPolicyOp,ZERO_HASH,type InviteAcceptance,type InviteGrant,type PolicyOp,type Policy,type MemberKey,type RotationMaterial} from "./policy";
 
 /** Private workspace material lives only in this sign-in's memory. */
 export class WorkspaceKeyring {
@@ -91,6 +92,63 @@ export class WorkspaceKeyring {
       return {newEpoch:epoch,newAdminPublicKey:admin?bytesToHex(ed25519.getPublicKey(admin)):null,envelopes};
     } finally {content.fill(0);admin?.fill(0);}
   }
+  policySnapshot():Policy {
+    if(this.closed||!this.verified)throw new Error("Workspace keyring unavailable");
+    return structuredClone(this.verified.policy);
+  }
+  inviteContentKeys(epochs:readonly number[]):Map<number,Uint8Array> {
+    if(this.closed||!this.verified)throw new Error("Workspace keyring unavailable");
+    const result=new Map<number,Uint8Array>();
+    for(const epoch of epochs){const key=this.content.get(epoch);if(!key)throw new Error("Invite content key unavailable");result.set(epoch,key.slice());}
+    return result;
+  }
+  inviteAdminKey():Uint8Array {
+    if(this.closed||!this.admin)throw new Error("Workspace admin authority unavailable");
+    return this.admin.slice();
+  }
+  signAdminHash(hash:Hex):Hex {
+    if(this.closed||!this.admin)throw new Error("Workspace admin authority unavailable");
+    return bytesToHex(ed25519.sign(bytes(hash,32),this.admin));
+  }
+  async encryptRecord(type:RecordType,body:Json,recordId:Hex=randomId(32),revision=1):Promise<EncryptedRecord> {
+    if(this.closed||!this.verified)throw new Error("Workspace keyring unavailable");
+    const policy=this.verified.policy,key=this.content.get(policy.keyEpoch);if(!key)throw new Error("Current content key unavailable");
+    return sealRecord({workspaceId:this.workspaceId,recordId,type,revision,keyEpoch:policy.keyEpoch,authorKeyId:this.member.memberKeyId,authorPolicyVersion:policy.policyVersion},body,key,this.member.signingSeed);
+  }
+  async decryptRecord(record:EncryptedRecord,response:PolicyResponse=this.verified!):Promise<Json> {
+    if(this.closed||!response)throw new Error("Workspace keyring unavailable");
+    const key=this.content.get(record.keyEpoch);if(!key)throw new Error("Record epoch is not granted");
+    return openRecord(record,key,policyAuthorCheck(response.ops));
+  }
+  async prepareContentRotation():Promise<PolicyOp> {
+    const prepared=await this.prepareContentRotationWithKey();prepared.contentKey.fill(0);return prepared.op;
+  }
+  async prepareContentRotationWithKey():Promise<{op:PolicyOp;contentKey:Uint8Array}> {
+    if(this.closed||!this.verified||!this.admin)throw new Error("Workspace admin authority unavailable");
+    const policy=this.verified.policy;
+    const recipients=policy.members.filter(member=>member.removedAtVersion===null).flatMap(member=>member.keys.filter(key=>key.removedAtVersion===null));
+    const epoch=policy.keyEpoch+1,contentKey=randomBytes(32);
+    try {
+      const envelopes=await Promise.all(recipients.map(key=>sealKey({workspaceId:this.workspaceId,kind:"content",epoch},key.memberKeyId,key.kemPublicKey,contentKey)));
+      const op=this.signOperation({workspaceId:this.workspaceId,policyVersion:policy.policyVersion+1,prevOpHash:policy.headHash,kind:"rotate_content",issuedAt:Math.floor(Date.now()/1000),signerKeyId:this.member.memberKeyId,
+        payload:{rotation:{newEpoch:epoch,newAdminPublicKey:null,envelopes}},signature:ZERO_HASH,adminSignature:null});
+      return {op,contentKey};
+    } catch(error){contentKey.fill(0);throw error;}
+  }
+  async prepareInviteFinalization(grant:InviteGrant,acceptance:InviteAcceptance):Promise<PolicyOp> {
+    if(this.closed||!this.verified||!this.admin)throw new Error("Workspace admin authority unavailable");
+    const policy=this.verified.policy;
+    if(grant.workspaceId!==policy.workspaceId||grant.policyVersion!==policy.policyVersion||grant.adminEpoch!==policy.adminEpoch||grant.keyEpoch!==policy.keyEpoch||grant.contentEpochs.length)throw new Error("Pending invite is stale");
+    const epoch=policy.keyEpoch+1,content=randomBytes(32);
+    try {
+      const current=policy.members.filter(member=>member.removedAtVersion===null).flatMap(member=>member.keys.filter(key=>key.removedAtVersion===null));
+      const incoming=acceptance.keys.map(key=>({...key,holdsAdmin:grant.holdsAdmin,addedAtVersion:policy.policyVersion+1,removedAtVersion:null}));
+      const envelopes=await Promise.all([...current,...incoming].map(key=>sealKey({workspaceId:this.workspaceId,kind:"content",epoch},key.memberKeyId,key.kemPublicKey,content)));
+      const adminEnvelopes=grant.holdsAdmin?await Promise.all(acceptance.keys.map(key=>sealKey({workspaceId:this.workspaceId,kind:"admin",epoch:policy.adminEpoch},key.memberKeyId,key.kemPublicKey,this.admin!))):[];
+      return this.signOperation({workspaceId:this.workspaceId,policyVersion:policy.policyVersion+1,prevOpHash:policy.headHash,kind:"add_member",issuedAt:Math.floor(Date.now()/1000),signerKeyId:this.member.memberKeyId,
+        payload:{grant,acceptance,finalization:{rotation:{newEpoch:epoch,newAdminPublicKey:null,envelopes},adminEnvelopes}},signature:ZERO_HASH,adminSignature:null});
+    } finally {content.fill(0);}
+  }
   /** Revokes one login while retaining the member's other keys and authority. */
   async prepareRemoveKey(keyId:Hex,kind:"unlink_key"|"remove_key"="unlink_key"):Promise<PolicyOp|null> {
     if(this.closed||!this.verified)throw new Error("Workspace keyring unavailable");
@@ -104,6 +162,17 @@ export class WorkspaceKeyring {
     const rotation=await this.replacementMaterial(policy,recipients,target.key.holdsAdmin);
     return this.signOperation({workspaceId:this.workspaceId,policyVersion:policy.policyVersion+1,prevOpHash:policy.headHash,kind,issuedAt:Math.floor(Date.now()/1000),signerKeyId:this.member.memberKeyId,
       payload:{memberId:target.member.memberId,keyId,rotation},signature:ZERO_HASH,adminSignature:null});
+  }
+  async prepareRemoveMember(memberId:Hex):Promise<PolicyOp> {
+    if(this.closed||!this.verified||!this.admin)throw new Error("Workspace admin authority unavailable");
+    const policy=this.verified.policy,actor=currentMemberKey(policy,this.member.memberKeyId)!;
+    const target=policy.members.find(member=>member.memberId===memberId&&member.removedAtVersion===null);
+    if(!target||target.memberId===actor.member.memberId)throw new Error("Choose another current member");
+    const removed=new Set(target.keys.filter(key=>key.removedAtVersion===null).map(key=>key.memberKeyId));
+    const recipients=policy.members.filter(member=>member.removedAtVersion===null&&member.memberId!==memberId).flatMap(member=>member.keys.filter(key=>key.removedAtVersion===null&&!removed.has(key.memberKeyId)));
+    const rotation=await this.replacementMaterial(policy,recipients,target.keys.some(key=>key.removedAtVersion===null&&key.holdsAdmin));
+    return this.signOperation({workspaceId:this.workspaceId,policyVersion:policy.policyVersion+1,prevOpHash:policy.headHash,kind:"remove_member",issuedAt:Math.floor(Date.now()/1000),signerKeyId:this.member.memberKeyId,
+      payload:{memberId,rotation},signature:ZERO_HASH,adminSignature:null});
   }
   /** Replaces this sign-in's generation and preserves its granted history. */
   async prepareMemberRotation(replacement:MemberKeys,registeredPointer?:SignedIdentityRotation):Promise<PolicyOp> {
@@ -136,6 +205,18 @@ export class WorkspaceKeyring {
 }
 
 export interface PersonalWorkspaces {primary:Hex;workspaceIds:Hex[]}
+export async function createTeamWorkspace(client:WorkspaceClient,keys:MemberKeys):Promise<Hex> {
+  const workspaceId=randomId(),content=randomBytes(32),admin=randomBytes(32);
+  try {
+    const envelopes=await Promise.all([
+      sealKey({workspaceId,kind:"content",epoch:1},keys.memberKeyId,keys.kemPublicKey,content),
+      sealKey({workspaceId,kind:"admin",epoch:1},keys.memberKeyId,keys.kemPublicKey,admin),
+    ]);
+    const op:PolicyOp={workspaceId,policyVersion:1,prevOpHash:ZERO_HASH,kind:"create",issuedAt:Math.floor(Date.now()/1000),signerKeyId:keys.memberKeyId,
+      payload:{memberId:randomId(),key:{memberKeyId:keys.memberKeyId,kemPublicKey:keys.kemPublicKey,generation:keys.generation},adminPublicKey:bytesToHex(ed25519.getPublicKey(admin)),personal:false,envelopes},signature:ZERO_HASH,adminSignature:null};
+    await client.create(signPolicyOp(op,keys,admin));return workspaceId;
+  } finally {content.fill(0);admin.fill(0);}
+}
 /** Separate pre-link personal histories remain accessible; the UI can sync all of them. */
 export async function findOrCreatePersonalWorkspaces(client:WorkspaceClient,keys:MemberKeys):Promise<PersonalWorkspaces> {
   for(let attempt=0;attempt<3;attempt++){

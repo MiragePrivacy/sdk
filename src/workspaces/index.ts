@@ -9,5 +9,6 @@ export * from "./client";
 export * from "./history";
 export * from "./sync";
 export * from "./personal";
+export * from "./invitations";
 
 export * from "./management";
