@@ -42,8 +42,33 @@ export interface Policy {
 }
 export interface InitialKey { memberKeyId: Hex; kemPublicKey: Hex; generation: number }
 export interface RotationMaterial { newEpoch: number; newAdminPublicKey: Hex | null; envelopes: KeyEnvelope[] }
+export interface InviteGrant {
+  workspaceId: Hex;
+  grantId: Hex;
+  invitePublicKey: Hex;
+  caps: number;
+  holdsAdmin: boolean;
+  policyVersion: number;
+  adminEpoch: number;
+  keyEpoch: number;
+  contentEpochs: number[];
+  ciphertextHash: Hex;
+  issuedAt: number;
+  expiresAt: number;
+  signature: Hex;
+}
+export interface InviteAcceptance {
+  grantHash: Hex;
+  memberId: Hex;
+  acceptingKeyId: Hex;
+  keys: InitialKey[];
+  identityProofs: {link:SignedIdentityLink;rotations:SignedIdentityRotation[]}[];
+  envelopes: KeyEnvelope[];
+  inviteSignature: Hex;
+}
 export interface PolicyPayloads {
   create: { memberId:Hex; key:InitialKey; adminPublicKey:Hex; personal:boolean; envelopes:KeyEnvelope[] };
+  add_member: { grant:InviteGrant; acceptance:InviteAcceptance; finalization?:{rotation:RotationMaterial;adminEnvelopes:KeyEnvelope[]} };
   link_key: { memberId:Hex; generation:number; link:SignedIdentityLink; rotations?:SignedIdentityRotation[]; envelopes:KeyEnvelope[] };
   unlink_key: { memberId:Hex; keyId:Hex; rotation:RotationMaterial };
   remove_key: { memberId:Hex; keyId:Hex; rotation:RotationMaterial };
@@ -60,6 +85,18 @@ export type PolicyOp = { [K in PolicyKind]: {
   payload:PolicyPayloads[K]; issuedAt:number; signerKeyId:Hex;
   signature:Hex; adminSignature:Hex | null;
 } }[PolicyKind];
+
+function hashJson(domain:string,value:Json):Hex {
+  return keccak256(utf8(`${domain}:${canonicalJson(value)}`));
+}
+export function inviteGrantHash(grant:InviteGrant):Hex {
+  const {signature:_,...unsigned}=grant;
+  return hashJson("mirage-invite-grant-v1",unsigned as unknown as Json);
+}
+export function inviteAcceptanceHash(acceptance:InviteAcceptance):Hex {
+  const {inviteSignature:_,...unsigned}=acceptance;
+  return hashJson("mirage-invite-acceptance-v1",unsigned as unknown as Json);
+}
 
 function requireCondition(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Invalid workspace policy: ${message}`);
@@ -173,9 +210,64 @@ export function applyPolicyOp(previous: Policy | null, input: PolicyOp): Policy 
   }
   requireCondition(previous !== null,"missing create");
   requireCondition(op.workspaceId === previous.workspaceId && op.policyVersion === previous.policyVersion + 1 && op.prevOpHash === previous.headHash,"stale or forked head");
+  const policy = structuredClone(previous);
+  if (op.kind === "add_member") {
+    fields(op.payload,["grant","acceptance",...(Object.hasOwn(op.payload,"finalization")?["finalization"]:[])]);
+    const {grant,acceptance,finalization}=op.payload;
+    fields(grant,["workspaceId","grantId","invitePublicKey","caps","holdsAdmin","policyVersion","adminEpoch","keyEpoch","contentEpochs","ciphertextHash","issuedAt","expiresAt","signature"]);
+    fields(acceptance,["grantHash","memberId","acceptingKeyId","keys","identityProofs","envelopes","inviteSignature"]);
+    bytes(grant.grantId,16);signingKey(grant.invitePublicKey);uint(grant.caps,4);uint(grant.policyVersion,53,1);uint(grant.adminEpoch,32,1);uint(grant.keyEpoch,32,1);
+    bytes(grant.ciphertextHash,32);uint(grant.issuedAt,53,1);uint(grant.expiresAt,53,1);
+    requireCondition(grant.workspaceId===previous.workspaceId&&grant.policyVersion===previous.policyVersion&&grant.adminEpoch===previous.adminEpoch&&grant.keyEpoch===previous.keyEpoch,"stale invite grant");
+    requireCondition(grant.expiresAt>=op.issuedAt&&grant.issuedAt<=op.issuedAt&&grant.expiresAt>grant.issuedAt,"expired invite grant");
+    requireCondition(typeof grant.holdsAdmin==="boolean"&&verifyEd25519(grant.signature,inviteGrantHash(grant),previous.adminPublicKey),"invite grant signature");
+    requireCondition(Array.isArray(grant.contentEpochs),"invite content epochs");
+    for(const epoch of grant.contentEpochs)uint(epoch,32,1);
+    requireCondition(new Set(grant.contentEpochs).size===grant.contentEpochs.length&&grant.contentEpochs.every((epoch,index)=>index===0||grant.contentEpochs[index-1]<epoch)&&(!grant.contentEpochs.length||grant.contentEpochs.at(-1)===previous.keyEpoch),"invalid invite content epochs");
+    requireCondition(acceptance.grantHash===inviteGrantHash(grant),"invite grant hash");bytes(acceptance.memberId,16);
+    requireCondition(verifyEd25519(acceptance.inviteSignature,inviteAcceptanceHash(acceptance),grant.invitePublicKey),"invite acceptance signature");
+    requireCondition(Array.isArray(acceptance.keys)&&acceptance.keys.length>0&&acceptance.keys.length<=8,"invite member keys");
+    for(const key of acceptance.keys){initialKey(key);ensureNewKey(previous,key.memberKeyId);}
+    requireCondition(new Set(acceptance.keys.map(key=>key.memberKeyId)).size===acceptance.keys.length,"duplicate invite member key");
+    requireCondition(acceptance.keys.map(key=>key.memberKeyId).sort().join("|")===acceptance.keys.map(key=>key.memberKeyId).join("|"),"invite member keys must be ordered");
+    signingKey(acceptance.acceptingKeyId);
+    const accepting=acceptance.keys.find(key=>key.memberKeyId===acceptance.acceptingKeyId);requireCondition(accepting,"accepting key missing");
+    requireCondition(Array.isArray(acceptance.identityProofs)&&acceptance.identityProofs.length<=1,"invalid invite identity proofs");
+    const linked=new Map<Hex,{kem:Hex;generation:number}>();
+    for(const proof of acceptance.identityProofs){
+      fields(proof,["link","rotations"]);const branches=linkedKeyBranches({link:proof.link,rotations:proof.rotations,workspaceIds:[],unlinking:false});
+      const actorBranch=branches.findIndex(branch=>[...branch.keys()].at(-1)===acceptance.acceptingKeyId);requireCondition(actorBranch!==-1&&branches[actorBranch].get(acceptance.acceptingKeyId)===accepting.kemPublicKey,"identity proof does not contain accepting key");
+      const [key,kem]=[...branches[1-actorBranch]].at(-1)!;const pointer=proof.rotations.find(rotation=>rotation.newKey===key);
+      linked.set(key,{kem,generation:pointer?.generation??0});
+    }
+    for(const key of acceptance.keys)if(key.memberKeyId!==acceptance.acceptingKeyId){const proof=linked.get(key.memberKeyId);requireCondition(proof?.kem===key.kemPublicKey&&proof.generation===key.generation,"unlinked invite member key");linked.delete(key.memberKeyId);}
+    requireCondition(linked.size===0,"identity proof key missing from acceptance");
+    requireCondition(!previous.members.some(member=>member.memberId===acceptance.memberId),"member already appeared in workspace");
+    const delayed=grant.contentEpochs.length===0;
+    requireCondition(delayed===Boolean(finalization),"invite finalization requirement");
+    if(delayed){
+      requireCondition(acceptance.envelopes.length===0,"pending acceptance envelopes");
+      const owner=currentMemberKey(previous,op.signerKeyId);requireCondition(owner?.key.holdsAdmin,"owner required to finalize invite");
+      requireCondition(op.adminSignature!==null&&verifyEd25519(op.adminSignature,hash,previous.adminPublicKey),"current owner and admin signature required");
+    }else{
+      requireCondition(acceptance.acceptingKeyId===op.signerKeyId,"invite actor key");
+      requireCondition(op.adminSignature===null,"unexpected admin signature");
+    }
+    const expected=acceptance.keys.flatMap(key=>[
+      ...grant.contentEpochs.map(epoch=>`${key.memberKeyId}:content:${epoch}`),
+      ...(grant.holdsAdmin?[`${key.memberKeyId}:admin:${previous.adminEpoch}`]:[]),
+    ]);
+    policy.members.push({memberId:acceptance.memberId,caps:grant.caps,addedAtVersion:op.policyVersion,removedAtVersion:null,voteInvalidatedAtVersion:0,
+      keys:acceptance.keys.map(key=>({...key,holdsAdmin:grant.holdsAdmin,addedAtVersion:op.policyVersion,removedAtVersion:null}))});
+    if(delayed){
+      fields(finalization!,["rotation","adminEnvelopes"]);
+      const adminExpected=grant.holdsAdmin?acceptance.keys.map(key=>`${key.memberKeyId}:admin:${previous.adminEpoch}`):[];
+      appendEnvelopes(policy,finalization!.adminEnvelopes,adminExpected);rotate(policy,finalization!.rotation,false);
+    }else appendEnvelopes(policy,acceptance.envelopes,expected);
+    policy.policyVersion=op.policyVersion;policy.headHash=hash;return policy;
+  }
   const actor = currentMemberKey(previous,op.signerKeyId);
   requireCondition(actor,"actor revoked");
-  const policy = structuredClone(previous);
   const admin = () => requireCondition(actor.key.holdsAdmin && op.adminSignature !== null && verifyEd25519(op.adminSignature,hash,previous.adminPublicKey),"current owner and admin signature required");
   const noAdmin = () => requireCondition(op.adminSignature === null,"unexpected admin signature");
   switch (op.kind) {
