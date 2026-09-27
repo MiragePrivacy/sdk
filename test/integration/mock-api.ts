@@ -162,9 +162,14 @@ function createServer(port: number, nomadUrl?: string): http.Server {
         try {
           const request = JSON.parse(body) as {
             chain_id: number;
-            sender: string;
+            sender?: string;
             escrow_type: "erc20" | "native" | "batch";
-            blinded_signers: string[];
+            blinded_signers?: string[];
+            intent?: {
+              commitment: string;
+              instance_domain: string;
+              request_id: string;
+            };
             signals: Array<{
               asset: string;
               execution_mode: "private" | "native";
@@ -183,8 +188,20 @@ function createServer(port: number, nomadUrl?: string): http.Server {
               rowIndex: itemIndex,
             })),
           );
-          if (rows.length === 0 || request.blinded_signers.length !== rows.length) {
+          // A request without a sender is an unsigned preview: it carries no
+          // signers and receives no deployable fields.
+          const preview = request.sender === undefined;
+          if (rows.length === 0) {
+            throw new Error("pricing requires at least one row");
+          }
+          if (!preview && (request.blinded_signers?.length ?? 0) !== rows.length) {
             throw new Error("pricing requires one blinded signer per row");
+          }
+          if (!preview && request.escrow_type === "erc20" && !request.intent) {
+            throw new Error("ERC-20 escrow requires a ZK intent");
+          }
+          if (request.intent && request.escrow_type !== "erc20") {
+            throw new Error("only ERC-20 escrows take a ZK intent");
           }
           if (request.escrow_type !== "batch" && rows.length !== 1) {
             throw new Error("single escrow pricing requires exactly one row");
@@ -201,6 +218,27 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           }
           const rewardKey = rewardAsset.toLowerCase();
           deposits.set(rewardKey, (deposits.get(rewardKey) ?? 0n) + rewardAmount);
+          if (preview) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              chain_id: request.chain_id,
+              service_fee: { asset: rewardAsset, amount: rewardAmount.toString() },
+              deployment: {
+                escrow_type: request.escrow_type,
+                constructor_args: null,
+                quote_commitment: null,
+                reward_asset: rewardAsset,
+                reward_amount: rewardAmount.toString(),
+                deposit_by_asset: Object.fromEntries(
+                  [...deposits].map(([asset, amount]) => [asset, amount.toString()]),
+                ),
+                msg_value: (deposits.get(zeroAddress) ?? 0n).toString(),
+              },
+              sealed_pricing_authorization: null,
+            }));
+            return;
+          }
+
           const firstRow = rows[0];
           const constructorArgs =
             request.escrow_type === "erc20"
