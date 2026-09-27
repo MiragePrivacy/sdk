@@ -162,7 +162,7 @@ function attestationOptions(network: NetworkConfig): {
 }
 
 /**
- * Builds the intent an ERC-20 escrow settles against.
+ * Builds the intent a single native or ERC-20 escrow settles against.
  *
  * The commitment binds the escrow address, so the deployment nonce is read here
  * and the resulting address must be the one the deployment actually takes. The
@@ -185,7 +185,7 @@ async function buildZkIntent(params: {
   // what this commitment is being built for.
   const preview = await fetchPricingPreview(params.network.apiServer, {
     chainId: params.network.chainId,
-    escrowType: "erc20",
+    escrowType: isNativeToken(params.row.tokenAddress) ? "native" : "erc20",
     signals: buildPricingSignals(params.rows),
   });
   const nonceOffset = params.network.enableAtomicBatch
@@ -395,7 +395,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
   // details, and the commitment binds the escrow address, so it must be
   // predicted before the constructor is priced.
   const intent =
-    escrowType === "erc20"
+    escrowType !== "batch"
       ? await buildZkIntent({
           network: params.network,
           sender,

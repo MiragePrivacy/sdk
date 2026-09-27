@@ -515,7 +515,7 @@ describe("zk intent", () => {
     expect(pricingBody.intent.commitment).not.toBe(`0x${"00".repeat(32)}`);
   });
 
-  it("omits the intent for native and batch escrows", async () => {
+  it("commits native settlement and omits the intent only for batch escrows", async () => {
     await prepareTransfer({
       tokenAddress: NATIVE_TOKEN_ADDRESS,
       recipientAddress: RECIPIENT_A,
@@ -524,7 +524,7 @@ describe("zk intent", () => {
       publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
     });
-    expect(pricingBody.intent).toBeUndefined();
+    expect(pricingBody.intent.commitment).toMatch(/^0x[0-9a-f]{64}$/);
 
     await prepareTransfer({
       transfers: [
