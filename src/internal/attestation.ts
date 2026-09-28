@@ -189,7 +189,11 @@ export async function verifyAttestation(
     );
   }
 
-  const { QuoteVerifier } = await import("@phala/dcap-qvl");
+  const dcap = await import("@phala/dcap-qvl");
+  // Package is CJS with a trailing module.exports, so some bundlers only surface it as default.
+  const { QuoteVerifier } = dcap.QuoteVerifier
+    ? dcap
+    : ((dcap as unknown as { default: typeof dcap }).default ?? dcap);
 
   const quoteBytes = hexToBytes(attestation.quote);
 
