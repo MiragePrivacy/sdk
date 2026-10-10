@@ -1,0 +1,2267 @@
+{
+  "version": 1,
+  "testOnly": true,
+  "unlockSigner": "0x1a642f0E3c3aF545E7AcBD38b07251B3990914F1",
+  "unlock": [
+    {
+      "generation": 0,
+      "signature": "0x9ddb5c2849201d2d19ae5f1f80bcff8f2ee3bbcdbfd0d0c708867c7f7b9024aa22f193ed05d6d91e99ad3a133ab296ace6dc13b44c403eef98d454a16bda30b71b",
+      "signingSeed": "0x533d5e7053a8c49d1d0689c66cefdf510c31d8f6b31a569be0521fb70c2e5817",
+      "kemSecret": "0x0f783fd1a636183fd54c4c4be80b1f28eb7a4798c85515e122c954abba62bf0e",
+      "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f"
+    },
+    {
+      "generation": 1,
+      "signature": "0x147876cc053e71ece94f2243ec2602925b4c0ae7ccb13e3845e12296d0fca809296217896f9c390846c05c2f662116ff249bd01f6ed82c12eb583a3863dd6c201c",
+      "signingSeed": "0xaa5413d36bcf13787e1b43adf4ea8f1aabf49aa64f429d31b1cdf1dfffa1e38f",
+      "kemSecret": "0x9df69c8211ca692aff3e1b5d2ab1604a84fdc82f42807955fd1c1a59a178a089",
+      "memberKeyId": "0x2c66e353b07c36acb423688d41acb9eb6ae753be2a4a1220fef549b4ed5e9c60",
+      "kemPublicKey": "0xc231c29d654f46d4e53677bd4729df852022ef0b9f10cdb66036eaa8c076f64b"
+    }
+  ],
+  "ed25519Rejected": {
+    "key": "0x5866666666666666666666666666666666666666666666666666666666666666",
+    "hash": "0x0707070707070707070707070707070707070707070707070707070707070707",
+    "signature": "0x245c079551b9a0f1a9aec79baef0c668a9e05d3617a15de23dd6dcf60c329fdd029eb61b3971e4f7f1365092e4ff882b310116d4580da06723a6a4f1a4db160c"
+  },
+  "link": {
+    "value": {
+      "keyA": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+      "kemA": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+      "keyB": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "kemB": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+      "issuedAt": 1788998400,
+      "signatureA": "0xc6e96af12f9c2a2c403b320c0318d083974df316c335b8f677552c2a4e72982a5c04a7d978e920ded67e256d61eba487475c03c958d36883f09461d6f372cd01",
+      "signatureB": "0x2da9b97614f2e053873e9301fa707e37ef0abae2fbf332b76d96dbd6061403df2bcfaf10252d7f519e8a10124b6eaf4a4a225c8a0b0461e87e8e313669d1430a"
+    },
+    "hash": "0x7cb4cc49d810e1755a18e99a2f617f434d33bd599312f63c61fd2c8909228c9d"
+  },
+  "rotation": {
+    "value": {
+      "oldKey": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "oldKem": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+      "newKey": "0x2c66e353b07c36acb423688d41acb9eb6ae753be2a4a1220fef549b4ed5e9c60",
+      "newKem": "0xc231c29d654f46d4e53677bd4729df852022ef0b9f10cdb66036eaa8c076f64b",
+      "generation": 1,
+      "issuedAt": 1788998401,
+      "signatureOld": "0xacb58c29b61fcb9e996b0a39996e6d77d9dbae732c54f814caae4f6e530522e63c046c59851ca32c12728dad474bd1044d770af32a7b255d4e5544fa33ac0c0e",
+      "signatureNew": "0xfb52393a9f4447b6240afe50ca73f34318821d4e04c9bd9cd99be53de2739a8fbd7a05ce8570b2529d262e5313bbe1f72041e859b0eb6211162dd508ff69a300"
+    },
+    "hash": "0x4757a8a3a90c074f11642e4feb5aaa1916f19c453b45be0addd9c04288af8bce"
+  },
+  "envelopeJs": {
+    "value": {
+      "workspaceId": "0x11111111111111111111111111111111",
+      "kind": "content",
+      "epoch": 1,
+      "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "enc": "0x394f4120a0d072a32ac9e69d57b3657623cc760ccfeb65cb90094702b6316672",
+      "ciphertext": "0xbee394eecb7e6379f304aae8096b8dc8ac5ae79625b5e3f1949ac62931faa8d02b7c563eb24a1e7b7e3ad99a106ce801"
+    },
+    "key": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
+  },
+  "envelopeRust": {
+    "value": {
+      "workspaceId": "0x11111111111111111111111111111111",
+      "kind": "content",
+      "epoch": 1,
+      "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "enc": "0xd8e6828aefb41bee31c51c3b5753e0981dc7cf741b262d2d24beb3730eb9376a",
+      "ciphertext": "0x320fd83bb61ed72c62ab03c19e86e97e53be663a6dd9cbddfe0478618c899af4da895799f222acbb4425b6721a418b5c"
+    },
+    "key": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
+  },
+  "record": {
+    "value": {
+      "workspaceId": "0x11111111111111111111111111111111",
+      "recordId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "type": "execution_event",
+      "revision": 1,
+      "keyEpoch": 1,
+      "authorKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "authorPolicyVersion": 1,
+      "nonce": "0x222841d82ac72d62f43852d0",
+      "ciphertext": "0xebe41fff552e483ed8b3fd9fbbe5b29bcf322dd2b17a09abba2b5f3f814cb53ec514d09c36819900fa5025da071c1e23b84c45993605faabe4e99b9fabf8aec29dd71547f6dd4eb0ba8c23f44f831c9279bcb2050b17fc7ea5ecda43ac08f68985292b76724ae91306c96038821d29f0ac7d4ba97fcea383727eebfeff67d0e2eb68fb8fe6646f54803f5373a2ca1a1d8f702bacd4882308745a11f1d42e5555e8e4f5971ad1351d624072a9f04cc19646de297daf415ff8ed7a1914db9ea63ba2a5caefe21b669f2b5f4ae033884187efdee4c5f61cb2eedf43cfa3a3e13b9b29ebdb150811c8600d2f788d22f5e243f1c03a989b2597fca4336f9bb44c071964913004417818379ded0e5719030bc03b19f359e4df36356821f4b6a8ba2348c9493d469061ccdb56a3ff4aa4dfec11f50fea47",
+      "signature": "0x56d9174a82d895bdaa476cb29558654f048475b55de6f8e70fb71ae16b6e0e6230981adca097da265dcd39d62604f1459d8ffa4fc0b5788401369b87deeca401"
+    },
+    "key": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+    "body": {
+      "memo": "Completed transfer — 東京",
+      "chain_id": 31337,
+      "amount": "1000000000000000000",
+      "results": [
+        {
+          "hash": "0xabababababababababababababababababababababababababababababababab",
+          "status": "delivered"
+        }
+      ]
+    },
+    "aad": "0x4135f3e4340fb85ff6b263f85182122216c93d47d861795b973f22e2179ce39d111111111111111111111111111111110000000000000000000000000000000022222222222222222222222222222222222222222222222222222222222222223cfe8e6438d3fc4f5760e0e82c81b720929aa57cab6e222398977e74bcf6a833000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001",
+    "hash": "0x539c0a146021e0739487a0f50f5e59aa4c90dec819b11400f15aaf848351f2ff"
+  },
+  "policy": {
+    "ops": [
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 1,
+        "prevOpHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "kind": "create",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "key": {
+            "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+            "generation": 0
+          },
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "personal": true,
+          "envelopes": [
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+              "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+              "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+            }
+          ]
+        },
+        "issuedAt": 1788998500,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0x0499b30f0b3419fc3a0bac84f659c3b3b356d265bb788d304f52b4c19f681c2b3bec69c12295159bafa8cde150e37263ece4704b0bb40dc8135ece39d5ad1f08",
+        "adminSignature": "0x99e23e7b57806e37c6c36b60a12eb23cfb7f35b208e675c781a7b7cbc735e4252f97fd524491e9c64ebaf4b65221e63b58223aa6bc3e9e6aeda8b2a18c203f08"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 2,
+        "prevOpHash": "0xc4583d280cfcb72d735ab1fb49b3038705314bafa63d51cdc6d4f00022ae5d2d",
+        "kind": "link_key",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "generation": 0,
+          "link": {
+            "keyA": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "kemA": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+            "keyB": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "kemB": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+            "issuedAt": 1788998501,
+            "signatureA": "0x23488cd5c03ad41ceeddfabf3903c215f2ad121db65080d7a9891ba1309161a332c3adfc1380c65097f77cedd3d0c5689535404e53e6447727c9d1561c522b07",
+            "signatureB": "0x719393db38bc4126d6b7e1e53dafc5a246c663cf55a976446bd37d4d18ec26eb8c45fd0f6ebc186b3f993928e89b9289245fad1a28361518a615a94756f2ee0f"
+          },
+          "envelopes": [
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+              "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+              "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+              "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+              "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+            }
+          ]
+        },
+        "issuedAt": 1788998501,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0xdb45fb4bdf6f1dc54949cc27caaf8e4fa854bdb0563a063f1c75cc539aa826c58588d44cbd820a7c2c9d5c4743c484c4c2ee896eaa91fdf8080113b47d182c0c",
+        "adminSignature": null
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 3,
+        "prevOpHash": "0x2fbcb355e1176768b108a1c5af6bd66f2ef807603135c2fa089320fab900a1ca",
+        "kind": "set_caps",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "caps": 13
+        },
+        "issuedAt": 1788998502,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0x623dc7e1bf306bb6035439526a0b544d0033a60ee50899ae94ba14fc6c32e5bd78a6557aa0eecb19cd8ad4d2017693c3582895ed4fb8ff3e64efdc9a381d8200",
+        "adminSignature": "0xce7035815b79b1bbf9ed63af5f613b8556d0aade00a7edd8bbcae3f46ef3419af144c216b783d4dffa3cf6f6512ead67a6ab0170dceeab9da31c5310c5352204"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 4,
+        "prevOpHash": "0xa1bca3eae4d0a96f631e31ef9b85746e13fd96968f541e2b502c66318500950e",
+        "kind": "set_caps",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "caps": 15
+        },
+        "issuedAt": 1788998503,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0xead0677b62ed63dd546eebdd0fe972170a08736ffeccc29ab6ecac4105ec43f0c6f904c15979efb5ac2dc07d030bf4aac2338e3bce4d069e8f1070107e15af08",
+        "adminSignature": "0xdd1a52942c05611b878e7e04887587bea7c3cad2e2fe0eddf124b87f3028092cb9de9d9fc9d1e75af38b1bc1b74f88034194daa8b561433352678fcf478fdc02"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 5,
+        "prevOpHash": "0x05603c7a42abdf6e78481486623230c5201bacbce147b8b3cd38affb8d859894",
+        "kind": "set_threshold",
+        "payload": {
+          "approvalThreshold": 0
+        },
+        "issuedAt": 1788998504,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0xa9b17bfb21bf70cbdf0cd9bfbfe264e9bf8a6812a3b9943a9ee101ccf649bac53039278d7ba1e2d0ccaaf2415ae64b10e7056f942d37f718dcec82734b807401",
+        "adminSignature": "0x5deefadec877da23dbaec2c98c79d337aefe9df97d3dd06b1b7571b1551d99b751c32f438da59a29a304e2f34e2e9b4970a46b522b5292383938247294c66d04"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 6,
+        "prevOpHash": "0x09574b805c3c98afd862b5a56021d8261874b08eeb6262b24aa35055f054f580",
+        "kind": "rotate_content",
+        "payload": {
+          "rotation": {
+            "newEpoch": 2,
+            "newAdminPublicKey": null,
+            "envelopes": [
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 2,
+                "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+                "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 2,
+                "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+                "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998505,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0x67763b6a9c1a804eefcb0fcdd79aaaa947fe3ca88a5920171720194117a1aeafa8580f6f2de84cd04fe52f384707ce72a9fa1fc9830f4b74aba8f3dc97ce8b0c",
+        "adminSignature": "0x5786eab15071ac36deda6d0bf8379f1865df4189325e3f7d7d6574e073b3ab7ad9353e7f10b1755dc54c8a5996b02c495fbce0b058c64ef1562b1aa28fd4fe00"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 7,
+        "prevOpHash": "0xad074ef16273d2d7ce4696144631677cd4cdcf2aa46b275e7391a51dfa8b8d6d",
+        "kind": "rotate_admin",
+        "payload": {
+          "rotation": {
+            "newEpoch": 3,
+            "newAdminPublicKey": "0x66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+            "envelopes": [
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 3,
+                "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "enc": "0xb2d753e06c71cab94f0a57daff61ed2d35052a6ba16465e855ce7161db4a6f51",
+                "ciphertext": "0x45c046ee0b96f945d1a5707a0eb339d55545792e36056cd0e6961030ca80e6db25029bfe086a788e9497f12c2421084b"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 3,
+                "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "enc": "0xe52cad147548193f75605311cf0177c33fc1dc88bab5ea8b8691ac959a4bef70",
+                "ciphertext": "0x042855868a6217debbb16e5905700f549913f8d8e91459add84dadbfab3da16dd49513271d14ec6221b1139ff4f311ad"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "admin",
+                "epoch": 3,
+                "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "enc": "0x149b2f0c077913c749782e129492260f4d7f79dc66d3481480ffc977fd2d5413",
+                "ciphertext": "0x13341c72cc7b07ce2e94527c47be32d0e56e5e567e39a78a6a3b45dfa283e1e14e1a1fe097da3b9afe8b54721001caa9"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "admin",
+                "epoch": 3,
+                "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "enc": "0xd2958f47bb4e5d8bad083d1e76583ef368a52c80ce1f10b5fc9e4503d393f841",
+                "ciphertext": "0xf7d4bcfac7922b4b5ceb5519f3c6341ab3f80ea4bb54450021b975f462aae69c35ee414ddf7a76e9d26841d9336d15aa"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998506,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0xc4172ff7b8dcad0f636771de98ef984e90be491b21aacf0408921d0a92043ff1e7bc3673f87ca86d79143139edeb3bc5795f85fe747f7842a6c8d0c763b0ff06",
+        "adminSignature": "0x3ff27f351efcbf77c3e8a2457553b4460d5ae172d443436c12e42cf88e4e421bc1718e00002ca3b9ce810a0636131de2e244c1b22331c94c06aa7c5494a6e507"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 8,
+        "prevOpHash": "0x5d7db6ab909ced90cda844b44256225745e2899140d8d6e37cfce72b4a602307",
+        "kind": "unlink_key",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "keyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "rotation": {
+            "newEpoch": 4,
+            "newAdminPublicKey": "0x0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+            "envelopes": [
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 4,
+                "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "enc": "0x2f962acfccbd76990b0161d3c0be9eb705bf067799885463d32b8e6b577ba713",
+                "ciphertext": "0xce349703dd0d30a8c4a0da4b045666aeef5759820f7dcba80871e3d5eec5b4218327e080bbb69fb1c5bb734f2d144c44"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "admin",
+                "epoch": 4,
+                "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "enc": "0xd87d1468e77bd051cdc3287f88ca6c715ddfe7424ce2f935f228407cf1481c51",
+                "ciphertext": "0xcd9d1d290fea475ca7b94d448304d320800ef31f6d425b6c7925ddfe65bce86110175742b0fca061e59c3542a102af0d"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998507,
+        "signerKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+        "signature": "0x1b99f98a2c54b231e65a9c6f0378311c22eec9231b23c3480be8c569a5ec3d112bfc5b7da588e5d327961f4177e153ef322d7899e40aed59d302475a657f3705",
+        "adminSignature": "0x55f8cb4fe17c83472b9d32b71cba879247516e18f6ad31bf1ff9531270baf5f9b8017f4bc7ae6e703d4fc7d22cf2c327fc4cae71ee1859817defa4df213b4700"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 9,
+        "prevOpHash": "0xbd3b134a4935acac4c045f7a18caaafa6077170c60243e8b8ccd345f27552d1f",
+        "kind": "rotate_member",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "pointer": {
+            "oldKey": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "oldKem": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+            "newKey": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "newKem": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+            "generation": 1,
+            "issuedAt": 1788998508,
+            "signatureOld": "0x7fa943d188d0c4e0b1d8e362a10d7baeea63896599214c326e7bde6257fd6010d1d2dec0cbd7642dc7568f259d7d83f92cc159fd26d92c03c04244d357395501",
+            "signatureNew": "0xf852ae0b79d9e3a88796224380960e80e99ed3a16e8fc954710a65648aea1e3c0c6cb9abf972f42f54536fe5088ec20ce9ae7c4777a96f0d44359aece16f1501"
+          },
+          "rotation": {
+            "newEpoch": 5,
+            "newAdminPublicKey": "0x91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+            "envelopes": [
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 5,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0xff098fb8510c406db9738f42731a18e547754e7cc9714c48009bfc184dfcd144",
+                "ciphertext": "0xb8e4e85a3e41dfda6ec5d2926f1cfa3e4aa953ba3fabcf474f21392dd91823aa1ec76a3fb93b21e3adecdd37cfb773ed"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "admin",
+                "epoch": 5,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0xe885104de79f70195481c28b477150e2b7b5c44d8a72d17ac7e2ad7f0e071100",
+                "ciphertext": "0x921acc10bfa38782d4dfd3770004c31afcd1a0573188f3971be8e5593fa8b595168a337a22ca91fbcca02b633f3f5892"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 1,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x2e982e01e3296c9bfc771a56fe0c01528946bc74bcb0ff7d998e786524032d01",
+                "ciphertext": "0x5513ad1bc95f08718c6183982bcb195426e95416ae4279b83f67fe9d31d797b5cf62197a50f63388e2b40a27570102d2"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 2,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x8bffc5b28bd0e5624fe305a2909c90e81f6867609deb70eca2d7a88b5e010c61",
+                "ciphertext": "0xc6b458ee76d5cf61eecf8fb9239dd52f402a40c37341380c17bcb1d7a7437e6ecf38bf69cab5d87e46e9f332fabb6d78"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 3,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x23bed8f770651dd1b307cc5182449c01bfbc7741d87186c2bdbea1886f7c567c",
+                "ciphertext": "0xc83fcdc1a5dfcf2be143edcabd6388f737e5d289cf77db3dce4984d7ea791873ae5b781a6d89c9a1a173be702fa8217a"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 4,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x005dfdb577cfc9a67e6c7a37bfa14ab87f25f8707748cd9bfccd9c66815aea1e",
+                "ciphertext": "0xd2950a1861da36ca384c53a62a3bdbfc72f14a0338e157aeba8e624c91ddfd11f50f1d668e95b00417cc0da3abbbb019"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998508,
+        "signerKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+        "signature": "0xbeb567dc12feaec903717dd9baa5930c3661c5860f642947ebe56f6ebb1d1a3c729661f61721f625abb8c6113e41f06e526315fd3734827059b3faacc5f3ab0f",
+        "adminSignature": "0xb6042c85f0f4074b55e264d567b3546596f7b85844254422a8b5b86578092235ac788ad9e21b9ceff44a7fc95effd0362e350d8cefbb6497d8013da80e08a60a"
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 10,
+        "prevOpHash": "0x1de796d1ad3b850b84d3acf20e8f7f581330d1d9a9c6dea5509b62a23aa5fce9",
+        "kind": "link_key",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "generation": 0,
+          "link": {
+            "keyA": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "kemA": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+            "keyB": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "kemB": "0x3fdc503077c38079c37990557c99f0db57bb0b9a50d21e935ad2579731131126",
+            "issuedAt": 1788998509,
+            "signatureA": "0x844fc085260b703517646ffcbe23edefc0f4201b98ff5280c212321a36367d7fd36769abed29a3df1194e9c8040e832ec16aec12d9ed18bef1a1cf6cf5b1a403",
+            "signatureB": "0x98eb8a6cf72ecdb826a079c090b0119a218b5d3c83bb3b607c649ae72f31f83150497d958a92cd0aa182369bd7d2cf4fa172659481ddab645a0385373f88bf05"
+          },
+          "envelopes": [
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+              "enc": "0x1d6a3407db6ea3aaabef255752762cf989c6ef276b39e8bcef5f1a32d7a27a3f",
+              "ciphertext": "0x777de78a8ec290e3f3107fa6c24238e771572301610986c05448d8399759fd58b482578901710b63b5ee8e3beb8119f2"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+              "enc": "0xe854cb6a4d61fc318803347b5f989197a2bc82c3c48112c432f3823845dcf14c",
+              "ciphertext": "0xdd54e88e07e21e8c5b67c67adfce71c3ed206aacfc7fe79ea3622540e6ea1bfb34c8c85802a8fa04f2a971cfab0aa194"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 3,
+              "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+              "enc": "0x99b9a76e3360579b5b16737a830f2f728a6dd36a4978ca71dbba3c4a05342763",
+              "ciphertext": "0x1ed26e043dbc05f936bcac65cab76f65228083b985ee8e2ec1b23cd1b4eeaaf53bf795ebdf64de613ff200e130887886"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 4,
+              "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+              "enc": "0x4c44b38734dadcb41ce874af396ccf36b7922001ecc0d6706ff1cd24fa778c01",
+              "ciphertext": "0x45ceacf4ae83426cdba1a1da41766f32d0fe690c5680053a2b213cfb7ee83a179e3b1263df03b90a4168b1b4f3e87be3"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "content",
+              "epoch": 5,
+              "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+              "enc": "0x4cc4af2c77fb4a35519c583cf5fcc07d85a99db1934f57fdd40d4973a5b34273",
+              "ciphertext": "0x1e6b9c1332b4174e4e8a046f4e8bac242be72d5a724474841a3d453dec20e733a95d00950f809671ae1e6256ca476c99"
+            },
+            {
+              "workspaceId": "0x31313131313131313131313131313131",
+              "kind": "admin",
+              "epoch": 5,
+              "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+              "enc": "0xc3faa29145e4bc9be7cb73818bf7339a5ae2cd24211014b6cbd7073f290c316f",
+              "ciphertext": "0x71b4d4ac987ed744b461d52f915c1a47fd9c2672e1b650cbdc8d297a733f1b051e45af321ed71a16952f5792e6cec570"
+            }
+          ]
+        },
+        "issuedAt": 1788998509,
+        "signerKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+        "signature": "0x36c71405b4b7e42c928871b6bcc8037a40a9890c5bd8256649f7bc203ab6be2d51692699b9daab08a95afb0b20c180f8855bff43356cac3705b19f0740534404",
+        "adminSignature": null
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 11,
+        "prevOpHash": "0xb3c44a24bd31ac3c9d5077ffafd94e7266097c49e1573c35b2fc5b602b0f1b22",
+        "kind": "remove_key",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "keyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+          "rotation": {
+            "newEpoch": 6,
+            "newAdminPublicKey": "0x0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+            "envelopes": [
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "content",
+                "epoch": 6,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x58849f7082770c809fd59eb50f9f593fbd84fc508133dbc1f145014dd484a554",
+                "ciphertext": "0xc44a90b4920e5f7ac4456a85e2985b149d4b208313900ee214f4ffe8b78869918045aa71c53d679a4ae450e62b1866b6"
+              },
+              {
+                "workspaceId": "0x31313131313131313131313131313131",
+                "kind": "admin",
+                "epoch": 6,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0xe9d89181ae4365b10c443e8b9a5ab1bb51b6be0fda89f48f8f1b2393ce579c11",
+                "ciphertext": "0x6fe8a11bbd0a59fb18c6710fa86e6292e9f7a946738a62eb9d5c3bc4a3fef442bc177f938de6a0399e95f49c84234beb"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998510,
+        "signerKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+        "signature": "0xf4f86d825ee87669e88260d0fe5786b14856b2a4b8fe05168c6cae39efcc62036107dcafa698c7104ff18dc6227545b0f95f5d6753599e603d8bff686f9fab0b",
+        "adminSignature": "0x143d44796d3d0c81c51dd9fe33131af501474d1a66fc4b7ef2095ccae15c995fdb481a62a3873fe158c26efb2776efba99d624840d0c02ca86ab2383ca0a9a02"
+      }
+    ],
+    "states": [
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 1,
+        "headHash": "0xc4583d280cfcb72d735ab1fb49b3038705314bafa63d51cdc6d4f00022ae5d2d",
+        "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "adminEpoch": 1,
+        "keyEpoch": 1,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 0,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 2,
+        "headHash": "0x2fbcb355e1176768b108a1c5af6bd66f2ef807603135c2fa089320fab900a1ca",
+        "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "adminEpoch": 1,
+        "keyEpoch": 1,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 0,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 3,
+        "headHash": "0xa1bca3eae4d0a96f631e31ef9b85746e13fd96968f541e2b502c66318500950e",
+        "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "adminEpoch": 1,
+        "keyEpoch": 1,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 13,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 4,
+        "headHash": "0x05603c7a42abdf6e78481486623230c5201bacbce147b8b3cd38affb8d859894",
+        "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "adminEpoch": 1,
+        "keyEpoch": 1,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 5,
+        "headHash": "0x09574b805c3c98afd862b5a56021d8261874b08eeb6262b24aa35055f054f580",
+        "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "adminEpoch": 1,
+        "keyEpoch": 1,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 6,
+        "headHash": "0xad074ef16273d2d7ce4696144631677cd4cdcf2aa46b275e7391a51dfa8b8d6d",
+        "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "adminEpoch": 1,
+        "keyEpoch": 2,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+            "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+            "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 7,
+        "headHash": "0x5d7db6ab909ced90cda844b44256225745e2899140d8d6e37cfce72b4a602307",
+        "adminPublicKey": "0x66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+        "adminEpoch": 3,
+        "keyEpoch": 3,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+            "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+            "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xb2d753e06c71cab94f0a57daff61ed2d35052a6ba16465e855ce7161db4a6f51",
+            "ciphertext": "0x45c046ee0b96f945d1a5707a0eb339d55545792e36056cd0e6961030ca80e6db25029bfe086a788e9497f12c2421084b"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe52cad147548193f75605311cf0177c33fc1dc88bab5ea8b8691ac959a4bef70",
+            "ciphertext": "0x042855868a6217debbb16e5905700f549913f8d8e91459add84dadbfab3da16dd49513271d14ec6221b1139ff4f311ad"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x149b2f0c077913c749782e129492260f4d7f79dc66d3481480ffc977fd2d5413",
+            "ciphertext": "0x13341c72cc7b07ce2e94527c47be32d0e56e5e567e39a78a6a3b45dfa283e1e14e1a1fe097da3b9afe8b54721001caa9"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd2958f47bb4e5d8bad083d1e76583ef368a52c80ce1f10b5fc9e4503d393f841",
+            "ciphertext": "0xf7d4bcfac7922b4b5ceb5519f3c6341ab3f80ea4bb54450021b975f462aae69c35ee414ddf7a76e9d26841d9336d15aa"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 8,
+        "headHash": "0xbd3b134a4935acac4c045f7a18caaafa6077170c60243e8b8ccd345f27552d1f",
+        "adminPublicKey": "0x0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+        "adminEpoch": 4,
+        "keyEpoch": 4,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": 8
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+            "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+            "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xb2d753e06c71cab94f0a57daff61ed2d35052a6ba16465e855ce7161db4a6f51",
+            "ciphertext": "0x45c046ee0b96f945d1a5707a0eb339d55545792e36056cd0e6961030ca80e6db25029bfe086a788e9497f12c2421084b"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe52cad147548193f75605311cf0177c33fc1dc88bab5ea8b8691ac959a4bef70",
+            "ciphertext": "0x042855868a6217debbb16e5905700f549913f8d8e91459add84dadbfab3da16dd49513271d14ec6221b1139ff4f311ad"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x149b2f0c077913c749782e129492260f4d7f79dc66d3481480ffc977fd2d5413",
+            "ciphertext": "0x13341c72cc7b07ce2e94527c47be32d0e56e5e567e39a78a6a3b45dfa283e1e14e1a1fe097da3b9afe8b54721001caa9"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd2958f47bb4e5d8bad083d1e76583ef368a52c80ce1f10b5fc9e4503d393f841",
+            "ciphertext": "0xf7d4bcfac7922b4b5ceb5519f3c6341ab3f80ea4bb54450021b975f462aae69c35ee414ddf7a76e9d26841d9336d15aa"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x2f962acfccbd76990b0161d3c0be9eb705bf067799885463d32b8e6b577ba713",
+            "ciphertext": "0xce349703dd0d30a8c4a0da4b045666aeef5759820f7dcba80871e3d5eec5b4218327e080bbb69fb1c5bb734f2d144c44"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd87d1468e77bd051cdc3287f88ca6c715ddfe7424ce2f935f228407cf1481c51",
+            "ciphertext": "0xcd9d1d290fea475ca7b94d448304d320800ef31f6d425b6c7925ddfe65bce86110175742b0fca061e59c3542a102af0d"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 9,
+        "headHash": "0x1de796d1ad3b850b84d3acf20e8f7f581330d1d9a9c6dea5509b62a23aa5fce9",
+        "adminPublicKey": "0x91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+        "adminEpoch": 5,
+        "keyEpoch": 5,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": 8
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": 9
+              },
+              {
+                "memberKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "kemPublicKey": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+                "generation": 1,
+                "holdsAdmin": true,
+                "addedAtVersion": 9,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+            "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+            "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xb2d753e06c71cab94f0a57daff61ed2d35052a6ba16465e855ce7161db4a6f51",
+            "ciphertext": "0x45c046ee0b96f945d1a5707a0eb339d55545792e36056cd0e6961030ca80e6db25029bfe086a788e9497f12c2421084b"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe52cad147548193f75605311cf0177c33fc1dc88bab5ea8b8691ac959a4bef70",
+            "ciphertext": "0x042855868a6217debbb16e5905700f549913f8d8e91459add84dadbfab3da16dd49513271d14ec6221b1139ff4f311ad"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x149b2f0c077913c749782e129492260f4d7f79dc66d3481480ffc977fd2d5413",
+            "ciphertext": "0x13341c72cc7b07ce2e94527c47be32d0e56e5e567e39a78a6a3b45dfa283e1e14e1a1fe097da3b9afe8b54721001caa9"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd2958f47bb4e5d8bad083d1e76583ef368a52c80ce1f10b5fc9e4503d393f841",
+            "ciphertext": "0xf7d4bcfac7922b4b5ceb5519f3c6341ab3f80ea4bb54450021b975f462aae69c35ee414ddf7a76e9d26841d9336d15aa"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x2f962acfccbd76990b0161d3c0be9eb705bf067799885463d32b8e6b577ba713",
+            "ciphertext": "0xce349703dd0d30a8c4a0da4b045666aeef5759820f7dcba80871e3d5eec5b4218327e080bbb69fb1c5bb734f2d144c44"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd87d1468e77bd051cdc3287f88ca6c715ddfe7424ce2f935f228407cf1481c51",
+            "ciphertext": "0xcd9d1d290fea475ca7b94d448304d320800ef31f6d425b6c7925ddfe65bce86110175742b0fca061e59c3542a102af0d"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x2e982e01e3296c9bfc771a56fe0c01528946bc74bcb0ff7d998e786524032d01",
+            "ciphertext": "0x5513ad1bc95f08718c6183982bcb195426e95416ae4279b83f67fe9d31d797b5cf62197a50f63388e2b40a27570102d2"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x8bffc5b28bd0e5624fe305a2909c90e81f6867609deb70eca2d7a88b5e010c61",
+            "ciphertext": "0xc6b458ee76d5cf61eecf8fb9239dd52f402a40c37341380c17bcb1d7a7437e6ecf38bf69cab5d87e46e9f332fabb6d78"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x23bed8f770651dd1b307cc5182449c01bfbc7741d87186c2bdbea1886f7c567c",
+            "ciphertext": "0xc83fcdc1a5dfcf2be143edcabd6388f737e5d289cf77db3dce4984d7ea791873ae5b781a6d89c9a1a173be702fa8217a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x005dfdb577cfc9a67e6c7a37bfa14ab87f25f8707748cd9bfccd9c66815aea1e",
+            "ciphertext": "0xd2950a1861da36ca384c53a62a3bdbfc72f14a0338e157aeba8e624c91ddfd11f50f1d668e95b00417cc0da3abbbb019"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 5,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xff098fb8510c406db9738f42731a18e547754e7cc9714c48009bfc184dfcd144",
+            "ciphertext": "0xb8e4e85a3e41dfda6ec5d2926f1cfa3e4aa953ba3fabcf474f21392dd91823aa1ec76a3fb93b21e3adecdd37cfb773ed"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 5,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xe885104de79f70195481c28b477150e2b7b5c44d8a72d17ac7e2ad7f0e071100",
+            "ciphertext": "0x921acc10bfa38782d4dfd3770004c31afcd1a0573188f3971be8e5593fa8b595168a337a22ca91fbcca02b633f3f5892"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 10,
+        "headHash": "0xb3c44a24bd31ac3c9d5077ffafd94e7266097c49e1573c35b2fc5b602b0f1b22",
+        "adminPublicKey": "0x91a28a0b74381593a4d9469579208926afc8ad82c8839b7644359b9eba9a4b3a",
+        "adminEpoch": 5,
+        "keyEpoch": 5,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": 8
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": 9
+              },
+              {
+                "memberKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "kemPublicKey": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+                "generation": 1,
+                "holdsAdmin": true,
+                "addedAtVersion": 9,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+                "kemPublicKey": "0x3fdc503077c38079c37990557c99f0db57bb0b9a50d21e935ad2579731131126",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 10,
+                "removedAtVersion": null
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+            "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+            "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xb2d753e06c71cab94f0a57daff61ed2d35052a6ba16465e855ce7161db4a6f51",
+            "ciphertext": "0x45c046ee0b96f945d1a5707a0eb339d55545792e36056cd0e6961030ca80e6db25029bfe086a788e9497f12c2421084b"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe52cad147548193f75605311cf0177c33fc1dc88bab5ea8b8691ac959a4bef70",
+            "ciphertext": "0x042855868a6217debbb16e5905700f549913f8d8e91459add84dadbfab3da16dd49513271d14ec6221b1139ff4f311ad"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x149b2f0c077913c749782e129492260f4d7f79dc66d3481480ffc977fd2d5413",
+            "ciphertext": "0x13341c72cc7b07ce2e94527c47be32d0e56e5e567e39a78a6a3b45dfa283e1e14e1a1fe097da3b9afe8b54721001caa9"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd2958f47bb4e5d8bad083d1e76583ef368a52c80ce1f10b5fc9e4503d393f841",
+            "ciphertext": "0xf7d4bcfac7922b4b5ceb5519f3c6341ab3f80ea4bb54450021b975f462aae69c35ee414ddf7a76e9d26841d9336d15aa"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x2f962acfccbd76990b0161d3c0be9eb705bf067799885463d32b8e6b577ba713",
+            "ciphertext": "0xce349703dd0d30a8c4a0da4b045666aeef5759820f7dcba80871e3d5eec5b4218327e080bbb69fb1c5bb734f2d144c44"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd87d1468e77bd051cdc3287f88ca6c715ddfe7424ce2f935f228407cf1481c51",
+            "ciphertext": "0xcd9d1d290fea475ca7b94d448304d320800ef31f6d425b6c7925ddfe65bce86110175742b0fca061e59c3542a102af0d"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x2e982e01e3296c9bfc771a56fe0c01528946bc74bcb0ff7d998e786524032d01",
+            "ciphertext": "0x5513ad1bc95f08718c6183982bcb195426e95416ae4279b83f67fe9d31d797b5cf62197a50f63388e2b40a27570102d2"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x8bffc5b28bd0e5624fe305a2909c90e81f6867609deb70eca2d7a88b5e010c61",
+            "ciphertext": "0xc6b458ee76d5cf61eecf8fb9239dd52f402a40c37341380c17bcb1d7a7437e6ecf38bf69cab5d87e46e9f332fabb6d78"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x23bed8f770651dd1b307cc5182449c01bfbc7741d87186c2bdbea1886f7c567c",
+            "ciphertext": "0xc83fcdc1a5dfcf2be143edcabd6388f737e5d289cf77db3dce4984d7ea791873ae5b781a6d89c9a1a173be702fa8217a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x005dfdb577cfc9a67e6c7a37bfa14ab87f25f8707748cd9bfccd9c66815aea1e",
+            "ciphertext": "0xd2950a1861da36ca384c53a62a3bdbfc72f14a0338e157aeba8e624c91ddfd11f50f1d668e95b00417cc0da3abbbb019"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 5,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xff098fb8510c406db9738f42731a18e547754e7cc9714c48009bfc184dfcd144",
+            "ciphertext": "0xb8e4e85a3e41dfda6ec5d2926f1cfa3e4aa953ba3fabcf474f21392dd91823aa1ec76a3fb93b21e3adecdd37cfb773ed"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 5,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xe885104de79f70195481c28b477150e2b7b5c44d8a72d17ac7e2ad7f0e071100",
+            "ciphertext": "0x921acc10bfa38782d4dfd3770004c31afcd1a0573188f3971be8e5593fa8b595168a337a22ca91fbcca02b633f3f5892"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x1d6a3407db6ea3aaabef255752762cf989c6ef276b39e8bcef5f1a32d7a27a3f",
+            "ciphertext": "0x777de78a8ec290e3f3107fa6c24238e771572301610986c05448d8399759fd58b482578901710b63b5ee8e3beb8119f2"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0xe854cb6a4d61fc318803347b5f989197a2bc82c3c48112c432f3823845dcf14c",
+            "ciphertext": "0xdd54e88e07e21e8c5b67c67adfce71c3ed206aacfc7fe79ea3622540e6ea1bfb34c8c85802a8fa04f2a971cfab0aa194"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x99b9a76e3360579b5b16737a830f2f728a6dd36a4978ca71dbba3c4a05342763",
+            "ciphertext": "0x1ed26e043dbc05f936bcac65cab76f65228083b985ee8e2ec1b23cd1b4eeaaf53bf795ebdf64de613ff200e130887886"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x4c44b38734dadcb41ce874af396ccf36b7922001ecc0d6706ff1cd24fa778c01",
+            "ciphertext": "0x45ceacf4ae83426cdba1a1da41766f32d0fe690c5680053a2b213cfb7ee83a179e3b1263df03b90a4168b1b4f3e87be3"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 5,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x4cc4af2c77fb4a35519c583cf5fcc07d85a99db1934f57fdd40d4973a5b34273",
+            "ciphertext": "0x1e6b9c1332b4174e4e8a046f4e8bac242be72d5a724474841a3d453dec20e733a95d00950f809671ae1e6256ca476c99"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 5,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0xc3faa29145e4bc9be7cb73818bf7339a5ae2cd24211014b6cbd7073f290c316f",
+            "ciphertext": "0x71b4d4ac987ed744b461d52f915c1a47fd9c2672e1b650cbdc8d297a733f1b051e45af321ed71a16952f5792e6cec570"
+          }
+        ]
+      },
+      {
+        "workspaceId": "0x31313131313131313131313131313131",
+        "policyVersion": 11,
+        "headHash": "0xe650a4c6afeec24ca57db8e42803dc2a2ce4f662813743b4aaedb4de5ecb5778",
+        "adminPublicKey": "0x0beef5a9e679e6a3e134fe27837bff32c7cb5f5d44ea09bcb0e542bad6a4c0cc",
+        "adminEpoch": 6,
+        "keyEpoch": 6,
+        "approvalThreshold": 0,
+        "pendingThreshold": null,
+        "personal": true,
+        "members": [
+          {
+            "memberId": "0x41414141414141414141414141414141",
+            "caps": 15,
+            "addedAtVersion": 1,
+            "removedAtVersion": null,
+            "voteInvalidatedAtVersion": 3,
+            "keys": [
+              {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 1,
+                "removedAtVersion": 8
+              },
+              {
+                "memberKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+                "kemPublicKey": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 2,
+                "removedAtVersion": 9
+              },
+              {
+                "memberKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "kemPublicKey": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+                "generation": 1,
+                "holdsAdmin": true,
+                "addedAtVersion": 9,
+                "removedAtVersion": null
+              },
+              {
+                "memberKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+                "kemPublicKey": "0x3fdc503077c38079c37990557c99f0db57bb0b9a50d21e935ad2579731131126",
+                "generation": 0,
+                "holdsAdmin": true,
+                "addedAtVersion": 10,
+                "removedAtVersion": 11
+              }
+            ]
+          }
+        ],
+        "envelopes": [
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x1201acac7da0e20e101914e31c2cff3090eafc2c83956c50f11a274d967b9b5e",
+            "ciphertext": "0x7a5fb778a1bd02900cada52a3e9e21865e8cc3c553f2b730985118dcafbeeabe0cc94cbb4ef0ca91c154eb4dc7ff928a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x263316cabff37ad59bfea11f04bbd04306abc163f48d9e45818042f6c21ca832",
+            "ciphertext": "0x76043ba91666e847299e5e950f93fbdd00447272781c354f844bfce354513f044ade31a7598f5d25f9262303ee6829df"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xcd62f17ab95d8d0ef1ea6cc2727362ecea83a9e5c2b29a7b571204429a344428",
+            "ciphertext": "0xf7c057756eb76358a41db432f8eb551e659b51badb0557e214df81957c9aa97daabff077e9f068e6b8a6ff398ae5e338"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe2c807257d6ee5a82fd9b95e7c5ac9378bac639b40a76a36a797301163f6472e",
+            "ciphertext": "0x880fa9041f821f8c9c62db5dac475b787395b43c96b4a680a38cb7d66c8cad3894effb523a77e7bfdf7a17c7414fdf02"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xd31c24a50450adfeffaae653b500aebf13ea721fcdae9ccd73546bb3174fe61d",
+            "ciphertext": "0x5f47e6ee015124ac14b86eb92483656a2a220c25988be4ed11992a9b5e571c4fe19023dbe7d0be1b285e9d8d4f4b9585"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x48f33ed58e1eb6a262abafe8bdd67ce34a3cac268a6433f8ea1368bce765dd4f",
+            "ciphertext": "0x87f2656803a711666a74211d3e83f959e530a8e17bb8086c20ee6c075d90d43879b273b9cddd1b818fc820599be0cca5"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0xb2d753e06c71cab94f0a57daff61ed2d35052a6ba16465e855ce7161db4a6f51",
+            "ciphertext": "0x45c046ee0b96f945d1a5707a0eb339d55545792e36056cd0e6961030ca80e6db25029bfe086a788e9497f12c2421084b"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xe52cad147548193f75605311cf0177c33fc1dc88bab5ea8b8691ac959a4bef70",
+            "ciphertext": "0x042855868a6217debbb16e5905700f549913f8d8e91459add84dadbfab3da16dd49513271d14ec6221b1139ff4f311ad"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "enc": "0x149b2f0c077913c749782e129492260f4d7f79dc66d3481480ffc977fd2d5413",
+            "ciphertext": "0x13341c72cc7b07ce2e94527c47be32d0e56e5e567e39a78a6a3b45dfa283e1e14e1a1fe097da3b9afe8b54721001caa9"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 3,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd2958f47bb4e5d8bad083d1e76583ef368a52c80ce1f10b5fc9e4503d393f841",
+            "ciphertext": "0xf7d4bcfac7922b4b5ceb5519f3c6341ab3f80ea4bb54450021b975f462aae69c35ee414ddf7a76e9d26841d9336d15aa"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x2f962acfccbd76990b0161d3c0be9eb705bf067799885463d32b8e6b577ba713",
+            "ciphertext": "0xce349703dd0d30a8c4a0da4b045666aeef5759820f7dcba80871e3d5eec5b4218327e080bbb69fb1c5bb734f2d144c44"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 4,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xd87d1468e77bd051cdc3287f88ca6c715ddfe7424ce2f935f228407cf1481c51",
+            "ciphertext": "0xcd9d1d290fea475ca7b94d448304d320800ef31f6d425b6c7925ddfe65bce86110175742b0fca061e59c3542a102af0d"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x2e982e01e3296c9bfc771a56fe0c01528946bc74bcb0ff7d998e786524032d01",
+            "ciphertext": "0x5513ad1bc95f08718c6183982bcb195426e95416ae4279b83f67fe9d31d797b5cf62197a50f63388e2b40a27570102d2"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x8bffc5b28bd0e5624fe305a2909c90e81f6867609deb70eca2d7a88b5e010c61",
+            "ciphertext": "0xc6b458ee76d5cf61eecf8fb9239dd52f402a40c37341380c17bcb1d7a7437e6ecf38bf69cab5d87e46e9f332fabb6d78"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x23bed8f770651dd1b307cc5182449c01bfbc7741d87186c2bdbea1886f7c567c",
+            "ciphertext": "0xc83fcdc1a5dfcf2be143edcabd6388f737e5d289cf77db3dce4984d7ea791873ae5b781a6d89c9a1a173be702fa8217a"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x005dfdb577cfc9a67e6c7a37bfa14ab87f25f8707748cd9bfccd9c66815aea1e",
+            "ciphertext": "0xd2950a1861da36ca384c53a62a3bdbfc72f14a0338e157aeba8e624c91ddfd11f50f1d668e95b00417cc0da3abbbb019"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 5,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xff098fb8510c406db9738f42731a18e547754e7cc9714c48009bfc184dfcd144",
+            "ciphertext": "0xb8e4e85a3e41dfda6ec5d2926f1cfa3e4aa953ba3fabcf474f21392dd91823aa1ec76a3fb93b21e3adecdd37cfb773ed"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 5,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xe885104de79f70195481c28b477150e2b7b5c44d8a72d17ac7e2ad7f0e071100",
+            "ciphertext": "0x921acc10bfa38782d4dfd3770004c31afcd1a0573188f3971be8e5593fa8b595168a337a22ca91fbcca02b633f3f5892"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x1d6a3407db6ea3aaabef255752762cf989c6ef276b39e8bcef5f1a32d7a27a3f",
+            "ciphertext": "0x777de78a8ec290e3f3107fa6c24238e771572301610986c05448d8399759fd58b482578901710b63b5ee8e3beb8119f2"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 2,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0xe854cb6a4d61fc318803347b5f989197a2bc82c3c48112c432f3823845dcf14c",
+            "ciphertext": "0xdd54e88e07e21e8c5b67c67adfce71c3ed206aacfc7fe79ea3622540e6ea1bfb34c8c85802a8fa04f2a971cfab0aa194"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 3,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x99b9a76e3360579b5b16737a830f2f728a6dd36a4978ca71dbba3c4a05342763",
+            "ciphertext": "0x1ed26e043dbc05f936bcac65cab76f65228083b985ee8e2ec1b23cd1b4eeaaf53bf795ebdf64de613ff200e130887886"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 4,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x4c44b38734dadcb41ce874af396ccf36b7922001ecc0d6706ff1cd24fa778c01",
+            "ciphertext": "0x45ceacf4ae83426cdba1a1da41766f32d0fe690c5680053a2b213cfb7ee83a179e3b1263df03b90a4168b1b4f3e87be3"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 5,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0x4cc4af2c77fb4a35519c583cf5fcc07d85a99db1934f57fdd40d4973a5b34273",
+            "ciphertext": "0x1e6b9c1332b4174e4e8a046f4e8bac242be72d5a724474841a3d453dec20e733a95d00950f809671ae1e6256ca476c99"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 5,
+            "recipientKeyId": "0xecf917724c27d2e70b61631f2f3c6d9430d4408d27d72360aa7406e280037d60",
+            "enc": "0xc3faa29145e4bc9be7cb73818bf7339a5ae2cd24211014b6cbd7073f290c316f",
+            "ciphertext": "0x71b4d4ac987ed744b461d52f915c1a47fd9c2672e1b650cbdc8d297a733f1b051e45af321ed71a16952f5792e6cec570"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "content",
+            "epoch": 6,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0x58849f7082770c809fd59eb50f9f593fbd84fc508133dbc1f145014dd484a554",
+            "ciphertext": "0xc44a90b4920e5f7ac4456a85e2985b149d4b208313900ee214f4ffe8b78869918045aa71c53d679a4ae450e62b1866b6"
+          },
+          {
+            "workspaceId": "0x31313131313131313131313131313131",
+            "kind": "admin",
+            "epoch": 6,
+            "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+            "enc": "0xe9d89181ae4365b10c443e8b9a5ab1bb51b6be0fda89f48f8f1b2393ce579c11",
+            "ciphertext": "0x6fe8a11bbd0a59fb18c6710fa86e6292e9f7a946738a62eb9d5c3bc4a3fef442bc177f938de6a0399e95f49c84234beb"
+          }
+        ]
+      }
+    ],
+    "hashes": [
+      "0xc4583d280cfcb72d735ab1fb49b3038705314bafa63d51cdc6d4f00022ae5d2d",
+      "0x2fbcb355e1176768b108a1c5af6bd66f2ef807603135c2fa089320fab900a1ca",
+      "0xa1bca3eae4d0a96f631e31ef9b85746e13fd96968f541e2b502c66318500950e",
+      "0x05603c7a42abdf6e78481486623230c5201bacbce147b8b3cd38affb8d859894",
+      "0x09574b805c3c98afd862b5a56021d8261874b08eeb6262b24aa35055f054f580",
+      "0xad074ef16273d2d7ce4696144631677cd4cdcf2aa46b275e7391a51dfa8b8d6d",
+      "0x5d7db6ab909ced90cda844b44256225745e2899140d8d6e37cfce72b4a602307",
+      "0xbd3b134a4935acac4c045f7a18caaafa6077170c60243e8b8ccd345f27552d1f",
+      "0x1de796d1ad3b850b84d3acf20e8f7f581330d1d9a9c6dea5509b62a23aa5fce9",
+      "0xb3c44a24bd31ac3c9d5077ffafd94e7266097c49e1573c35b2fc5b602b0f1b22",
+      "0xe650a4c6afeec24ca57db8e42803dc2a2ce4f662813743b4aaedb4de5ecb5778"
+    ]
+  },
+  "challenges": [
+    {
+      "value": {
+        "purpose": "session",
+        "workspaceId": "0x31313131313131313131313131313131",
+        "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "principalHash": "0x1919191919191919191919191919191919191919191919191919191919191919",
+        "nonce": "0x2020202020202020202020202020202020202020202020202020202020202020",
+        "expiresAt": 1788998800
+      },
+      "hash": "0xe8409bb4da93d2a9995ae8cb21c1a7ae14c5b548ee6376ef87affcaf70b117f7",
+      "signature": "0xe1a227252e717efe2559d04351b332759cb29c70e426d1eb6477141b9609af9fcb8f547933e2ca71009f26b2a982be3ab4572209c65daaa0a95eb584a89f0206"
+    },
+    {
+      "value": {
+        "purpose": "discovery",
+        "workspaceId": null,
+        "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "principalHash": "0x1919191919191919191919191919191919191919191919191919191919191919",
+        "nonce": "0x2020202020202020202020202020202020202020202020202020202020202020",
+        "expiresAt": 1788998800
+      },
+      "hash": "0x31d388688905e6721c76fd877422260e2a2b1eb5293a3028572e142f93b6e452",
+      "signature": "0x0a07d6d62481b7038fa383d06d12548efbebbac9116d16326ccedb2dc57fb07ea7d77b888e26149daad70fc34693852d5bcca6cb1ac8b2602d3f99af9a55c309"
+    }
+  ],
+  "identityLifecycle": {
+    "secondWorkspace": [
+      {
+        "workspaceId": "0x13131313131313131313131313131313",
+        "policyVersion": 1,
+        "prevOpHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "kind": "create",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "key": {
+            "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+            "generation": 0
+          },
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "personal": false,
+          "envelopes": [
+            {
+              "workspaceId": "0x13131313131313131313131313131313",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x1083c470c993c603ad3d9cb2cc00630b5be571c38f493c614057120bc9f21e58",
+              "ciphertext": "0x5088a333fa1fe4416b8a6cd28eb687d284fc895143f964e682728a2044011fda02f77c7b484c0c5d736e0f80df8461ca"
+            },
+            {
+              "workspaceId": "0x13131313131313131313131313131313",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x20bce0cc17a0fad0a8c290181e89b198f937beb50fe51168e71d94741bb3dd12",
+              "ciphertext": "0x071432d193159402ced51f73d513277c37083430c9642b854739789968397c4c4a5e77ee0244c14100eb0d3b4297e616"
+            }
+          ]
+        },
+        "issuedAt": 1788998500,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0x5a890fb0e2248a16227c620e59e223172545460f92621e2385b0e7039c46932e28734746a7e7874f1fe4e6f08bccf3e6ae14f6046fb0c9ee5bf0e38e5f917707",
+        "adminSignature": "0x396d06158e9b19883d85b6a4efebb7002aee3255b7a7913cac008aec515b6db01eb4b362dcd1f241b18de0b5fa6db6a2b10c47faca0bfefbc09d620b0eb6420d"
+      },
+      {
+        "workspaceId": "0x13131313131313131313131313131313",
+        "policyVersion": 2,
+        "prevOpHash": "0x96198360f14107b45b764fed2706f296a4aa1f5d9395fd961be0990f14d49b04",
+        "kind": "link_key",
+        "issuedAt": 1788998501,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "generation": 1,
+          "link": {
+            "keyA": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "kemA": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+            "keyB": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "kemB": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+            "issuedAt": 1788998501,
+            "signatureA": "0x23488cd5c03ad41ceeddfabf3903c215f2ad121db65080d7a9891ba1309161a332c3adfc1380c65097f77cedd3d0c5689535404e53e6447727c9d1561c522b07",
+            "signatureB": "0x719393db38bc4126d6b7e1e53dafc5a246c663cf55a976446bd37d4d18ec26eb8c45fd0f6ebc186b3f993928e89b9289245fad1a28361518a615a94756f2ee0f"
+          },
+          "rotations": [
+            {
+              "oldKey": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+              "oldKem": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+              "newKey": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+              "newKem": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+              "generation": 1,
+              "issuedAt": 1788998508,
+              "signatureOld": "0x7fa943d188d0c4e0b1d8e362a10d7baeea63896599214c326e7bde6257fd6010d1d2dec0cbd7642dc7568f259d7d83f92cc159fd26d92c03c04244d357395501",
+              "signatureNew": "0xf852ae0b79d9e3a88796224380960e80e99ed3a16e8fc954710a65648aea1e3c0c6cb9abf972f42f54536fe5088ec20ce9ae7c4777a96f0d44359aece16f1501"
+            }
+          ],
+          "envelopes": [
+            {
+              "workspaceId": "0x13131313131313131313131313131313",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+              "enc": "0xec4a66241150128e369c51c029baf94a4b75d723002b20b6c8c3b1ffa3d19241",
+              "ciphertext": "0x0ef57990807ff273389fe4ea19bacffc914b3ef33ec3c863ac2ee557c59e42393daedbbcf754fe0817f4417c1c4d85d6"
+            },
+            {
+              "workspaceId": "0x13131313131313131313131313131313",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+              "enc": "0x374e9aece36296eba1d9ed8d574374e55a89dd800c557ceb16b393c7ea6f967e",
+              "ciphertext": "0xf4dac1010b4689d42e42fe5d3a20e2c25633a6b884a8bb1b8177d0560fc85f399ae0ec514eb94f198f3b7f558c26ba30"
+            }
+          ]
+        },
+        "signature": "0x807009a36b097c1ac3515e953501e506c77d0de84063bef72257ddb2eceb20b1c5ebc1fe2ddecd8f81e85c09dcf3a411be8f5d0f280f11ec90f8fb6bcb3c020c",
+        "adminSignature": null
+      },
+      {
+        "workspaceId": "0x13131313131313131313131313131313",
+        "policyVersion": 3,
+        "prevOpHash": "0x65591034429e75bd00744764fbe0983781bde99637551bfe3860cfc2a41e4498",
+        "kind": "unlink_key",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "keyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "rotation": {
+            "newEpoch": 2,
+            "newAdminPublicKey": "0x0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+            "envelopes": [
+              {
+                "workspaceId": "0x13131313131313131313131313131313",
+                "kind": "content",
+                "epoch": 2,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x483c2f8bf1c550a573be4e5c6ec8e6dfe1f707732b1094990efe1471539f3c4a",
+                "ciphertext": "0x12478496825225e4f9f478aab299a6a799d7682c5b96bbe80326da9b8644eb693a2467901eea7895102681f9efb49382"
+              },
+              {
+                "workspaceId": "0x13131313131313131313131313131313",
+                "kind": "admin",
+                "epoch": 2,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x6ecd91159bc29744149d0cbace57be5e9fe156d83b22068f9d967c82b2a46c6e",
+                "ciphertext": "0x0673b9ffaf9f64672aa3d0bfac15b6e3c9841fd898038324753227adc090abbd15475b3dcac151ddd87328321d00aae9"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998502,
+        "signerKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+        "signature": "0xf8373bdb4eb8a8481378bbaa01a8bc4bc3aff4ac011b27b41710df135afcc4237290ca5e369a9ce96e56e13bb05edc0595d88a6aa0911f26758214996e89c30a",
+        "adminSignature": "0xf9c4bce1ee4d9b2f5ba401e33b76ae6c45a438269fd2272abcdd76e4db7c817975dba7fa78abf5a1b8904244f4c107f96dc60eeac5cf4d06b6e3ee4283709b0c"
+      }
+    ],
+    "thirdWorkspace": [
+      {
+        "workspaceId": "0x14141414141414141414141414141414",
+        "policyVersion": 1,
+        "prevOpHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "kind": "create",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "key": {
+            "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+            "generation": 0
+          },
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "personal": false,
+          "envelopes": [
+            {
+              "workspaceId": "0x14141414141414141414141414141414",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x07d060636f6ea3f6736d6706bc4fe922f18a1a09b16418a1dc77cfd829912534",
+              "ciphertext": "0x4e5ef6cfe51dd3e88143f5032e72ac182c4e91ddb466d91dac67e4c40698858a0c38f86adf348059bac7ec66785b92c4"
+            },
+            {
+              "workspaceId": "0x14141414141414141414141414141414",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0xba573b792363057d0e7c110afa99888d3629912127c97c8f558256a75cbf220a",
+              "ciphertext": "0xf5cf4401b00c4dddb5802093f202070ee25c0875fd725963ba062fba93298c777773d1fd3d491933571652684ce4f123"
+            }
+          ]
+        },
+        "issuedAt": 1788998500,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "signature": "0x1c5ba113fe84e7f23808eb1789b451df723daae644a11b7fd5efce5010782a256aaadb27281b87942d617d790801c921b934ce464074ba60079238b8da76fc09",
+        "adminSignature": "0x6986bb4c91469c6feb86e66c5394be40ee180b070f88c2cfc0bb62d69535ed935b61aa78e1b531228efb108707085321b399d13e162c0f525c99fc1dce7fd207"
+      },
+      {
+        "workspaceId": "0x14141414141414141414141414141414",
+        "policyVersion": 2,
+        "prevOpHash": "0x8a9b7ac2cc2bdaeedd3c081c54a82806372305e07017941e07eb1a462dc3d220",
+        "kind": "link_key",
+        "issuedAt": 1788998501,
+        "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "generation": 1,
+          "link": {
+            "keyA": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "kemA": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+            "keyB": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "kemB": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+            "issuedAt": 1788998501,
+            "signatureA": "0x23488cd5c03ad41ceeddfabf3903c215f2ad121db65080d7a9891ba1309161a332c3adfc1380c65097f77cedd3d0c5689535404e53e6447727c9d1561c522b07",
+            "signatureB": "0x719393db38bc4126d6b7e1e53dafc5a246c663cf55a976446bd37d4d18ec26eb8c45fd0f6ebc186b3f993928e89b9289245fad1a28361518a615a94756f2ee0f"
+          },
+          "rotations": [
+            {
+              "oldKey": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+              "oldKem": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+              "newKey": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+              "newKem": "0x1acd56f0c407a0cb3a2784da316abea5237371c873e38a3a427c015466b2eb41",
+              "generation": 1,
+              "issuedAt": 1788998508,
+              "signatureOld": "0x7fa943d188d0c4e0b1d8e362a10d7baeea63896599214c326e7bde6257fd6010d1d2dec0cbd7642dc7568f259d7d83f92cc159fd26d92c03c04244d357395501",
+              "signatureNew": "0xf852ae0b79d9e3a88796224380960e80e99ed3a16e8fc954710a65648aea1e3c0c6cb9abf972f42f54536fe5088ec20ce9ae7c4777a96f0d44359aece16f1501"
+            }
+          ],
+          "envelopes": [
+            {
+              "workspaceId": "0x14141414141414141414141414141414",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+              "enc": "0x729844c9124da63748ae9c208a78e40184c7ab8e5aa528f726a06ee3b5966649",
+              "ciphertext": "0x663f0b74a228a6363a4644270472867f2881f85f28a9c08e340cae5fd57ab8eca0b4ee9c744ba82805e04c09c69084f7"
+            },
+            {
+              "workspaceId": "0x14141414141414141414141414141414",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+              "enc": "0xff416724e4ce315ec3174448026eab4d0229e8ffb070418a78dc7e87d39cc100",
+              "ciphertext": "0x99b90d17a2e074731dad78eae32ae68cb182c689c941a57508430a4cb1990ffff7247561fae0e30dfc65f77812e15356"
+            }
+          ]
+        },
+        "signature": "0xcb3c5cb7d153b1c9c1547ac4ea42c024115ca0aa3d53155e1590fc1fa37624c380a501dc8837fae55862b4c5f7c965604f3daec4978e229ccf656f09eea23c0b",
+        "adminSignature": null
+      },
+      {
+        "workspaceId": "0x14141414141414141414141414141414",
+        "policyVersion": 3,
+        "prevOpHash": "0xced429bb43b7562620c0c4ba976bf9654357509df135d5941fb2b7067e348a8e",
+        "kind": "unlink_key",
+        "payload": {
+          "memberId": "0x41414141414141414141414141414141",
+          "keyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "rotation": {
+            "newEpoch": 2,
+            "newAdminPublicKey": "0x0b513ad9b4924015ca0902ed079044d3ac5dbec2306f06948c10da8eb6e39f2d",
+            "envelopes": [
+              {
+                "workspaceId": "0x14141414141414141414141414141414",
+                "kind": "content",
+                "epoch": 2,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x8f6276a964b3ed2f471481518a35ccf954d5d06581b3162e93cddfed4b54df79",
+                "ciphertext": "0x7d9c11183a97198c0214e102fc3245b87c7e7222c75718637e456773365d7d674c370c9d2927cb35c7fce5236db52994"
+              },
+              {
+                "workspaceId": "0x14141414141414141414141414141414",
+                "kind": "admin",
+                "epoch": 2,
+                "recipientKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+                "enc": "0x9c3c2d47b672c0036fc4ed12c981fc220128fb1abf9f405f0ed04601d0aa9511",
+                "ciphertext": "0xb3d61aea14b4d239e2508522c0b3e920879ff2c381d081fe59c9bbe14dd0d32a8bc17591693130d8ee58769578f17ca0"
+              }
+            ]
+          }
+        },
+        "issuedAt": 1788998502,
+        "signerKeyId": "0x6ed8fe3b3384222e4b41a26401671278fe38852934777d2b672480cbd1a5acd6",
+        "signature": "0x2a99d8cd39509b73cedee0f8fafced8822b719319892b088a8ded1eeb0ea394c95291ce2771a934b5b04d1d0d4659fc82c9a843bf5523421b9872bf446c6ea0c",
+        "adminSignature": "0xd6462f4fcb6f2d12fee0192f044436d4934c851325f5956e9f30732f4508ae907e0b67d475851a1d5be3f33098c6aa476ee2e4c7117478fca603d16a11cd6503"
+      }
+    ],
+    "obsoleteThirdLink": {
+      "workspaceId": "0x14141414141414141414141414141414",
+      "policyVersion": 2,
+      "prevOpHash": "0x8a9b7ac2cc2bdaeedd3c081c54a82806372305e07017941e07eb1a462dc3d220",
+      "kind": "link_key",
+      "issuedAt": 1788998501,
+      "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "payload": {
+        "memberId": "0x41414141414141414141414141414141",
+        "generation": 0,
+        "link": {
+          "keyA": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+          "kemA": "0xd37411af121b5ad079494e39257cd231f8f3d888e78f5e45082986a345db5e7d",
+          "keyB": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "kemB": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+          "issuedAt": 1788998501,
+          "signatureA": "0x23488cd5c03ad41ceeddfabf3903c215f2ad121db65080d7a9891ba1309161a332c3adfc1380c65097f77cedd3d0c5689535404e53e6447727c9d1561c522b07",
+          "signatureB": "0x719393db38bc4126d6b7e1e53dafc5a246c663cf55a976446bd37d4d18ec26eb8c45fd0f6ebc186b3f993928e89b9289245fad1a28361518a615a94756f2ee0f"
+        },
+        "envelopes": [
+          {
+            "workspaceId": "0x14141414141414141414141414141414",
+            "kind": "content",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0xb933996634c011fd6e16d2af9e0a0d2df7bb2c036f4b1a6030fcabf3c2e79414",
+            "ciphertext": "0xe6245d7ecc956f715052d1f0fb064b9a73d8107d5ce3ee527fc5d58ce8c7a4fd9a8cec8367de31f31d7edfd917221229"
+          },
+          {
+            "workspaceId": "0x14141414141414141414141414141414",
+            "kind": "admin",
+            "epoch": 1,
+            "recipientKeyId": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+            "enc": "0x41bd292b8e15d654e2dad4178ce6781301eadc60f0da64b8d8c814b7aea7737c",
+            "ciphertext": "0xe06b548c014afd250a7ccdd2855f165da3edb6f7c86b4525c6374dbeb6efa7752bc444110bdc935f54fbf4f81c853cda"
+          }
+        ]
+      },
+      "signature": "0x223bceead72ff17db2a054850a1a80f21a34d88ed51d76fcf35efa5b0c4b718282c471f7ba8528b13aae6e89ed90179f098e4fe9cd6157abc04bafcae9b0d402",
+      "adminSignature": null
+    },
+    "unlink": {
+      "linkId": "0xaf701f9a39b621669bfde78dd0ea0921827002387843556c06ba902d65793cbf",
+      "remainingKey": "0x3eda0f3f72c528c83662713b8b1e415f8d7afc1aedff85b7589995e489254680",
+      "revokedKey": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+      "issuedAt": 1788998600,
+      "signature": "0xa2c4bbd29b19da68add54c3346df6594e6f93d9527a8bad9cf06f7799de052ba2a61ba0503017811da9ad8ff70089174378cc69e25cde22fbd5ceb3b5e921e03"
+    },
+    "unlinkHash": "0xff398fceb6adff07fb49539a8a051341fddbd2ee088122cc1268c83682291569"
+  }
+}
