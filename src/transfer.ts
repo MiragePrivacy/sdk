@@ -114,6 +114,14 @@ function resolveRows(params: {
       "Provide either transfers[] or tokenAddress + recipientAddress + amount",
     );
   }
+  const intents = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.tokenAddress.toLowerCase()}:${row.recipientAddress.toLowerCase()}:${row.amount}`;
+    if (intents.has(key)) {
+      throw new MirageError("INVALID_PARAMS", "Identical transfer rows are not supported");
+    }
+    intents.add(key);
+  }
   return rows;
 }
 
@@ -162,7 +170,7 @@ function attestationOptions(network: NetworkConfig): {
 }
 
 /**
- * Builds the intent a single native or ERC-20 escrow settles against.
+ * Builds commitments in the signed quote's asset-grouped row order.
  *
  * The commitment binds the escrow address, so the deployment nonce is read here
  * and the resulting address must be the one the deployment actually takes. The
@@ -173,7 +181,6 @@ async function buildZkIntent(params: {
   network: NetworkConfig;
   sender: Address;
   rows: TransferRow[];
-  row: TransferRow;
   blindingScalar: `0x${string}`;
   publicClient: PublicClient;
 }): Promise<{ request: ZkIntentRequest; opening: ZkIntentOpening }> {
@@ -185,7 +192,7 @@ async function buildZkIntent(params: {
   // what this commitment is being built for.
   const preview = await fetchPricingPreview(params.network.apiServer, {
     chainId: params.network.chainId,
-    escrowType: isNativeToken(params.row.tokenAddress) ? "native" : "erc20",
+    escrowType: selectEscrowType(params.rows),
     signals: buildPricingSignals(params.rows),
   });
   const nonceOffset = params.network.enableAtomicBatch
@@ -198,20 +205,25 @@ async function buildZkIntent(params: {
       blockTag: "pending",
     })) + nonceOffset,
   );
-  const opening = {
+  const orderedRows = buildPricingSignals(params.rows).flatMap((signal) =>
+    signal.items.map((item) => params.rows[Number(item.client_row_id.slice(4))]),
+  );
+  const openings = orderedRows.map((row, rowIndex) => ({
     instanceDomain,
     chainId: params.network.chainId,
     escrow,
     requestId,
-    rowIndex: 0,
-    asset: params.row.tokenAddress,
-    recipient: params.row.recipientAddress,
-    amount: params.row.amount,
-    salt: deriveSalt(params.blindingScalar, instanceDomain, requestId, 0),
-  };
+    rowIndex,
+    asset: row.tokenAddress,
+    recipient: row.recipientAddress,
+    amount: row.amount,
+    salt: deriveSalt(params.blindingScalar, instanceDomain, requestId, rowIndex),
+  }));
+  const opening = openings[0];
   return {
     request: {
       commitment: intentCommitment(opening),
+      ...(openings.length > 1 ? { commitments: openings.map(intentCommitment) } : {}),
       instance_domain: instanceDomain,
       request_id: requestId,
     },
@@ -394,17 +406,13 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
   // An ERC-20 escrow settles against a commitment rather than stored transfer
   // details, and the commitment binds the escrow address, so it must be
   // predicted before the constructor is priced.
-  const intent =
-    escrowType !== "batch"
-      ? await buildZkIntent({
-          network: params.network,
-          sender,
-          rows,
-          row: rows[0],
-          blindingScalar: blinded.blindingScalar,
-          publicClient: params.publicClient,
-        })
-      : undefined;
+  const intent = await buildZkIntent({
+    network: params.network,
+    sender,
+    rows,
+    blindingScalar: blinded.blindingScalar,
+    publicClient: params.publicClient,
+  });
   const [quote, obfuscation] = await Promise.all([
     fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,

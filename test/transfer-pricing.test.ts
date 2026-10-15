@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getContractAddress } from "viem";
+import * as bond from "../src/internal/bond.js";
+import { deriveSalt, intentCommitment } from "../src/internal/zk.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { prepareTransfer, previewTransfer } from "../src/transfer.js";
 import { createNetworkConfig } from "../src/networks.js";
@@ -515,7 +518,7 @@ describe("zk intent", () => {
     expect(pricingBody.intent.commitment).not.toBe(`0x${"00".repeat(32)}`);
   });
 
-  it("commits native settlement and omits the intent only for batch escrows", async () => {
+  it("commits native settlement and every batch row", async () => {
     await prepareTransfer({
       tokenAddress: NATIVE_TOKEN_ADDRESS,
       recipientAddress: RECIPIENT_A,
@@ -535,7 +538,44 @@ describe("zk intent", () => {
       publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
       network,
     });
-    expect(pricingBody.intent).toBeUndefined();
+    expect(pricingBody.intent.commitments).toHaveLength(2);
+    expect(pricingBody.intent.commitment).toBe(pricingBody.intent.commitments[0]);
+    expect(new Set(pricingBody.intent.commitments).size).toBe(2);
+  });
+
+  it("binds mixed-asset commitments to grouped signed row indexes", async () => {
+    const rows = [
+      { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
+      { tokenAddress: NATIVE_TOKEN_ADDRESS, recipientAddress: RECIPIENT_A, amount: 200n },
+      { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 300n },
+    ];
+    const scalar = `0x${"01".repeat(32)}` as const;
+    const signerSpy = vi.spyOn(bond, "deriveBlindedSigners").mockReturnValue({
+      blindingScalar: scalar, blindedSigners: [SENDER, RECIPIENT_A, RECIPIENT_B],
+    });
+    await prepareTransfer({
+      transfers: rows, senderAddress: SENDER,
+      publicClient: { getTransactionCount: vi.fn().mockResolvedValue(5) } as any,
+      network,
+    });
+    const { instance_domain: domain, request_id: requestId } = pricingBody.intent;
+    const expected = [rows[0], rows[2], rows[1]].map((row, rowIndex) => intentCommitment({
+      instanceDomain: domain, chainId: network.chainId,
+      escrow: getContractAddress({ from: SENDER, nonce: 6n }), requestId, rowIndex,
+      asset: row.tokenAddress, recipient: row.recipientAddress, amount: row.amount,
+      salt: deriveSalt(scalar, domain, requestId, rowIndex),
+    }));
+    signerSpy.mockRestore();
+    expect(pricingBody.intent.commitments).toEqual(expected);
+  });
+
+  it("rejects identical rows before requesting a quote", async () => {
+    const row = { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n };
+    await expect(prepareTransfer({
+      transfers: [row, { ...row }], senderAddress: SENDER,
+      publicClient: {} as any, network,
+    })).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+    expect(pricingBody).toBeUndefined();
   });
 
   it("binds a fresh domain and request id per preparation", async () => {

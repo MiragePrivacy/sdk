@@ -105,6 +105,7 @@ export type ExecutionMode = "private" | "native";
  * the API encodes it verbatim into the constructor.
  */
 export interface ZkIntentRequest {
+  commitments?: `0x${string}`[];
   commitment: `0x${string}`;
   instance_domain: `0x${string}`;
   request_id: `0x${string}`;
