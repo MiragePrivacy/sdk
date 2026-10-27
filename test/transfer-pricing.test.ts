@@ -430,6 +430,22 @@ describe("previewTransfer", () => {
     expect(preview).not.toHaveProperty("sealedPricingAuthorization");
   });
 
+  it("sends a stand-in recipient for every row", async () => {
+    await previewTransfer({
+      transfers: [
+        { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
+        { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 200n },
+      ],
+      network,
+    });
+
+    const standIn = "0x0000000000000000000000000000000000000001";
+    expect(pricingBody.signals[0].items).toEqual([
+      { client_row_id: "row-0", recipient: standIn, amount: "100" },
+      { client_row_id: "row-1", recipient: standIn, amount: "200" },
+    ]);
+  });
+
   it("agrees with the sender-bound quote on fees for identical rows", async () => {
     const rows = [
       { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
