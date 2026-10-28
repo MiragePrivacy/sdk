@@ -196,6 +196,9 @@ export interface TransferRow {
   amount: bigint;
 }
 
+/** A row priced by `previewTransfer`. Recipients are not needed to quote fees. */
+export type PreviewRow = Omit<TransferRow, "recipientAddress">;
+
 /**
  * Secret material required to complete a deployed escrow. The blinding scalar
  * never leaves the device in shareable form: without it the node cannot be

@@ -14,6 +14,7 @@ import type {
   NetworkConfig,
   NetworkKeyStatus,
   PreparedTransfer,
+  PreviewRow,
   TransferEvent,
   TransferPreview,
   TransferRow,
@@ -112,8 +113,28 @@ function resolveRows(params: {
   return rows;
 }
 
+function resolvePreviewRows(params: {
+  transfers?: PreviewRow[];
+  tokenAddress?: Address;
+  amount?: bigint;
+}): PreviewRow[] {
+  // Copy only the priced fields so a full TransferRow never leaks a recipient.
+  const rows = params.transfers?.length
+    ? params.transfers.map(({ tokenAddress, amount }) => ({ tokenAddress, amount }))
+    : params.tokenAddress && params.amount !== undefined
+      ? [{ tokenAddress: params.tokenAddress, amount: params.amount }]
+      : [];
+  if (rows.length === 0) {
+    throw new MirageError(
+      "INVALID_PARAMS",
+      "Provide either transfers[] or tokenAddress + amount",
+    );
+  }
+  return rows;
+}
+
 /** Select the contract variant before requesting its quote and bytecode. */
-function selectEscrowType(rows: TransferRow[]): EscrowKind {
+function selectEscrowType(rows: PreviewRow[]): EscrowKind {
   if (rows.length > 1) return "batch";
   return isNativeToken(rows[0].tokenAddress) ? "native" : "erc20";
 }
@@ -159,11 +180,10 @@ function attestationOptions(network: NetworkConfig): {
 /**
  * One SDK transfer request becomes one Signal per asset. Asset groups preserve
  * first-appearance order, so the first transfer selects the reward asset.
- * `recipient` replaces every row's recipient when set.
+ * Preview rows carry no recipient, so none is sent.
  */
 function buildPricingSignals(
-  rows: TransferRow[],
-  recipient?: Address,
+  rows: Array<PreviewRow & { recipientAddress?: Address }>,
 ): PricingSignalRequest[] {
   const signals = new Map<string, PricingSignalRequest>();
   rows.forEach((row, rowIndex) => {
@@ -179,7 +199,7 @@ function buildPricingSignals(
     }
     signal.items.push({
       client_row_id: `row-${rowIndex}`,
-      recipient: recipient ?? row.recipientAddress,
+      ...(row.recipientAddress && { recipient: row.recipientAddress }),
       amount: row.amount.toString(),
     });
   });
@@ -188,7 +208,7 @@ function buildPricingSignals(
 
 /** Pairs each API-required deposit with the principal the caller requested. */
 function assetRequirements(
-  rows: TransferRow[],
+  rows: PreviewRow[],
   depositByAsset: Record<string, bigint>,
 ): AssetRequirement[] {
   const principal = new Map<string, bigint>();
@@ -394,17 +414,10 @@ function assertQuotedAccount(
  */
 const PREVIEW_SENDER = "0x0000000000000000000000000000000000000001" as const;
 
-/**
- * Stand-in recipient for preview quotes. Pricing depends on the row count, not
- * the recipient, so real recipients are never sent before the user commits.
- */
-const PREVIEW_RECIPIENT = "0x0000000000000000000000000000000000000001" as const;
-
 export interface PreviewParams {
   tokenAddress?: Address;
-  recipientAddress?: Address;
   amount?: bigint;
-  transfers?: TransferRow[];
+  transfers?: PreviewRow[];
   network: NetworkConfig;
   /** Enables approval gas simulation. Omit to return fees without wallet gas. */
   publicClient?: PublicClient;
@@ -421,13 +434,13 @@ export interface PreviewParams {
 export async function previewTransfer(
   params: PreviewParams,
 ): Promise<TransferPreview> {
-  const rows = resolveRows(params);
+  const rows = resolvePreviewRows(params);
   const escrowType = selectEscrowType(rows);
   const [preview, obfuscation] = await Promise.all([
     fetchPricingPreview(params.network.apiServer, {
       chainId: params.network.chainId,
       escrowType,
-      signals: buildPricingSignals(rows, PREVIEW_RECIPIENT),
+      signals: buildPricingSignals(rows),
     }),
     fetchObfuscation(params.network.apiServer, escrowType).catch(
       () => undefined,

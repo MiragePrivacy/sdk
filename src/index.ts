@@ -53,6 +53,7 @@ export type {
   AssetRequirement,
   TransferEvent,
   TransferPreview,
+  PreviewRow,
   TransferRow,
   TransferSecrets,
   TransferStep,

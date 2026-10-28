@@ -102,7 +102,8 @@ export type ExecutionMode = "private" | "native";
 export interface PricingSignalRequest {
   asset: string;
   execution_mode: ExecutionMode;
-  items: Array<{ client_row_id: string; recipient: string; amount: string }>;
+  /** `recipient` is omitted for preview quotes. */
+  items: Array<{ client_row_id: string; recipient?: string; amount: string }>;
 }
 
 export interface PricingQuote {
