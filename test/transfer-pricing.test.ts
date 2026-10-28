@@ -349,7 +349,6 @@ describe("previewTransfer", () => {
   it("quotes fees with no sender, wallet, or attestation", async () => {
     const preview = await previewTransfer({
       tokenAddress: USDC,
-      recipientAddress: RECIPIENT_A,
       amount: 100n,
       network,
     });
@@ -370,7 +369,6 @@ describe("previewTransfer", () => {
     const estimateContractGas = vi.fn().mockResolvedValue(46_000n);
     const preview = await previewTransfer({
       tokenAddress: USDC,
-      recipientAddress: RECIPIENT_A,
       amount: 100n,
       network,
       publicClient: {
@@ -392,7 +390,6 @@ describe("previewTransfer", () => {
   it("omits wallet gas when no public client is supplied", async () => {
     const preview = await previewTransfer({
       tokenAddress: USDC,
-      recipientAddress: RECIPIENT_A,
       amount: 100n,
       network,
     });
@@ -404,7 +401,6 @@ describe("previewTransfer", () => {
   it("keeps previewing when approval gas simulation fails", async () => {
     const preview = await previewTransfer({
       tokenAddress: USDC,
-      recipientAddress: RECIPIENT_A,
       amount: 100n,
       network,
       publicClient: {
@@ -420,7 +416,6 @@ describe("previewTransfer", () => {
   it("exposes no deployable field", async () => {
     const preview = await previewTransfer({
       tokenAddress: USDC,
-      recipientAddress: RECIPIENT_A,
       amount: 100n,
       network,
     });
@@ -428,6 +423,19 @@ describe("previewTransfer", () => {
     expect(preview).not.toHaveProperty("quoteCommitment");
     expect(preview).not.toHaveProperty("constructorArgs");
     expect(preview).not.toHaveProperty("sealedPricingAuthorization");
+  });
+
+  it("never sends recipients, even when rows carry them", async () => {
+    const rows = [
+      { tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n },
+      { tokenAddress: USDC, recipientAddress: RECIPIENT_B, amount: 200n },
+    ];
+    await previewTransfer({ transfers: rows, network });
+
+    expect(pricingBody.signals[0].items).toEqual([
+      { client_row_id: "row-0", amount: "100" },
+      { client_row_id: "row-1", amount: "200" },
+    ]);
   });
 
   it("agrees with the sender-bound quote on fees for identical rows", async () => {
@@ -466,7 +474,6 @@ describe("previewTransfer", () => {
   it("still previews a native transfer", async () => {
     const preview = await previewTransfer({
       tokenAddress: NATIVE_TOKEN_ADDRESS,
-      recipientAddress: RECIPIENT_A,
       amount: 100n,
       network,
     });
