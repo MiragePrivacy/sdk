@@ -104,6 +104,7 @@ describe("fetchComplianceApproval", () => {
         seed: `0x${"55".repeat(32)}`,
         escrowType: "batch",
         quoteCommitment: COMMITMENT,
+        screeningReceipts: [],
       }),
     ).resolves.toEqual(approval);
 
@@ -137,4 +138,11 @@ describe("whitelistRequirementFromError", () => {
       whitelistRequirementFromError(new ApiError(403, "Predicate screening failed")),
     ).toBeUndefined();
   });
+});
+
+it("checks whitelist eligibility during signed pricing and passes the credential", async () => {
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok:false,status:403,
+    text:async()=>JSON.stringify({error:"Caller is not whitelisted for transactions above $1000",details:"WHITELIST_REQUIRED transaction_value_usd=~$1001.05"}) });
+  await expect(fetchPricingQuote("https://api.test", {chainId:1,sender:SENDER,escrowType:"erc20",blindedSigners:[SIGNER],accessToken:"hashed-credential",signals:[{asset:TOKEN,execution_mode:"private",items:[{client_row_id:"row",recipient:RECIPIENT,amount:"1"}]}]})).rejects.toMatchObject({code:"WHITELIST_REQUIRED",amountUsd:1001.05,thresholdUsd:1000});
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).access_token).toBe("hashed-credential");
 });

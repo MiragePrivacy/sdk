@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { ApiError, MirageError } from "../errors.js";
+import { ApiError, MirageError, WhitelistRequiredError } from "../errors.js";
 import type {
   EscrowKind,
   ExecutionApproval,
@@ -102,7 +102,7 @@ export type ExecutionMode = "private" | "native";
 export interface PricingSignalRequest {
   asset: string;
   execution_mode: ExecutionMode;
-  items: Array<{ client_row_id: string; recipient: string; amount: string }>;
+  items: Array<{ client_row_id: string; recipient?: string; amount: string }>;
 }
 
 export interface PricingQuote {
@@ -162,6 +162,10 @@ function postPricingQuote(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  }).catch(error => {
+    const requirement = whitelistRequirementFromError(error);
+    if (requirement) throw new WhitelistRequiredError(requirement.amountUsd, requirement.thresholdUsd);
+    throw error;
   });
 }
 
@@ -181,7 +185,11 @@ export async function fetchPricingPreview(
   const res = await postPricingQuote(apiServer, {
     chain_id: params.chainId,
     escrow_type: params.escrowType,
-    signals: params.signals,
+    // Copy only priced fields: full transfer rows cannot leak recipients.
+    signals: params.signals.map(signal => ({
+      asset: signal.asset, execution_mode: signal.execution_mode,
+      items: signal.items.map(item => ({ client_row_id: item.client_row_id, amount: item.amount })),
+    })),
   });
 
   return {
@@ -203,6 +211,7 @@ export async function fetchPricingQuote(
     escrowType: EscrowKind;
     blindedSigners: Address[];
     signals: PricingSignalRequest[];
+    accessToken?: string;
   },
 ): Promise<PricingQuote> {
   const res = await postPricingQuote(apiServer, {
@@ -211,6 +220,7 @@ export async function fetchPricingQuote(
     escrow_type: params.escrowType,
     blinded_signers: params.blindedSigners,
     signals: params.signals,
+    ...(params.accessToken ? { access_token: params.accessToken } : {}),
   });
   // A signed request must never yield preview fields. Reject rather than
   // deploying against a partial quote.
@@ -241,6 +251,72 @@ export async function fetchPricingQuote(
   };
 }
 
+export interface AddressScreeningReceipt {
+  version: number;
+  chain_id: number;
+  address_hash: `0x${string}`;
+  policy_hash: `0x${string}`;
+  screened: boolean;
+  issued_at: number;
+  expires_at: number;
+  signature: string;
+}
+
+/** Independent requests in random order, without participant roles or plan IDs. */
+export async function screenAddresses(
+  apiServer: string, chainId: number, addresses: readonly Address[],
+): Promise<AddressScreeningReceipt[]> {
+  const unique = [...new Map(addresses.map(address => [address.toLowerCase(), address])).values()];
+  // Rejection sampling avoids bias; do not preserve sender-first or row order.
+  for (let i = unique.length - 1; i > 0; i--) {
+    const range = i + 1;
+    const ceiling = Math.floor(0x100000000 / range) * range;
+    let sample: number;
+    do { sample = crypto.getRandomValues(new Uint32Array(1))[0]; } while (sample >= ceiling);
+    const j = sample % range;
+    [unique[i], unique[j]] = [unique[j], unique[i]];
+  }
+  const receipts: AddressScreeningReceipt[] = [];
+  let next = 0;
+  await Promise.all(Array.from({length: Math.min(4, unique.length)}, async () => {
+    while (next < unique.length) {
+      const address = unique[next++];
+      const receipt = await request<AddressScreeningReceipt>(`${apiServer}/compliance/screen`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chain_id: chainId, address }),
+      });
+      if (receipt.chain_id !== chainId || receipt.version !== 1 || receipt.expires_at <= Date.now() / 1000) {
+        throw new MirageError("INVALID_SCREENING_RECEIPT", "Invalid or expired address screening receipt");
+      }
+      receipts.push(receipt);
+    }
+  }));
+  return receipts;
+}
+
+export interface TransferAdmission {
+  policy_version: number;
+  per_payment_limit_usd: number | null;
+  request_limit_usd: number | null;
+  single_payment_capacity_usd: number | null;
+  funded_total_usd_cents: string;
+  requires_whitelist: boolean;
+  capacity: { solvable: boolean | null } | null;
+}
+
+/** Amount-only advisory assessment; signed pricing repeats admission internally. */
+export function fetchTransferPreflight(apiServer: string, params: {
+  chainId: number; escrowType: EscrowKind;
+  signals: Array<{ asset: Address; execution_mode: ExecutionMode; amounts: string[] }>;
+}): Promise<TransferAdmission> {
+  return request(`${apiServer}/transfers/preflight`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chain_id: params.chainId, escrow_type: params.escrowType,
+      signals: params.signals.map(signal => ({asset: signal.asset, execution_mode: signal.execution_mode, amounts: [...signal.amounts]})),
+    }),
+  });
+}
+
 export async function fetchComplianceApproval(
   apiServer: string,
   params: {
@@ -249,7 +325,7 @@ export async function fetchComplianceApproval(
     seed: string;
     escrowType: EscrowKind;
     quoteCommitment: `0x${string}`;
-    accessToken?: string;
+    screeningReceipts: AddressScreeningReceipt[];
   },
 ): Promise<ComplianceApproval> {
   const body: Record<string, unknown> = {
@@ -258,12 +334,10 @@ export async function fetchComplianceApproval(
     seed: params.seed,
     escrow_type: params.escrowType,
     quote_commitment: params.quoteCommitment,
+    screening_receipts: params.screeningReceipts,
   };
-  if (params.accessToken) {
-    body.access_token = params.accessToken;
-  }
 
-  return request<ComplianceApproval>(`${apiServer}/compliance`, {
+  return request<ComplianceApproval>(`${apiServer}/execution/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

@@ -51,6 +51,13 @@ beforeEach(() => {
   forceUnsignedQuote = false;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/compliance/screen")) {
+      const body = JSON.parse(String(init?.body));
+      return { ok: true, json: async () => ({ version: 1, chain_id: body.chain_id,
+        address_hash: COMMITMENT, policy_hash: COMMITMENT, screened: false,
+        issued_at: Math.floor(Date.now()/1000), expires_at: Math.floor(Date.now()/1000)+300,
+        signature: "0x00" }) } as Response;
+    }
     if (url.endsWith("/attest")) {
       attestUrl = url;
       return {
@@ -493,4 +500,28 @@ describe("previewTransfer", () => {
       }),
     ).rejects.toMatchObject({ code: "INVALID_PRICING_QUOTE" });
   });
+});
+
+it("stops before a signed quote when independent address screening rejects", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = vi.fn(async (input, init) => {
+    if (String(input).endsWith("/compliance/screen")) {
+      return { ok:false, status:403, text:async()=>JSON.stringify({error:"Address screening rejected"}) } as Response;
+    }
+    return original(input, init);
+  });
+  await expect(prepareTransfer({tokenAddress:USDC,recipientAddress:RECIPIENT_A,amount:100n,
+    senderAddress:SENDER,publicClient:{} as any,network})).rejects.toMatchObject({statusCode:403});
+  expect(pricingBody).toBeUndefined();
+});
+
+it("screens changed recipients before replacing a prepared quote", async () => {
+  const prepared = await prepareTransfer({tokenAddress:USDC,recipientAddress:RECIPIENT_A,amount:100n,
+    senderAddress:SENDER,publicClient:{} as any,network});
+  vi.mocked(fetch).mockClear();
+  await prepared.updateTransfers([{tokenAddress:USDC,recipientAddress:RECIPIENT_B,amount:100n}]);
+  const calls=vi.mocked(fetch).mock.calls;
+  const screenings=calls.filter(([url])=>String(url).endsWith("/compliance/screen"));
+  expect(screenings.map(([,init])=>JSON.parse(String(init?.body)).address).sort()).toEqual([SENDER,RECIPIENT_B]);
+  expect(pricingBody.signals[0].items[0].recipient).toBe(RECIPIENT_B);
 });

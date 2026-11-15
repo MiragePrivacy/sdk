@@ -22,6 +22,8 @@ export {
   nomadProxyUrl,
   fetchApiHealth,
   fetchTransferLimit,
+  fetchTransferPreflight,
+  screenAddresses,
   fetchGasHistoryAverages,
   checkWhitelist,
   checkWhitelistToken,
@@ -66,3 +68,5 @@ export type {
   GasPrice,
   ExecutionApproval,
 } from "./types.js";
+
+export type { TransferAdmission, AddressScreeningReceipt } from "./internal/api.js";

@@ -27,11 +27,13 @@ import {
 } from "./errors.js";
 import type {
   ObfuscationResult,
+  AddressScreeningReceipt,
   PricingQuote,
   PricingSignalRequest,
 } from "./internal/api.js";
 import {
   fetchComplianceApproval,
+  screenAddresses,
   fetchNetworkKey,
   fetchObfuscation,
   fetchPricingPreview,
@@ -232,6 +234,7 @@ interface TransferContext {
   quote: PricingQuote;
   fees: FeeEstimate;
   obfuscation?: ObfuscationResult;
+  screeningReceipts?: AddressScreeningReceipt[];
 }
 
 function isValidFundingMap(value: unknown): value is Record<string, bigint> {
@@ -327,6 +330,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     };
   }
 
+  const screeningReceipts = await screenAddresses(params.network.apiServer, params.network.chainId, [sender, ...rows.map(row => row.recipientAddress)]);
   const blinded = deriveBlindedSigners(networkKey.publicKey, rows.length);
   const [quote, obfuscation] = await Promise.all([
     fetchPricingQuote(params.network.apiServer, {
@@ -335,6 +339,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
       escrowType,
       blindedSigners: blinded.blindedSigners,
       signals: buildPricingSignals(rows),
+      accessToken: params.accessToken,
     }),
     fetchObfuscation(params.network.apiServer, escrowType),
   ]);
@@ -355,6 +360,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     escrowType,
     sender,
     networkKey,
+    screeningReceipts,
     blindedSigners: blinded.blindedSigners,
     blindingScalar: blinded.blindingScalar,
     quote,
@@ -633,12 +639,17 @@ export async function prepareTransfer(
       );
     }
     if (overrides.gasPrice) transactionGasPrice = overrides.gasPrice;
+    if (!context.screeningReceipts?.every(receipt => receipt.expires_at > Date.now()/1000 + 15)) {
+      context.screeningReceipts = await screenAddresses(params.network.apiServer, params.network.chainId,
+        [context.sender, ...context.rows.map(row => row.recipientAddress)]);
+    }
     const refreshedQuote = await fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender: context.sender,
       escrowType: context.escrowType,
       blindedSigners: context.blindedSigners,
       signals: buildPricingSignals(context.rows),
+      accessToken: params.accessToken,
     });
     if (refreshedQuote.deployment.escrowType !== context.escrowType) {
       throw new MirageError(
@@ -689,8 +700,19 @@ export async function prepareTransfer(
         "Token layout changed; prepare a new transfer to change tokens or row count",
       );
     }
+    const previousRows = context.rows;
+    const previousReceipts = context.screeningReceipts;
+    if (transfers.some((row, index) => row.recipientAddress.toLowerCase() !== previousRows[index].recipientAddress.toLowerCase())) {
+      context.screeningReceipts = undefined;
+    }
     context.rows = transfers;
-    return refreshFees(overrides);
+    try {
+      return await refreshFees(overrides);
+    } catch (error) {
+      context.rows = previousRows;
+      context.screeningReceipts = previousReceipts;
+      throw error;
+    }
   }
 
   return {
@@ -723,13 +745,17 @@ async function* completeTransfer(
   assertAccountUnchanged(walletClient, account, escrow);
   let executionApproval;
   try {
+    const screeningReceipts = context.screeningReceipts?.every(receipt => receipt.expires_at > Date.now()/1000 + 15)
+      ? context.screeningReceipts
+      : await screenAddresses(network.apiServer, network.chainId,
+          [context.sender, ...context.rows.map(row => row.recipientAddress)]);
     executionApproval = await fetchComplianceApproval(network.apiServer, {
       txHash: resume.deployHash,
       chainId: network.chainId,
       seed: resume.seed,
       escrowType: resume.escrowType,
       quoteCommitment: resume.quoteCommitment,
-      accessToken: params.accessToken,
+      screeningReceipts,
     });
   } catch (error) {
     const requirement = whitelistRequirementFromError(error);
