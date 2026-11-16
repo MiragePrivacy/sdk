@@ -5,7 +5,8 @@
  *   GET  /           — health check
  *   POST /obfuscate_escrow — returns real escrow bytecode (unobfuscated)
  *   POST /pricing/quote — returns an exact escrow deployment quote
- *   POST /compliance — returns a quote-bound mock execution approval
+ *   POST /compliance/screen — returns a test-only address screening receipt
+ *   POST /execution/approve — returns a quote-bound mock execution approval
  *   ANY  /nomad/{chainId}/* — forwarded to the mock nomad, mirroring the
  *                            real API's nomad proxy
  */
@@ -315,7 +316,37 @@ function createServer(port: number, nomadUrl?: string): http.Server {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/compliance") {
+    if (req.method === "POST" && req.url === "/compliance/screen") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        try {
+          const request = JSON.parse(body) as { chain_id: number; address: string };
+          if (!Number.isInteger(request.chain_id) || !/^0x[0-9a-fA-F]{40}$/.test(request.address)) {
+            throw new Error("invalid screening request");
+          }
+          const issuedAt = Math.floor(Date.now() / 1000);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          // Test-only receipt. The mock never represents a real compliance signature.
+          res.end(JSON.stringify({
+            version: 1,
+            chain_id: request.chain_id,
+            address_hash: keccak256(stringToHex(request.address.toLowerCase())),
+            policy_hash: keccak256(stringToHex("integration-test-policy")),
+            screened: true,
+            issued_at: issuedAt,
+            expires_at: issuedAt + 300,
+            signature: `0x${"ab".repeat(64)}`,
+          }));
+        } catch (error) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: String(error) }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/execution/approve") {
       let body = "";
       req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
       req.on("end", async () => {
