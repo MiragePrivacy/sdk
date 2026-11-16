@@ -250,7 +250,6 @@ import {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  WhitelistRequiredError,
 } from "@mirageprivacy/sdk";
 
 try {
@@ -260,8 +259,6 @@ try {
     // e.escrowAddress - set if deploy completed before abort
   } else if (e instanceof TransferTimeoutError) {
     // Transfer event not observed within pollTimeout (default 2 min)
-  } else if (e instanceof WhitelistRequiredError) {
-    // e.amountUsd and e.thresholdUsd are present when supplied by the API
   } else if (e instanceof MirageError && e.code === "ACCOUNT_CHANGED") {
     // Wallet account switched mid-transfer
     // e.meta.expectedAccount, e.meta.actualAccount, e.meta.escrowAddress
@@ -284,3 +281,43 @@ try {
 ## License
 
 UNLICENSED
+
+### Independent screening and transfer admission
+
+Transfer preparation screens each distinct address in its own
+`POST /compliance/screen` request, in shuffled order, with no sender/recipient
+roles, transfer IDs, or amounts. The SDK retains five-minute signed receipts in
+memory and sends them to `/execution/approve` after deployment. Resume or expired
+receipts trigger fresh individual screening. A rejected address stops initial
+preparation before wallet funding.
+
+`fetchTransferPreflight(apiServer, { chainId, escrowType, signals })` accepts
+signals of `{ asset, execution_mode, amounts }`, without participant addresses.
+It reports amount policy and capacity as a snapshot.
+Signed quotes repeat admission internally; a standalone preflight is not an
+execution authorization or a liquidity reservation.
+Fee previews strip recipient fields before sending the request.
+
+This SDK requires the API screening/admission split and migration 24. Deploy the
+API first, allow older quotes to drain before rollout, then release/pin this SDK
+in clients. The compatibility `/compliance` route remains available to older
+clients. Coordinate frontend #358 so fee display uses previews instead of signed
+transfer preparation. API #103 / SDK #15 change escrow constructors and need a
+separate rebase; retain the quote-bound screening coverage through that change.
+
+These requests reduce explicit role disclosure to screening. The existing signed
+pricing API still receives the full plan, and timing/IP metadata can correlate
+independent requests.
+
+
+### Early-access whitelist removal
+
+The early-access whitelist is removed. Clients must stop importing
+`checkWhitelist`, `checkWhitelistToken`, or `WhitelistRequiredError`, passing
+`TransferParams.accessToken`, or reading `ApiHealth.whitelistRequiredUsd` and
+`TransferAdmission.requires_whitelist`. These are breaking public API removals.
+Deploy the companion API whitelist removal before releasing this SDK to clients;
+older servers can still reject requests through their legacy gate. Policy and
+screening rejections continue to surface as `ApiError`. Amount limits, capacity
+checks, address screening, attestation and execution approval remain enforced by
+their existing paths.
