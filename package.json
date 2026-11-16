@@ -16,6 +16,16 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./workspaces": {
+      "import": {
+        "types": "./dist/workspaces/index.d.ts",
+        "default": "./dist/workspaces/index.js"
+      },
+      "require": {
+        "types": "./dist/workspaces/index.d.cts",
+        "default": "./dist/workspaces/index.cjs"
+      }
     }
   },
   "files": [
@@ -38,7 +48,8 @@
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@phala/dcap-qvl": "^0.6.1",
-    "eciesjs": "^0.4.0"
+    "eciesjs": "^0.4.0",
+    "hpke-js": "1.8.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

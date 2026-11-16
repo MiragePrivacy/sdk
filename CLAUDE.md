@@ -128,8 +128,7 @@ The encrypted Nomad envelope contains the escrow address, base blinding scalar, 
 - Requests pricing quotes and execution approvals
 - Retrieves and verifies Nomad attestation payloads through the nomad proxy
 - Builds nomad proxy URLs (`nomadProxyUrl`)
-- Provides health, whitelist, transfer-limit, and gas-history utilities
-- Extracts real whitelist amount/threshold information from compliance errors
+- Provides health, transfer-limit, and gas-history utilities
 
 **Escrow services** (`src/internal/escrow.ts`)
 
@@ -200,8 +199,8 @@ Public interfaces live in `src/types.ts` and are exported through `src/index.ts`
 - **Signer separation**: Pricing and compliance use separate Ed25519 authorities so either role can rotate independently and compromising one does not authorize the other.
 - **Resume validation**: Missing or malformed signed pricing and funding fields must fail with `INVALID_RESUME`, not an incidental JavaScript `TypeError`.
 - **Secret persistence**: Persist `TransferSecrets` with a serializer that preserves `bigint`. Never log or expose the blinding scalar.
-- **Whitelist errors**: `WhitelistRequiredError.amountUsd` and `thresholdUsd` are optional. Populate them only from real API values; never substitute zero.
 - **Server limits**: Transfer limits are enforced by the API. `fetchTransferLimit()` is informational and there is no client-side `TransferLimitError`.
 - **Account locking**: The active wallet must remain equal to the sender committed into the quote throughout approval, deployment, and completion.
 - **Abort handling**: Check the abort signal between state-changing stages and retain the deployed escrow address for recovery when applicable.
 - **No unused protocol fields**: Do not retain response parsing or public exports after their consumer has been removed.
+

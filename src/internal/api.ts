@@ -8,29 +8,7 @@ import type {
 } from "../types.js";
 import { verifyAttestation, type VerifyAttestationOptions } from "./attestation.js";
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-
-  if (!res.ok) {
-    const raw = await res.text().catch(() => "");
-    let body: unknown = raw || undefined;
-    let detail = "";
-    try {
-      const parsed = JSON.parse(raw) as { error?: string; details?: string };
-      body = parsed;
-      detail = parsed.error ?? parsed.details ?? "";
-    } catch {
-      detail = raw;
-    }
-    throw new ApiError(
-      res.status,
-      detail || `API request failed: ${res.status} ${res.statusText}`,
-      body,
-    );
-  }
-
-  return res.json() as Promise<T>;
-}
+import { request } from "./request.js";
 
 export interface ObfuscationResult {
   obfuscatedBytecode: `0x${string}`;
@@ -114,7 +92,7 @@ export interface ZkIntentRequest {
 export interface PricingSignalRequest {
   asset: string;
   execution_mode: ExecutionMode;
-  items: Array<{ client_row_id: string; recipient: string; amount: string }>;
+  items: Array<{ client_row_id: string; recipient?: string; amount: string }>;
 }
 
 export interface PricingQuote {
@@ -193,7 +171,11 @@ export async function fetchPricingPreview(
   const res = await postPricingQuote(apiServer, {
     chain_id: params.chainId,
     escrow_type: params.escrowType,
-    signals: params.signals,
+    // Copy only priced fields: full transfer rows cannot leak recipients.
+    signals: params.signals.map(signal => ({
+      asset: signal.asset, execution_mode: signal.execution_mode,
+      items: signal.items.map(item => ({ client_row_id: item.client_row_id, amount: item.amount })),
+    })),
   });
 
   return {
@@ -256,6 +238,71 @@ export async function fetchPricingQuote(
   };
 }
 
+export interface AddressScreeningReceipt {
+  version: number;
+  chain_id: number;
+  address_hash: `0x${string}`;
+  policy_hash: `0x${string}`;
+  screened: boolean;
+  issued_at: number;
+  expires_at: number;
+  signature: string;
+}
+
+/** Independent requests in random order, without participant roles or plan IDs. */
+export async function screenAddresses(
+  apiServer: string, chainId: number, addresses: readonly Address[],
+): Promise<AddressScreeningReceipt[]> {
+  const unique = [...new Map(addresses.map(address => [address.toLowerCase(), address])).values()];
+  // Rejection sampling avoids bias; do not preserve sender-first or row order.
+  for (let i = unique.length - 1; i > 0; i--) {
+    const range = i + 1;
+    const ceiling = Math.floor(0x100000000 / range) * range;
+    let sample: number;
+    do { sample = crypto.getRandomValues(new Uint32Array(1))[0]; } while (sample >= ceiling);
+    const j = sample % range;
+    [unique[i], unique[j]] = [unique[j], unique[i]];
+  }
+  const receipts: AddressScreeningReceipt[] = [];
+  let next = 0;
+  await Promise.all(Array.from({length: Math.min(4, unique.length)}, async () => {
+    while (next < unique.length) {
+      const address = unique[next++];
+      const receipt = await request<AddressScreeningReceipt>(`${apiServer}/compliance/screen`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chain_id: chainId, address }),
+      });
+      if (receipt.chain_id !== chainId || receipt.version !== 1 || receipt.expires_at <= Date.now() / 1000) {
+        throw new MirageError("INVALID_SCREENING_RECEIPT", "Invalid or expired address screening receipt");
+      }
+      receipts.push(receipt);
+    }
+  }));
+  return receipts;
+}
+
+export interface TransferAdmission {
+  policy_version: number;
+  per_payment_limit_usd: number | null;
+  request_limit_usd: number | null;
+  single_payment_capacity_usd: number | null;
+  funded_total_usd_cents: string;
+  capacity: { solvable: boolean | null } | null;
+}
+
+/** Amount-only advisory assessment; signed pricing repeats admission internally. */
+export function fetchTransferPreflight(apiServer: string, params: {
+  chainId: number; escrowType: EscrowKind;
+  signals: Array<{ asset: Address; execution_mode: ExecutionMode; amounts: string[] }>;
+}): Promise<TransferAdmission> {
+  return request(`${apiServer}/transfers/preflight`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chain_id: params.chainId, escrow_type: params.escrowType,
+      signals: params.signals.map(signal => ({asset: signal.asset, execution_mode: signal.execution_mode, amounts: [...signal.amounts]})),
+    }),
+  });
+}
+
 export async function fetchComplianceApproval(
   apiServer: string,
   params: {
@@ -264,7 +311,7 @@ export async function fetchComplianceApproval(
     seed: string;
     escrowType: EscrowKind;
     quoteCommitment: `0x${string}`;
-    accessToken?: string;
+    screeningReceipts: AddressScreeningReceipt[];
   },
 ): Promise<ComplianceApproval> {
   const body: Record<string, unknown> = {
@@ -273,56 +320,14 @@ export async function fetchComplianceApproval(
     seed: params.seed,
     escrow_type: params.escrowType,
     quote_commitment: params.quoteCommitment,
+    screening_receipts: params.screeningReceipts,
   };
-  if (params.accessToken) {
-    body.access_token = params.accessToken;
-  }
 
-  return request<ComplianceApproval>(`${apiServer}/compliance`, {
+  return request<ComplianceApproval>(`${apiServer}/execution/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-}
-
-export interface WhitelistRequirement {
-  amountUsd?: number;
-  thresholdUsd?: number;
-}
-
-function parseUsd(value: unknown): number | undefined {
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
-  const parsed = Number(String(value).replaceAll(",", ""));
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/** Extract API-calculated whitelist values from a compliance rejection. */
-export function whitelistRequirementFromError(
-  error: unknown,
-): WhitelistRequirement | undefined {
-  if (!(error instanceof ApiError) || error.statusCode !== 403) return undefined;
-
-  const body =
-    error.body && typeof error.body === "object"
-      ? (error.body as Record<string, unknown>)
-      : undefined;
-  const errorText = typeof body?.error === "string" ? body.error : error.message;
-  const details = typeof body?.details === "string" ? body.details : "";
-  if (!/whitelist/i.test(`${errorText} ${details}`)) return undefined;
-
-  const amountMatch = details.match(
-    /transaction_value_usd=~?\$([0-9][0-9,]*(?:\.[0-9]+)?)/i,
-  );
-  const thresholdMatch = errorText.match(
-    /transactions?\s+above\s+\$([0-9][0-9,]*(?:\.[0-9]+)?)/i,
-  );
-
-  return {
-    amountUsd:
-      parseUsd(body?.amountUsd ?? body?.amount_usd) ?? parseUsd(amountMatch?.[1]),
-    thresholdUsd:
-      parseUsd(body?.thresholdUsd ?? body?.threshold_usd) ?? parseUsd(thresholdMatch?.[1]),
-  };
 }
 
 export interface AttestResponse {
@@ -449,8 +454,6 @@ export interface ApiHealth {
   version?: string;
   /** Per-chain maximum transfer size in USD, keyed by chain id. */
   maxTransferUsd?: Record<string, string | null>;
-  /** Per-chain USD threshold above which whitelist verification is required. */
-  whitelistRequiredUsd?: Record<string, string | null>;
 }
 
 function parseUsdByChain(
@@ -470,21 +473,18 @@ export async function fetchApiHealth(apiServer: string): Promise<ApiHealth> {
     status: string;
     version?: string;
     max_tx_usd?: Record<string, number | null>;
-    whitelist_required_usd?: Record<string, number | null>;
   }>(`${apiServer}/`);
 
   return {
     status: res.status,
     version: res.version,
     maxTransferUsd: parseUsdByChain(res.max_tx_usd),
-    whitelistRequiredUsd: parseUsdByChain(res.whitelist_required_usd),
   };
 }
 
 /**
- * Fetch limits with retries. A transient failure would otherwise leave both
- * thresholds empty, which fails open: the whitelist gate cannot trigger and
- * transfers proceed until the backend rejects them.
+ * Fetch informational transfer limits with retries. The API remains the
+ * authority for enforcing transfer limits.
  */
 export async function fetchLimits(apiServer: string, retries = 3): Promise<ApiHealth> {
   let lastError: unknown;
@@ -555,48 +555,5 @@ export async function fetchGasHistoryAverages(
     maxFeePerGas: sum / BigInt(sampledDays),
     sampledDays,
     windowDays: res.window_days,
-  };
-}
-
-/**
- * Check whether an identifier is whitelisted. The value is hashed client-side
- * and the hash itself becomes the access token passed to compliance.
- */
-export async function checkWhitelist(
-  apiServer: string,
-  email: string,
-): Promise<{ whitelisted: boolean; accessToken?: string }> {
-  // The backend stores normalized values, so normalize before hashing.
-  const normalized = email.trim().toLowerCase();
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
-  const hash = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const res = await request<{ whitelisted: boolean }>(`${apiServer}/whitelist`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: hash, hashed: true }),
-  });
-
-  return {
-    whitelisted: res.whitelisted,
-    accessToken: res.whitelisted ? hash : undefined,
-  };
-}
-
-/** Check a previously-derived whitelist token, such as one received in a link. */
-export async function checkWhitelistToken(
-  apiServer: string,
-  token: string,
-): Promise<{ whitelisted: boolean; accessToken?: string }> {
-  const res = await request<{ whitelisted: boolean }>(`${apiServer}/whitelist`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: token, hashed: true }),
-  });
-  return {
-    whitelisted: res.whitelisted,
-    accessToken: res.whitelisted ? token : undefined,
   };
 }

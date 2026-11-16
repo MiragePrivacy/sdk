@@ -54,6 +54,13 @@ beforeEach(() => {
   forceUnsignedQuote = false;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/compliance/screen")) {
+      const body = JSON.parse(String(init?.body));
+      return { ok: true, json: async () => ({ version: 1, chain_id: body.chain_id,
+        address_hash: COMMITMENT, policy_hash: COMMITMENT, screened: false,
+        issued_at: Math.floor(Date.now()/1000), expires_at: Math.floor(Date.now()/1000)+300,
+        signature: "0x00" }) } as Response;
+    }
     if (url.endsWith("/attest")) {
       attestUrl = url;
       return {
@@ -291,7 +298,7 @@ describe("prepareTransfer pricing flow", () => {
     ).resolves.toBeDefined();
   });
 
-  it("surfaces real whitelist values returned by compliance", async () => {
+  it("preserves execution approval rejection as an API error", async () => {
     const prepared = await prepareTransfer({
       tokenAddress: USDC,
       recipientAddress: RECIPIENT_A,
@@ -306,16 +313,15 @@ describe("prepareTransfer pricing flow", () => {
       statusText: "Forbidden",
       text: async () =>
         JSON.stringify({
-          error: "Caller is not whitelisted for transactions above $1000",
-          details: "transaction_value_usd=~$1250.50",
+          error: "Predicate screening failed",
+          details: "participant rejected",
         }),
     }) as any;
 
     const completion = prepared.complete({ account: { address: SENDER } } as any);
     await expect(completion.next()).rejects.toMatchObject({
-      code: "WHITELIST_REQUIRED",
-      amountUsd: 1_250.5,
-      thresholdUsd: 1_000,
+      code: "API_ERROR",
+      statusCode: 403,
     });
   });
 });
@@ -578,6 +584,33 @@ describe("zk intent", () => {
     expect(pricingBody).toBeUndefined();
   });
 
+  it("refreshes intent commitments when the pending deployment nonce changes", async () => {
+    const scalar = `0x${"01".repeat(32)}` as const;
+    const signerSpy = vi.spyOn(bond, "deriveBlindedSigners").mockReturnValue({
+      blindingScalar: scalar, blindedSigners: [SENDER],
+    });
+    try {
+      const getTransactionCount = vi.fn().mockResolvedValue(5);
+      const prepared = await prepareTransfer({
+        tokenAddress: USDC, recipientAddress: RECIPIENT_A, amount: 100n,
+        senderAddress: SENDER, publicClient: { getTransactionCount } as any, network,
+      });
+      const initialIntent = pricingBody.intent;
+      getTransactionCount.mockResolvedValue(8);
+      await prepared.refreshFees();
+      const { instance_domain: domain, request_id: requestId } = pricingBody.intent;
+      expect(pricingBody.intent.commitment).toBe(intentCommitment({
+        instanceDomain: domain, chainId: network.chainId,
+        escrow: getContractAddress({ from: SENDER, nonce: 9n }), requestId, rowIndex: 0,
+        asset: USDC, recipient: RECIPIENT_A, amount: 100n,
+        salt: deriveSalt(scalar, domain, requestId, 0),
+      }));
+      expect(pricingBody.intent.commitment).not.toBe(initialIntent.commitment);
+    } finally {
+      signerSpy.mockRestore();
+    }
+  });
+
   it("binds a fresh domain and request id per preparation", async () => {
     const args = {
       tokenAddress: USDC,
@@ -600,4 +633,30 @@ describe("zk intent", () => {
     expect(pricingBody.intent.request_id).not.toBe(first.request_id);
     expect(pricingBody.intent.commitment).not.toBe(first.commitment);
   });
+});
+it("stops before a signed quote when independent address screening rejects", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = vi.fn(async (input, init) => {
+    if (String(input).endsWith("/compliance/screen")) {
+      return { ok:false, status:403, text:async()=>JSON.stringify({error:"Address screening rejected"}) } as Response;
+    }
+    return original(input, init);
+  });
+  await expect(prepareTransfer({tokenAddress:USDC,recipientAddress:RECIPIENT_A,amount:100n,
+    senderAddress:SENDER,publicClient:{} as any,network})).rejects.toMatchObject({statusCode:403});
+  expect(pricingBody).toBeUndefined();
+});
+
+it("screens changed recipients before replacing a prepared quote", async () => {
+  const prepared = await prepareTransfer({tokenAddress:USDC,recipientAddress:RECIPIENT_A,amount:100n,
+    senderAddress:SENDER,publicClient:{ getTransactionCount: vi.fn().mockResolvedValue(5) } as any,network});
+  const initialCommitment = pricingBody.intent.commitment;
+  vi.mocked(fetch).mockClear();
+  await prepared.updateTransfers([{tokenAddress:USDC,recipientAddress:RECIPIENT_B,amount:100n}]);
+  const calls=vi.mocked(fetch).mock.calls;
+  const screenings=calls.filter(([url])=>String(url).endsWith("/compliance/screen"));
+  expect(screenings.map(([,init])=>JSON.parse(String(init?.body)).address).sort()).toEqual([SENDER,RECIPIENT_B]);
+  expect(pricingBody.signals[0].items[0].recipient).toBe(RECIPIENT_B);
+  expect(pricingBody.intent.commitment).toMatch(/^0x[0-9a-f]{64}$/);
+  expect(pricingBody.intent.commitment).not.toBe(initialCommitment);
 });

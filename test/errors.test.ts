@@ -5,7 +5,6 @@ import {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  WhitelistRequiredError,
 } from "../src/errors.js";
 
 describe("MirageError", () => {
@@ -92,25 +91,5 @@ describe("TransferTimeoutError", () => {
     expect(err.code).toBe("TRANSFER_TIMEOUT");
     expect(err.message).toContain("60000");
     expect(err.name).toBe("TransferTimeoutError");
-  });
-});
-
-describe("WhitelistRequiredError", () => {
-  it("includes API-provided amount and threshold", () => {
-    const err = new WhitelistRequiredError(1_250.5, 1_000);
-    expect(err).toBeInstanceOf(MirageError);
-    expect(err.code).toBe("WHITELIST_REQUIRED");
-    expect(err.name).toBe("WhitelistRequiredError");
-    expect(err.amountUsd).toBe(1_250.5);
-    expect(err.thresholdUsd).toBe(1_000);
-    expect(err.meta).toEqual({ amountUsd: 1_250.5, thresholdUsd: 1_000 });
-  });
-
-  it("does not invent dollar values when the API omits them", () => {
-    const err = new WhitelistRequiredError();
-    expect(err.amountUsd).toBeUndefined();
-    expect(err.thresholdUsd).toBeUndefined();
-    expect(err.message).toBe("Whitelist verification is required for this transfer");
-    expect(err.message).not.toContain("$0");
   });
 });

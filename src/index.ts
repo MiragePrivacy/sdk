@@ -22,9 +22,9 @@ export {
   nomadProxyUrl,
   fetchApiHealth,
   fetchTransferLimit,
+  fetchTransferPreflight,
+  screenAddresses,
   fetchGasHistoryAverages,
-  checkWhitelist,
-  checkWhitelistToken,
   isApprovalStale,
   APPROVAL_MAX_AGE_SECS,
 } from "./internal/api.js";
@@ -37,7 +37,6 @@ export {
   ContractError,
   TransferAbortedError,
   TransferTimeoutError,
-  WhitelistRequiredError,
   MissingBlindingScalarError,
 } from "./errors.js";
 
@@ -66,3 +65,6 @@ export type {
   GasPrice,
   ExecutionApproval,
 } from "./types.js";
+
+export type { TransferAdmission, AddressScreeningReceipt } from "./internal/api.js";
+
