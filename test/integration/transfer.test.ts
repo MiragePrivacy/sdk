@@ -71,12 +71,7 @@ describe("Full transfer flow", () => {
 
     const stepNames = steps.map((s) => s.step);
     expect(stepNames).toContain("fees");
-    if (network.enableAtomicBatch) {
-      // Tempo: approve is batched into deploy
-      expect(stepNames).not.toContain("approve");
-    } else {
-      expect(stepNames).toContain("approve");
-    }
+    expect(stepNames).toContain("approve");
     expect(stepNames).toContain("deploy");
     expect(stepNames).toContain("compliance");
     expect(stepNames).toContain("signal");
@@ -158,8 +153,7 @@ describe("Full transfer flow", () => {
     },
   );
 
-  // Tempo batch mode doesn't support native ETH escrow (native token is a stablecoin)
-  it.skipIf(isTestnet && getNetwork().enableAtomicBatch)(
+  it(
     "executes a native transfer end-to-end",
     { timeout: 300_000 },
     async () => {

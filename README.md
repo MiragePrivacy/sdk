@@ -94,7 +94,7 @@ authorization that produced the deployed constructor.
 
 ## Networks
 
-Built-in configs for `ethereum`, `sepolia`, and `tempo`:
+Built-in configs for `ethereum` and `sepolia`:
 
 ```ts
 import { networks, createNetworkConfig } from "@mirageprivacy/sdk";

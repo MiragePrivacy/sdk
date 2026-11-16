@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import { MIRAGE_MRSIGNER, createNetworkConfig, networks } from "../src/networks.js";
 
 describe("networks", () => {
-  it("defines Ethereum, Sepolia, and Tempo transport endpoints", () => {
+  it("rejects unknown network IDs from JavaScript callers", () => {
+    expect(() => createNetworkConfig("retired" as never)).toThrow("Unsupported network");
+  });
+  it("defines Ethereum and Sepolia transport endpoints", () => {
     expect(networks.ethereum).toMatchObject({ chainId: 1, kind: "ethereum" });
     expect(networks.sepolia).toMatchObject({ chainId: 11155111, kind: "ethereum" });
-    expect(networks.tempo).toMatchObject({ chainId: 42431, kind: "tempo" });
+    expect(Object.keys(networks).sort()).toEqual(["ethereum", "sepolia"]);
   });
 
   it("contains no client-side platform or node pricing constants", () => {
