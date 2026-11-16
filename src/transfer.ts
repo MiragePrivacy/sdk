@@ -42,7 +42,6 @@ import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
   approveQuotedForDeployment,
   deployQuotedApproved,
-  deployQuotedAtomic,
   estimateQuotedApprovalGas,
 } from "./internal/escrow.js";
 import { deriveBlindedSigners } from "./internal/bond.js";
@@ -538,10 +537,7 @@ export async function prepareTransfer(
       gasEstimate: context.obfuscation.deploymentGasEstimate,
       gasPrice: transactionGasPrice,
     };
-    const result =
-      params.network.enableAtomicBatch && !approved
-        ? await deployQuotedAtomic(deployParams)
-        : await deployQuotedApproved({ ...deployParams, checkpoint: approved });
+    const result = await deployQuotedApproved({ ...deployParams, checkpoint: approved });
     deployedSecrets = {
       escrowAddress: result.escrowAddress,
       escrowType: context.escrowType,
@@ -602,16 +598,14 @@ export async function prepareTransfer(
     }
 
     let approved: ApprovalCheckpoint | undefined;
-    if (!params.network.enableAtomicBatch) {
-      const approvals = approve(walletClient);
-      while (true) {
-        const next = await approvals.next();
-        if (next.done) {
-          approved = next.value;
-          break;
-        }
-        yield next.value;
+    const approvals = approve(walletClient);
+    while (true) {
+      const next = await approvals.next();
+      if (next.done) {
+        approved = next.value;
+        break;
       }
+      yield next.value;
     }
     const deployed = await deploy(walletClient, approved);
     yield deployed;

@@ -1,7 +1,7 @@
 import type { Address, Hash, WalletClient } from "viem";
 
-export type NetworkId = "sepolia" | "tempo" | "ethereum";
-export type NetworkKind = "ethereum" | "tempo";
+export type NetworkId = "sepolia" | "ethereum";
+export type NetworkKind = "ethereum";
 
 /**
  * Escrow variant. Determines the deployed bytecode, constructor shape, and is
@@ -19,8 +19,6 @@ export interface NetworkConfig {
    * proxy at `/nomad/{chainId}`, so nodes are never contacted directly.
    */
   apiServer: string;
-  /** Submit exact quoted approvals and deployment as one native call vector (Tempo). */
-  enableAtomicBatch: boolean;
   /**
    * SGX quote verification policy. Verification is on by default: without it
    * the enclave key is only asserted by whatever host answered the request.
