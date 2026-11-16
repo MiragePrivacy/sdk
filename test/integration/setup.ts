@@ -8,14 +8,13 @@ import {
   type Chain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { tempoModerato } from "viem/chains";
 import { createNetworkConfig, networks } from "../../src/networks.js";
 import type { NetworkConfig, NetworkId } from "../../src/types.js";
 import { createServer as createMockNomad } from "./mock-nomad.js";
 import { createServer as createMockApi } from "./mock-api.js";
 
 // --- Testnet mode ---
-// Set TESTNET=tempo (or sepolia, ethereum) to run against a live network.
+// Set TESTNET=sepolia (or ethereum) to run against a live network.
 // Required env vars: SENDER_KEY, RECIPIENT_ADDRESS
 // Optional: TOKEN_ADDRESS (defaults to native), API_URL, NOMAD_URL, RPC_URL
 
@@ -118,15 +117,7 @@ export function getTusdcAddress(): Address {
 
 // --- Network config ---
 
-// Map of testnet IDs to viem chain definitions with proper serializers/formatters.
-const TESTNET_CHAINS: Partial<Record<NetworkId, Chain>> = {
-  tempo: tempoModerato,
-};
-
 function getTestnetChain(): Chain {
-  const known = TESTNET_CHAINS[TESTNET!];
-  if (known) return known;
-
   const base = networks[TESTNET!];
   return {
     id: base.chainId,
@@ -153,7 +144,6 @@ export function getNetwork(): NetworkConfig {
     chainId: 31337,
     rpcUrl: RPC_URL,
     apiServer: API_URL,
-    enableAtomicBatch: false,
     // The mock nomad runs outside SGX and serves no quote to verify.
     attestation: { required: false },
   });
@@ -201,17 +191,8 @@ export async function isServiceReady(url: string): Promise<boolean> {
 
 let anvilProcess: ChildProcess | null = null;
 
-let _faucetFunded = false;
-
-async function ensureFaucetFunded(): Promise<void> {
-  if (_faucetFunded || !isTestnet || TESTNET !== "tempo") return;
-  await fundViaFaucet(ACCOUNTS.sender.address);
-  _faucetFunded = true;
-}
-
 export async function startAnvil(): Promise<void> {
   if (isTestnet) {
-    await ensureFaucetFunded();
     return;
   }
 
@@ -314,32 +295,6 @@ export function stopMockNomad(): Promise<void> {
       resolve();
     });
   });
-}
-
-// --- Tempo faucet ---
-
-export async function fundViaFaucet(address: Address): Promise<string[]> {
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "tempo_fundAddress",
-      params: [address],
-      id: 1,
-    }),
-  });
-  const json = await res.json();
-  if (json.error) {
-    // Nonce replay = already funded recently, safe to ignore
-    if (json.error.message?.includes("nonce") || json.error.message?.includes("replay")) {
-      console.log(`[setup] Faucet: already funded (${json.error.message})`);
-      return [];
-    }
-    throw new Error(`Faucet failed: ${json.error.message}`);
-  }
-  console.log(`[setup] Faucet funded ${address}: ${json.result}`);
-  return json.result as string[];
 }
 
 // --- All services ---

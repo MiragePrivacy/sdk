@@ -263,65 +263,6 @@ export async function deployQuotedApproved(params: {
   };
 }
 
-/** Tempo call-vector equivalent of exact quoted approvals and deployment. */
-export async function deployQuotedAtomic(params: {
-  bytecode: `0x${string}`;
-  constructorArgs: `0x${string}`;
-  depositByAsset: Record<string, bigint>;
-  msgValue: bigint;
-  walletClient: WalletClient;
-  publicClient: PublicClient;
-  account: Address;
-}): Promise<DeployResult> {
-  const {
-    bytecode,
-    constructorArgs,
-    depositByAsset,
-    msgValue,
-    walletClient,
-    publicClient,
-    account,
-  } = params;
-  const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
-  const predictedEscrowAddress = predictContractAddress(account, nonce);
-  const approvalCalls = buildQuotedApprovalBuckets(depositByAsset).map((bucket) => ({
-    to: bucket.tokenAddress,
-    data: encodeFunctionData({
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [predictedEscrowAddress, bucket.amount],
-    }),
-    value: 0n,
-  }));
-  const hash = await (walletClient as unknown as {
-    sendTransaction: (args: unknown) => Promise<Hash>;
-  }).sendTransaction({
-    calls: [
-      ...approvalCalls,
-      { data: `${bytecode}${constructorArgs.slice(2)}` as `0x${string}`, value: msgValue },
-    ],
-    chain: walletClient.chain,
-    account,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") {
-    throw new ContractError("Batched escrow deployment failed", { txHash: hash });
-  }
-  if (receipt.contractAddress && getAddress(receipt.contractAddress) !== predictedEscrowAddress) {
-    throw new ContractError(
-      `Escrow deployed to ${receipt.contractAddress} but ${predictedEscrowAddress} was predicted`,
-      { txHash: hash },
-    );
-  }
-  return {
-    hash,
-    escrowAddress: predictedEscrowAddress,
-    deployGasUsed: receipt.gasUsed,
-    deployEffectiveGasPrice: receipt.effectiveGasPrice,
-    deployBlock: receipt.blockNumber,
-  };
-}
-
 export async function withdrawFromEscrow(params: {
   escrowAddress: Address;
   walletClient: WalletClient;

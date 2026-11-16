@@ -30,7 +30,7 @@ const ALLOWED_ADVISORY_IDS = ["INTEL-SA-00289", "INTEL-SA-00615"];
 
 /**
  * Built-in network configs. Only `ethereum` is a production network; sepolia
- * and tempo are testnets.
+ * is a testnet.
  */
 export const networks: Record<NetworkId, NetworkConfig> = {
   ethereum: {
@@ -39,7 +39,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     chainId: 1,
     rpcUrl: "https://ethereum-rpc.publicnode.com",
     apiServer: "https://api.mirageprivacy.com",
-    enableAtomicBatch: false,
     // Production: verified quotes only, no debug enclaves, and the enclave
     // must be signed by Mirage. MRENCLAVE is not pinned, since it changes on
     // every enclave release.
@@ -59,27 +58,6 @@ export const networks: Record<NetworkId, NetworkConfig> = {
     chainId: 11155111,
     rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
     apiServer: "https://api.mirageprivacy.com",
-    enableAtomicBatch: false,
-    // Testnet nodes may run debug-mode enclaves depending on how they were
-    // built. If this node does, set allowDebug via createNetworkConfig rather
-    // than turning verification off; the signer check still applies.
-    attestation: {
-      required: true,
-      expectedMrSigner: [MIRAGE_MRSIGNER],
-      allowedTcbStatus: ALLOWED_TCB_STATUS,
-      allowedAdvisoryIds: ALLOWED_ADVISORY_IDS,
-    },
-  },
-  tempo: {
-    id: "tempo",
-    kind: "tempo",
-    chainId: 42431,
-    rpcUrl: "https://rpc.moderato.tempo.xyz",
-    apiServer: "https://api.mirageprivacy.com",
-    // The pricing-aware compliance endpoint currently verifies a top-level
-    // creation transaction. Keep separate approvals + exact deployment until
-    // it can inspect Tempo call-vector creation receipts.
-    enableAtomicBatch: false,
     // Testnet nodes may run debug-mode enclaves depending on how they were
     // built. If this node does, set allowDebug via createNetworkConfig rather
     // than turning verification off; the signer check still applies.
@@ -96,6 +74,9 @@ export function createNetworkConfig(
   base: NetworkId | NetworkConfig,
   overrides?: DeepPartial<NetworkConfig>,
 ): NetworkConfig {
+  if (typeof base === "string" && !Object.hasOwn(networks, base)) {
+    throw new Error(`Unsupported network: ${base}`);
+  }
   const result = typeof base === "string" ? { ...networks[base] } : { ...base };
   // Deep-copy nested objects to prevent mutation of the source config.
   if (result.attestation) result.attestation = { ...result.attestation };

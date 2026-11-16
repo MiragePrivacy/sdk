@@ -71,9 +71,9 @@ function createServer(port: number, nomadUrl?: string): http.Server {
     if (!erc20Deployment) {
       erc20Deployment = readBytecode("erc20_deployment.hex");
       erc20Runtime = readBytecode("erc20_runtime.hex");
-      nativeDeployment = readBytecode("native_deployment.hex");
-      nativeRuntime = readBytecode("native_runtime.hex");
-      batchDeployment = readBytecode("batch_deployment.hex");
+      nativeDeployment = readBytecode("native_zk_deployment.hex");
+      nativeRuntime = readBytecode("native_zk_runtime.hex");
+      batchDeployment = readBytecode("batch_zk_deployment.hex");
     }
   }
 
@@ -167,6 +167,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
             blinded_signers?: string[];
             intent?: {
               commitment: string;
+              commitments?: string[];
               instance_domain: string;
               request_id: string;
             };
@@ -242,16 +243,20 @@ function createServer(port: number, nomadUrl?: string): http.Server {
               ? encodeAbiParameters(
                   [
                     { type: "address" },
-                    { type: "address" },
                     { type: "uint256" },
+                    { type: "bytes32" },
+                    { type: "bytes32" },
+                    { type: "bytes32" },
                     { type: "address" },
                     { type: "uint256" },
                     { type: "uint256" },
                   ],
                   [
                     firstRow.asset as `0x${string}`,
-                    firstRow.recipient as `0x${string}`,
                     BigInt(firstRow.amount),
+                    request.intent!.commitment as `0x${string}`,
+                    request.intent!.instance_domain as `0x${string}`,
+                    request.intent!.request_id as `0x${string}`,
                     request.blinded_signers[0] as `0x${string}`,
                     rewardAmount,
                     maxGasAdvance,
@@ -260,15 +265,19 @@ function createServer(port: number, nomadUrl?: string): http.Server {
               : request.escrow_type === "native"
                 ? encodeAbiParameters(
                     [
-                      { type: "address" },
                       { type: "uint256" },
+                      { type: "bytes32" },
+                      { type: "bytes32" },
+                      { type: "bytes32" },
                       { type: "address" },
                       { type: "uint256" },
                       { type: "uint256" },
                     ],
                     [
-                      firstRow.recipient as `0x${string}`,
                       BigInt(firstRow.amount),
+                      request.intent!.commitment as `0x${string}`,
+                      request.intent!.instance_domain as `0x${string}`,
+                      request.intent!.request_id as `0x${string}`,
                       request.blinded_signers[0] as `0x${string}`,
                       rewardAmount,
                       maxGasAdvance,
@@ -281,26 +290,30 @@ function createServer(port: number, nomadUrl?: string): http.Server {
                         type: "tuple[]",
                         components: [
                           { type: "address", name: "asset" },
-                          { type: "address", name: "recipient" },
                           { type: "uint256", name: "amount" },
                           { type: "uint256", name: "valueWeight" },
+                          { type: "bytes32", name: "intentCommitment" },
                         ],
                       },
                       { type: "uint256" },
                       { type: "uint256" },
                       { type: "address[]" },
+                      { type: "bytes32" },
+                      { type: "bytes32" },
                     ],
                     [
                       rewardAsset as `0x${string}`,
-                      rows.map((row) => ({
+                      rows.map((row, index) => ({
                         asset: row.asset as `0x${string}`,
-                        recipient: row.recipient as `0x${string}`,
                         amount: BigInt(row.amount),
                         valueWeight: BigInt(row.valueWeight),
+                        intentCommitment: request.intent!.commitments![index] as `0x${string}`,
                       })),
                       rewardAmount,
                       maxGasAdvance,
                       request.blinded_signers as `0x${string}`[],
+                      request.intent!.instance_domain as `0x${string}`,
+                      request.intent!.request_id as `0x${string}`,
                     ],
                   );
           const quoteCommitment = keccak256(

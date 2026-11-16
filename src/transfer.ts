@@ -44,7 +44,6 @@ import {
   approveQuotedForDeployment,
   buildQuotedApprovalBuckets,
   deployQuotedApproved,
-  deployQuotedAtomic,
   estimateQuotedApprovalGas,
   predictContractAddress,
 } from "./internal/escrow.js";
@@ -186,18 +185,13 @@ async function buildZkIntent(params: {
 }): Promise<{ request: ZkIntentRequest; opening: ZkIntentOpening }> {
   const instanceDomain = randomBytes32();
   const requestId = randomBytes32();
-  // Deployment follows its approvals, so the escrow lands that many nonces
-  // ahead. An atomic batch spends one nonce for the whole sequence. The deposits
-  // that set the count come from an unsigned preview, since the signed quote is
-  // what this commitment is being built for.
+  // Count approval nonces from the preview before committing to the address.
   const preview = await fetchPricingPreview(params.network.apiServer, {
     chainId: params.network.chainId,
     escrowType: selectEscrowType(params.rows),
     signals: buildPricingSignals(params.rows),
   });
-  const nonceOffset = params.network.enableAtomicBatch
-    ? 0
-    : buildQuotedApprovalBuckets(preview.depositByAsset).length;
+  const nonceOffset = buildQuotedApprovalBuckets(preview.depositByAsset).length;
   const escrow = predictContractAddress(
     params.sender,
     (await params.publicClient.getTransactionCount({
@@ -624,10 +618,7 @@ export async function prepareTransfer(
       gasEstimate: context.obfuscation.deploymentGasEstimate,
       gasPrice: transactionGasPrice,
     };
-    const result =
-      params.network.enableAtomicBatch && !approved
-        ? await deployQuotedAtomic(deployParams)
-        : await deployQuotedApproved({ ...deployParams, checkpoint: approved });
+    const result = await deployQuotedApproved({ ...deployParams, checkpoint: approved });
     deployedSecrets = {
       escrowAddress: result.escrowAddress,
       escrowType: context.escrowType,
@@ -688,16 +679,14 @@ export async function prepareTransfer(
     }
 
     let approved: ApprovalCheckpoint | undefined;
-    if (!params.network.enableAtomicBatch) {
-      const approvals = approve(walletClient);
-      while (true) {
-        const next = await approvals.next();
-        if (next.done) {
-          approved = next.value;
-          break;
-        }
-        yield next.value;
+    const approvals = approve(walletClient);
+    while (true) {
+      const next = await approvals.next();
+      if (next.done) {
+        approved = next.value;
+        break;
       }
+      yield next.value;
     }
     const deployed = await deploy(walletClient, approved);
     yield deployed;
