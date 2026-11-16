@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { fetchObfuscation, fetchApiHealth } from "../../src/internal/api.js";
+import { fetchObfuscation, fetchApiHealth, screenAddresses } from "../../src/internal/api.js";
 import { API_URL, startMockApi, stopMockApi, isTestnet } from "./setup.js";
 
 describe("API server", () => {
@@ -14,6 +14,15 @@ describe("API server", () => {
   it("health check returns status", async () => {
     const health = await fetchApiHealth(API_URL);
     expect(health.status).toBeTruthy();
+  });
+
+  it.skipIf(isTestnet)("screens each distinct address with a fresh chain-bound receipt", async () => {
+    const address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as const;
+    const receipts = await screenAddresses(API_URL, 31337, [address, address]);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({ version: 1, chain_id: 31337, screened: true });
+    expect(receipts[0].address_hash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(receipts[0].expires_at).toBeGreaterThan(Date.now() / 1000);
   });
 
   it("obfuscates ERC20 escrow bytecode", async () => {
