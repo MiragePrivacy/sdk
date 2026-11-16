@@ -4,7 +4,9 @@ import { nomadProxyUrl } from "./api.js";
 import type { EscrowKind, ExecutionApproval, NetworkKeyStatus } from "../types.js";
 
 async function encryptSignal(payload: Uint8Array, publicKeyHex: string): Promise<Uint8Array> {
-  const { encrypt } = await import("eciesjs");
+  const ecies = await import("eciesjs");
+  // Vite can expose this CommonJS package only through its default export.
+  const encrypt = ecies.encrypt ?? ecies.default?.encrypt;
   return encrypt(publicKeyHex.replace(/^0x/, ""), payload) as unknown as Uint8Array;
 }
 
