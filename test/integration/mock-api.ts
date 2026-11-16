@@ -104,7 +104,6 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           status: "ok",
           version: "mock",
           max_tx_usd: {},
-          whitelist_required_usd: {},
         }),
       );
       return;
@@ -410,3 +409,4 @@ if (isMain) {
     console.log(`[mock-api] Listening on http://127.0.0.1:${port}`);
   });
 }
+

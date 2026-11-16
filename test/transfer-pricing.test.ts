@@ -294,7 +294,7 @@ describe("prepareTransfer pricing flow", () => {
     ).resolves.toBeDefined();
   });
 
-  it("surfaces real whitelist values returned by compliance", async () => {
+  it("preserves execution approval rejection as an API error", async () => {
     const prepared = await prepareTransfer({
       tokenAddress: USDC,
       recipientAddress: RECIPIENT_A,
@@ -309,16 +309,15 @@ describe("prepareTransfer pricing flow", () => {
       statusText: "Forbidden",
       text: async () =>
         JSON.stringify({
-          error: "Caller is not whitelisted for transactions above $1000",
-          details: "transaction_value_usd=~$1250.50",
+          error: "Predicate screening failed",
+          details: "participant rejected",
         }),
     }) as any;
 
     const completion = prepared.complete({ account: { address: SENDER } } as any);
     await expect(completion.next()).rejects.toMatchObject({
-      code: "WHITELIST_REQUIRED",
-      amountUsd: 1_250.5,
-      thresholdUsd: 1_000,
+      code: "API_ERROR",
+      statusCode: 403,
     });
   });
 });
@@ -525,3 +524,4 @@ it("screens changed recipients before replacing a prepared quote", async () => {
   expect(screenings.map(([,init])=>JSON.parse(String(init?.body)).address).sort()).toEqual([SENDER,RECIPIENT_B]);
   expect(pricingBody.signals[0].items[0].recipient).toBe(RECIPIENT_B);
 });
+

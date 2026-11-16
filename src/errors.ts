@@ -61,38 +61,6 @@ export class TransferTimeoutError extends MirageError {
 }
 
 /**
- * Thrown when a transfer exceeds the network's whitelist threshold and no
- * valid access token was supplied. Callers should run the whitelist flow and
- * retry with the resulting token.
- */
-export class WhitelistRequiredError extends MirageError {
-  /** API-calculated transaction value, when supplied by the API. */
-  amountUsd?: number;
-  /** API-configured whitelist threshold, when supplied by the API. */
-  thresholdUsd?: number;
-
-  constructor(amountUsd?: number, thresholdUsd?: number) {
-    const message =
-      thresholdUsd === undefined
-        ? "Whitelist verification is required for this transfer"
-        : amountUsd === undefined
-          ? `Transfers above $${thresholdUsd} require whitelist verification`
-          : `Transfers above $${thresholdUsd} require whitelist verification (amount: $${amountUsd})`;
-    const meta: Record<string, number> = {};
-    if (amountUsd !== undefined) meta.amountUsd = amountUsd;
-    if (thresholdUsd !== undefined) meta.thresholdUsd = thresholdUsd;
-    super(
-      "WHITELIST_REQUIRED",
-      message,
-      { meta },
-    );
-    this.name = "WhitelistRequiredError";
-    this.amountUsd = amountUsd;
-    this.thresholdUsd = thresholdUsd;
-  }
-}
-
-/**
  * Thrown when a priced escrow is resumed without its blinding scalar. Nomad
  * cannot derive its one-time signer or batch signer set without it, so
  * completion must use the secrets retained at deployment.
@@ -110,3 +78,4 @@ export class MissingBlindingScalarError extends MirageError {
     this.escrowAddress = escrowAddress;
   }
 }
+

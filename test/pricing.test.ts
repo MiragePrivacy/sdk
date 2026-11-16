@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchApiHealth,
   fetchComplianceApproval,
   fetchObfuscation,
   fetchPricingQuote,
-  whitelistRequirementFromError,
 } from "../src/internal/api.js";
 import { ApiError } from "../src/errors.js";
 
@@ -67,6 +67,7 @@ describe("fetchPricingQuote", () => {
       escrowType: "erc20",
       blindedSigners: [SIGNER],
       signals,
+      ...({ accessToken: "legacy-token" } as Record<string, unknown>),
     });
 
     expect(quote.serviceFee.amount).toBe(25n);
@@ -116,33 +117,26 @@ describe("fetchComplianceApproval", () => {
   });
 });
 
-describe("whitelistRequirementFromError", () => {
-  it("extracts the API-calculated amount and configured threshold", () => {
-    const error = new ApiError(
-      403,
-      "Caller is not whitelisted for transactions above $1000",
-      {
-        error: "Caller is not whitelisted for transactions above $1000",
-        details: "transaction_value_usd=~$1,250.50",
-      },
-    );
-
-    expect(whitelistRequirementFromError(error)).toEqual({
-      amountUsd: 1_250.5,
-      thresholdUsd: 1_000,
+describe("removed early-access gate", () => {
+  it("does not expose legacy whitelist health metadata", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok", max_tx_usd: { "1": 10000 }, whitelist_required_usd: { "1": 1000 } }),
+    }) as any;
+    await expect(fetchApiHealth("https://api.test")).resolves.toEqual({
+      status: "ok", version: undefined, maxTransferUsd: { "1": "10000" },
     });
   });
 
-  it("does not classify unrelated forbidden responses as whitelist failures", () => {
-    expect(
-      whitelistRequirementFromError(new ApiError(403, "Predicate screening failed")),
-    ).toBeUndefined();
+  it("preserves policy rejections from signed pricing", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 403,
+      text: async () => JSON.stringify({ error: "Transfer exceeds configured limit" }),
+    }) as any;
+    const request = fetchPricingQuote("https://api.test", {
+      chainId: 1, sender: SENDER, escrowType: "erc20", blindedSigners: [SIGNER], signals: [],
+    });
+    await expect(request).rejects.toBeInstanceOf(ApiError);
+    await expect(request).rejects.toMatchObject({ code: "API_ERROR", statusCode: 403 });
   });
-});
-
-it("checks whitelist eligibility during signed pricing and passes the credential", async () => {
-  globalThis.fetch = vi.fn().mockResolvedValue({ ok:false,status:403,
-    text:async()=>JSON.stringify({error:"Caller is not whitelisted for transactions above $1000",details:"WHITELIST_REQUIRED transaction_value_usd=~$1001.05"}) });
-  await expect(fetchPricingQuote("https://api.test", {chainId:1,sender:SENDER,escrowType:"erc20",blindedSigners:[SIGNER],accessToken:"hashed-credential",signals:[{asset:TOKEN,execution_mode:"private",items:[{client_row_id:"row",recipient:RECIPIENT,amount:"1"}]}]})).rejects.toMatchObject({code:"WHITELIST_REQUIRED",amountUsd:1001.05,thresholdUsd:1000});
-  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).access_token).toBe("hashed-credential");
 });
