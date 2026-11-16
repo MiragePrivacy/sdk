@@ -197,11 +197,8 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           if (!preview && (request.blinded_signers?.length ?? 0) !== rows.length) {
             throw new Error("pricing requires one blinded signer per row");
           }
-          if (!preview && request.escrow_type === "erc20" && !request.intent) {
-            throw new Error("ERC-20 escrow requires a ZK intent");
-          }
-          if (request.intent && request.escrow_type !== "erc20") {
-            throw new Error("only ERC-20 escrows take a ZK intent");
+          if (!preview && !request.intent) {
+            throw new Error("deployable escrow requires a ZK intent");
           }
           if (request.escrow_type !== "batch" && rows.length !== 1) {
             throw new Error("single escrow pricing requires exactly one row");
