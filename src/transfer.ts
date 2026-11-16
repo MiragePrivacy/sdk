@@ -23,7 +23,6 @@ import type {
 import {
   MirageError,
   MissingBlindingScalarError,
-  WhitelistRequiredError,
 } from "./errors.js";
 import type {
   ObfuscationResult,
@@ -38,7 +37,6 @@ import {
   fetchObfuscation,
   fetchPricingPreview,
   fetchPricingQuote,
-  whitelistRequirementFromError,
 } from "./internal/api.js";
 import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
@@ -71,7 +69,6 @@ export interface TransferParams {
   network: NetworkConfig;
   /** Exact pricing authorization and scalar retained after deployment. */
   resume?: TransferSecrets;
-  accessToken?: string;
   /** Recommended EIP-1559 fees for wallet approval and deployment transactions. */
   gasPrice?: GasPrice;
   abortSignal?: AbortSignal;
@@ -339,7 +336,6 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
       escrowType,
       blindedSigners: blinded.blindedSigners,
       signals: buildPricingSignals(rows),
-      accessToken: params.accessToken,
     }),
     fetchObfuscation(params.network.apiServer, escrowType),
   ]);
@@ -649,7 +645,6 @@ export async function prepareTransfer(
       escrowType: context.escrowType,
       blindedSigners: context.blindedSigners,
       signals: buildPricingSignals(context.rows),
-      accessToken: params.accessToken,
     });
     if (refreshedQuote.deployment.escrowType !== context.escrowType) {
       throw new MirageError(
@@ -743,30 +738,18 @@ async function* completeTransfer(
 
   checkAbort(params.abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
-  let executionApproval;
-  try {
-    const screeningReceipts = context.screeningReceipts?.every(receipt => receipt.expires_at > Date.now()/1000 + 15)
-      ? context.screeningReceipts
-      : await screenAddresses(network.apiServer, network.chainId,
-          [context.sender, ...context.rows.map(row => row.recipientAddress)]);
-    executionApproval = await fetchComplianceApproval(network.apiServer, {
-      txHash: resume.deployHash,
-      chainId: network.chainId,
-      seed: resume.seed,
-      escrowType: resume.escrowType,
-      quoteCommitment: resume.quoteCommitment,
-      screeningReceipts,
-    });
-  } catch (error) {
-    const requirement = whitelistRequirementFromError(error);
-    if (requirement) {
-      throw new WhitelistRequiredError(
-        requirement.amountUsd,
-        requirement.thresholdUsd,
-      );
-    }
-    throw error;
-  }
+  const screeningReceipts = context.screeningReceipts?.every(receipt => receipt.expires_at > Date.now()/1000 + 15)
+    ? context.screeningReceipts
+    : await screenAddresses(network.apiServer, network.chainId,
+        [context.sender, ...context.rows.map(row => row.recipientAddress)]);
+  const executionApproval = await fetchComplianceApproval(network.apiServer, {
+    txHash: resume.deployHash,
+    chainId: network.chainId,
+    seed: resume.seed,
+    escrowType: resume.escrowType,
+    quoteCommitment: resume.quoteCommitment,
+    screeningReceipts,
+  });
   if (
     executionApproval.chainId !== network.chainId ||
     executionApproval.escrowContract.toLowerCase() !== escrow.toLowerCase() ||
@@ -833,3 +816,4 @@ export async function* executeTransfer(
   const prepared = await prepareTransfer(params);
   yield* prepared.execute(params.walletClient);
 }
+

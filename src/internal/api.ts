@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import { ApiError, MirageError, WhitelistRequiredError } from "../errors.js";
+import { ApiError, MirageError } from "../errors.js";
 import type {
   EscrowKind,
   ExecutionApproval,
@@ -162,10 +162,6 @@ function postPricingQuote(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).catch(error => {
-    const requirement = whitelistRequirementFromError(error);
-    if (requirement) throw new WhitelistRequiredError(requirement.amountUsd, requirement.thresholdUsd);
-    throw error;
   });
 }
 
@@ -211,7 +207,6 @@ export async function fetchPricingQuote(
     escrowType: EscrowKind;
     blindedSigners: Address[];
     signals: PricingSignalRequest[];
-    accessToken?: string;
   },
 ): Promise<PricingQuote> {
   const res = await postPricingQuote(apiServer, {
@@ -220,7 +215,6 @@ export async function fetchPricingQuote(
     escrow_type: params.escrowType,
     blinded_signers: params.blindedSigners,
     signals: params.signals,
-    ...(params.accessToken ? { access_token: params.accessToken } : {}),
   });
   // A signed request must never yield preview fields. Reject rather than
   // deploying against a partial quote.
@@ -300,7 +294,6 @@ export interface TransferAdmission {
   request_limit_usd: number | null;
   single_payment_capacity_usd: number | null;
   funded_total_usd_cents: string;
-  requires_whitelist: boolean;
   capacity: { solvable: boolean | null } | null;
 }
 
@@ -342,46 +335,6 @@ export async function fetchComplianceApproval(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-}
-
-export interface WhitelistRequirement {
-  amountUsd?: number;
-  thresholdUsd?: number;
-}
-
-function parseUsd(value: unknown): number | undefined {
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
-  const parsed = Number(String(value).replaceAll(",", ""));
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/** Extract API-calculated whitelist values from a compliance rejection. */
-export function whitelistRequirementFromError(
-  error: unknown,
-): WhitelistRequirement | undefined {
-  if (!(error instanceof ApiError) || error.statusCode !== 403) return undefined;
-
-  const body =
-    error.body && typeof error.body === "object"
-      ? (error.body as Record<string, unknown>)
-      : undefined;
-  const errorText = typeof body?.error === "string" ? body.error : error.message;
-  const details = typeof body?.details === "string" ? body.details : "";
-  if (!/whitelist/i.test(`${errorText} ${details}`)) return undefined;
-
-  const amountMatch = details.match(
-    /transaction_value_usd=~?\$([0-9][0-9,]*(?:\.[0-9]+)?)/i,
-  );
-  const thresholdMatch = errorText.match(
-    /transactions?\s+above\s+\$([0-9][0-9,]*(?:\.[0-9]+)?)/i,
-  );
-
-  return {
-    amountUsd:
-      parseUsd(body?.amountUsd ?? body?.amount_usd) ?? parseUsd(amountMatch?.[1]),
-    thresholdUsd:
-      parseUsd(body?.thresholdUsd ?? body?.threshold_usd) ?? parseUsd(thresholdMatch?.[1]),
-  };
 }
 
 export interface AttestResponse {
@@ -508,8 +461,6 @@ export interface ApiHealth {
   version?: string;
   /** Per-chain maximum transfer size in USD, keyed by chain id. */
   maxTransferUsd?: Record<string, string | null>;
-  /** Per-chain USD threshold above which whitelist verification is required. */
-  whitelistRequiredUsd?: Record<string, string | null>;
 }
 
 function parseUsdByChain(
@@ -529,21 +480,18 @@ export async function fetchApiHealth(apiServer: string): Promise<ApiHealth> {
     status: string;
     version?: string;
     max_tx_usd?: Record<string, number | null>;
-    whitelist_required_usd?: Record<string, number | null>;
   }>(`${apiServer}/`);
 
   return {
     status: res.status,
     version: res.version,
     maxTransferUsd: parseUsdByChain(res.max_tx_usd),
-    whitelistRequiredUsd: parseUsdByChain(res.whitelist_required_usd),
   };
 }
 
 /**
- * Fetch limits with retries. A transient failure would otherwise leave both
- * thresholds empty, which fails open: the whitelist gate cannot trigger and
- * transfers proceed until the backend rejects them.
+ * Fetch informational transfer limits with retries. The API remains the
+ * authority for enforcing transfer limits.
  */
 export async function fetchLimits(apiServer: string, retries = 3): Promise<ApiHealth> {
   let lastError: unknown;
@@ -614,48 +562,5 @@ export async function fetchGasHistoryAverages(
     maxFeePerGas: sum / BigInt(sampledDays),
     sampledDays,
     windowDays: res.window_days,
-  };
-}
-
-/**
- * Check whether an identifier is whitelisted. The value is hashed client-side
- * and the hash itself becomes the access token passed to compliance.
- */
-export async function checkWhitelist(
-  apiServer: string,
-  email: string,
-): Promise<{ whitelisted: boolean; accessToken?: string }> {
-  // The backend stores normalized values, so normalize before hashing.
-  const normalized = email.trim().toLowerCase();
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
-  const hash = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const res = await request<{ whitelisted: boolean }>(`${apiServer}/whitelist`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: hash, hashed: true }),
-  });
-
-  return {
-    whitelisted: res.whitelisted,
-    accessToken: res.whitelisted ? hash : undefined,
-  };
-}
-
-/** Check a previously-derived whitelist token, such as one received in a link. */
-export async function checkWhitelistToken(
-  apiServer: string,
-  token: string,
-): Promise<{ whitelisted: boolean; accessToken?: string }> {
-  const res = await request<{ whitelisted: boolean }>(`${apiServer}/whitelist`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value: token, hashed: true }),
-  });
-  return {
-    whitelisted: res.whitelisted,
-    accessToken: res.whitelisted ? token : undefined,
   };
 }
