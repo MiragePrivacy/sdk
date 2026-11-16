@@ -29,6 +29,7 @@ import type {
   AddressScreeningReceipt,
   PricingQuote,
   PricingSignalRequest,
+  ZkIntentRequest,
 } from "./internal/api.js";
 import {
   fetchComplianceApproval,
@@ -41,10 +42,14 @@ import {
 import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
   approveQuotedForDeployment,
+  buildQuotedApprovalBuckets,
   deployQuotedApproved,
   estimateQuotedApprovalGas,
+  predictContractAddress,
 } from "./internal/escrow.js";
 import { deriveBlindedSigners } from "./internal/bond.js";
+import { deriveSalt, intentCommitment, randomBytes32 } from "./internal/zk.js";
+import type { IntentOpening as ZkIntentOpening } from "./internal/zk.js";
 import { submitSignal } from "./internal/nomad.js";
 import { pollTransfers } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
@@ -107,6 +112,14 @@ function resolveRows(params: {
       "Provide either transfers[] or tokenAddress + recipientAddress + amount",
     );
   }
+  const intents = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.tokenAddress.toLowerCase()}:${row.recipientAddress.toLowerCase()}:${row.amount}`;
+    if (intents.has(key)) {
+      throw new MirageError("INVALID_PARAMS", "Identical transfer rows are not supported");
+    }
+    intents.add(key);
+  }
   return rows;
 }
 
@@ -151,6 +164,63 @@ function attestationOptions(network: NetworkConfig): {
       allowDebug: policy?.allowDebug,
       maxAgeSecs: policy?.maxAgeSecs,
     },
+  };
+}
+
+/**
+ * Builds commitments in the signed quote's asset-grouped row order.
+ *
+ * The commitment binds the escrow address, so the deployment nonce is read here
+ * and the resulting address must be the one the deployment actually takes. The
+ * salt is derived from the blinding scalar rather than transmitted: the enclave
+ * already receives the scalar inside the Signal and recovers the same value.
+ */
+async function buildZkIntent(params: {
+  network: NetworkConfig;
+  sender: Address;
+  rows: TransferRow[];
+  blindingScalar: `0x${string}`;
+  publicClient: PublicClient;
+}): Promise<{ request: ZkIntentRequest; opening: ZkIntentOpening }> {
+  const instanceDomain = randomBytes32();
+  const requestId = randomBytes32();
+  // Count approval nonces from the preview before committing to the address.
+  const preview = await fetchPricingPreview(params.network.apiServer, {
+    chainId: params.network.chainId,
+    escrowType: selectEscrowType(params.rows),
+    signals: buildPricingSignals(params.rows),
+  });
+  const nonceOffset = buildQuotedApprovalBuckets(preview.depositByAsset).length;
+  const escrow = predictContractAddress(
+    params.sender,
+    (await params.publicClient.getTransactionCount({
+      address: params.sender,
+      blockTag: "pending",
+    })) + nonceOffset,
+  );
+  const orderedRows = buildPricingSignals(params.rows).flatMap((signal) =>
+    signal.items.map((item) => params.rows[Number(item.client_row_id.slice(4))]),
+  );
+  const openings = orderedRows.map((row, rowIndex) => ({
+    instanceDomain,
+    chainId: params.network.chainId,
+    escrow,
+    requestId,
+    rowIndex,
+    asset: row.tokenAddress,
+    recipient: row.recipientAddress,
+    amount: row.amount,
+    salt: deriveSalt(params.blindingScalar, instanceDomain, requestId, rowIndex),
+  }));
+  const opening = openings[0];
+  return {
+    request: {
+      commitment: intentCommitment(opening),
+      ...(openings.length > 1 ? { commitments: openings.map(intentCommitment) } : {}),
+      instance_domain: instanceDomain,
+      request_id: requestId,
+    },
+    opening,
   };
 }
 
@@ -328,12 +398,23 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
 
   const screeningReceipts = await screenAddresses(params.network.apiServer, params.network.chainId, [sender, ...rows.map(row => row.recipientAddress)]);
   const blinded = deriveBlindedSigners(networkKey.publicKey, rows.length);
+  // An ERC-20 escrow settles against a commitment rather than stored transfer
+  // details, and the commitment binds the escrow address, so it must be
+  // predicted before the constructor is priced.
+  const intent = await buildZkIntent({
+    network: params.network,
+    sender,
+    rows,
+    blindingScalar: blinded.blindingScalar,
+    publicClient: params.publicClient,
+  });
   const [quote, obfuscation] = await Promise.all([
     fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender,
       escrowType,
       blindedSigners: blinded.blindedSigners,
+      intent: intent?.request,
       signals: buildPricingSignals(rows),
     }),
     fetchObfuscation(params.network.apiServer, escrowType),
@@ -633,11 +714,19 @@ export async function prepareTransfer(
       context.screeningReceipts = await screenAddresses(params.network.apiServer, params.network.chainId,
         [context.sender, ...context.rows.map(row => row.recipientAddress)]);
     }
+    const intent = await buildZkIntent({
+      network: params.network,
+      sender: context.sender,
+      rows: context.rows,
+      blindingScalar: context.blindingScalar,
+      publicClient: params.publicClient,
+    });
     const refreshedQuote = await fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender: context.sender,
       escrowType: context.escrowType,
       blindedSigners: context.blindedSigners,
+      intent: intent.request,
       signals: buildPricingSignals(context.rows),
     });
     if (refreshedQuote.deployment.escrowType !== context.escrowType) {

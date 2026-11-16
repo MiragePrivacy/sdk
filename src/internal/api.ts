@@ -77,6 +77,18 @@ export function isApprovalStale(approvedAt: number, nowSecs = Date.now() / 1000)
 
 export type ExecutionMode = "private" | "native";
 
+/**
+ * The ZK intent an ERC-20 escrow settles against. The commitment hides the
+ * recipient and amount, so the API cannot derive it: the client computes it and
+ * the API encodes it verbatim into the constructor.
+ */
+export interface ZkIntentRequest {
+  commitments?: `0x${string}`[];
+  commitment: `0x${string}`;
+  instance_domain: `0x${string}`;
+  request_id: `0x${string}`;
+}
+
 export interface PricingSignalRequest {
   asset: string;
   execution_mode: ExecutionMode;
@@ -184,6 +196,8 @@ export async function fetchPricingQuote(
     sender: Address;
     escrowType: EscrowKind;
     blindedSigners: Address[];
+    /** Required for ERC-20 escrows and rejected for every other kind. */
+    intent?: ZkIntentRequest;
     signals: PricingSignalRequest[];
   },
 ): Promise<PricingQuote> {
@@ -192,6 +206,7 @@ export async function fetchPricingQuote(
     sender: params.sender,
     escrow_type: params.escrowType,
     blinded_signers: params.blindedSigners,
+    ...(params.intent ? { intent: params.intent } : {}),
     signals: params.signals,
   });
   // A signed request must never yield preview fields. Reject rather than
