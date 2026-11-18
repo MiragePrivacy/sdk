@@ -4,7 +4,7 @@ import { bytesToHex, encodeAbiParameters, keccak256, type Hex } from "viem";
 import { buffer, bytes, canonicalJson, randomBytes, uint, utf8, type Json } from "./encoding";
 import { verifyEd25519 } from "./signatures";
 
-export const RECORD_TYPES = ["payment_request", "decision", "execution_event", "contact", "payment_template", "roster"] as const;
+export const RECORD_TYPES = ["payment_request", "decision", "execution_event", "contact", "payment_template", "roster", "proposal_cancellation"] as const;
 export type RecordType = typeof RECORD_TYPES[number];
 export interface RecordHeader {
   workspaceId: Hex;
@@ -48,7 +48,8 @@ export function verifyRecord(record: EncryptedRecord, authorize: AuthorPolicyChe
   try {
     const hash = recordHash(record);
     if (!verifyEd25519(record.signature, hash, record.authorKeyId)) return false;
-    const capability = record.type === "payment_request" ? 1 : record.type === "decision" ? 2 : 8;
+    // The consuming workflow verifies that cancellations come from the proposer or an owner.
+    const capability = record.type === "proposal_cancellation" ? 0 : record.type === "payment_request" ? 1 : record.type === "decision" ? 2 : 8;
     return authorize(Object.freeze({ workspaceId: record.workspaceId, recordId: record.recordId, type: record.type,
       revision: record.revision, keyEpoch: record.keyEpoch, authorKeyId: record.authorKeyId,
       authorPolicyVersion: record.authorPolicyVersion }), capability) === true;

@@ -246,10 +246,14 @@ export class WorkspaceClient {
     if(page.hasMore&&(!page.records.length||page.nextCursor===since))throw new Error("Workspace sync did not advance");
     return page;
   }
-  async put(record:EncryptedRecord,previousRevision:number):Promise<RecordRow> {
+  /** Cancellation writes include the proposal ID so the server can verify its shared execution slot. */
+  async put(record:EncryptedRecord,previousRevision:number,proposalId?:Hex):Promise<RecordRow> {
+    if((record.type==="proposal_cancellation")!==(proposalId!==undefined))throw new Error("Proposal ID required only for cancellation");
+    if(proposalId!==undefined)bytes(proposalId,32);
     uint(previousRevision);const policy=await this.policy(record.workspaceId);
     if(record.authorKeyId!==this.options.keys.memberKeyId||!verifyRecord(record,policyAuthorCheck(policy.ops)))throw new Error("Invalid record write authority");
-    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}`,{method:"PUT",headers:{"If-Match":String(previousRevision)},body:JSON.stringify(record)});
+    const query=proposalId===undefined?"":`?proposalId=${proposalId}`;
+    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}${query}`,{method:"PUT",headers:{"If-Match":String(previousRevision)},body:JSON.stringify(record)});
     this.verifyRow(record.workspaceId,row,policy,record.recordId);
     if(!same(row.record,record))throw new Error("Record write returned a different revision");return row;
   }
