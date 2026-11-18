@@ -97,6 +97,7 @@ export interface PricingSignalRequest {
 
 export interface PricingQuote {
   chainId: number;
+  expiresAt?: number;
   serviceFee: { asset: Address; amount: bigint };
   deployment: {
     escrowType: EscrowKind;
@@ -125,6 +126,7 @@ export interface PricingPreviewQuote {
 
 interface PricingQuoteResponse {
   chain_id: number;
+  expires_at?: number;
   service_fee: { asset: Address; amount: string };
   deployment: {
     escrow_type: EscrowKind;
@@ -222,6 +224,13 @@ export async function fetchPricingQuote(
     );
   }
 
+  const depositByAsset = parseDepositByAsset(res.deployment.deposit_by_asset);
+  const expectedAssets = new Set(params.signals.map(signal => signal.asset.toLowerCase()));
+  if (res.deployment.reward_asset.toLowerCase() !== params.signals[0]?.asset.toLowerCase()
+    || Object.entries(depositByAsset).some(([asset, amount]) => amount <= 0n || !expectedAssets.delete(asset.toLowerCase()))
+    || expectedAssets.size !== 0) {
+    throw new MirageError("INVALID_PRICING_QUOTE", "Signed funding assets do not match the requested transfer.");
+  }
   return {
     chainId: res.chain_id,
     serviceFee: { asset: res.service_fee.asset, amount: BigInt(res.service_fee.amount) },
@@ -231,10 +240,11 @@ export async function fetchPricingQuote(
       quoteCommitment: res.deployment.quote_commitment,
       rewardAsset: res.deployment.reward_asset,
       rewardAmount: BigInt(res.deployment.reward_amount),
-      depositByAsset: parseDepositByAsset(res.deployment.deposit_by_asset),
+      depositByAsset,
       msgValue: BigInt(res.deployment.msg_value),
     },
     sealedPricingAuthorization: res.sealed_pricing_authorization,
+    expiresAt: res.expires_at,
   };
 }
 

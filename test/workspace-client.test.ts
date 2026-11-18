@@ -1,9 +1,10 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
-import type {Hex} from "viem";
+import {bytesToHex,type Hex} from "viem";
+import {sha256} from "@noble/hashes/sha2.js";
 import {privateKeyToAccount} from "viem/accounts";
 import {verifyIdentityUnlink,createIdentityRotation,type SignedIdentityLink,type IdentityLinkState,type SignedIdentityUnlink} from "../src/workspaces/identity";
 import vectors from "./fixtures/workspaces.json";
-import {WorkspaceClient} from "../src/workspaces/client";
+import {WorkspaceClient,type RecordRow} from "../src/workspaces/client";
 import {deriveMemberKeys,unlockMember} from "../src/workspaces/keys";
 import {sealRecord} from "../src/workspaces/records";
 import {WorkspaceKeyring} from "../src/workspaces/personal";
@@ -127,5 +128,102 @@ describe("workspace client",()=>{
     const client=new WorkspaceClient({apiServer:"https://api.example",principalHash:`0x${"19".repeat(32)}`,keys:f.keys,principalToken:()=>new Promise(resolve=>release=resolve)});
     const pending=client.policy(wid);client.close();release("refreshed-token");
     await expect(pending).rejects.toThrow();expect(f.fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace approval snapshots",()=>{
+  const policy={policy:vectors.policy.states[0],ops:vectors.policy.ops.slice(0,1)};
+  const policyHead=policy.policy.headHash;
+  const digest=(rows:RecordRow[])=>bytesToHex(sha256(new TextEncoder().encode(
+    rows.map(({record})=>`${record.recordId}:${record.signature}\n`).sort().join(""),
+  )));
+  async function row(f:ReturnType<typeof setup>,type:"roster"|"decision",index:number,revision=1):Promise<RecordRow>{
+    const record=await sealRecord({workspaceId:wid,recordId:`0x${(type==="roster"?"44":"77").repeat(32)}`,type,
+      revision,keyEpoch:1,authorPolicyVersion:1,authorKeyId:f.keys.memberKeyId},
+      {value:revision},new Uint8Array(32).fill(43),f.keys.signingSeed);
+    return {record,changeSequence:index,createdAt:"today",updatedAt:"today"};
+  }
+  it("reads one authenticated delta per warm check, preserves private copies and rejects omitted or altered records",async()=>{
+    const f=setup(),one=await row(f,"decision",1),roster=await row(f,"roster",2);
+    const response={policy,policyHead,inventoryHash:digest([one]),records:[one],upper:1,next:1,hasMore:false};
+    f.setRecord(response);
+    const first=await f.client.approvalSnapshot(wid);
+    expect(()=>{first.records[0].record.revision=9;}).toThrow();
+    expect(()=>{first.policy.policy.members[0].caps=0;}).toThrow();
+    f.setRecord({...response,policy:null,records:[roster],upper:2,next:2,inventoryHash:digest([roster,one])});
+    const second=await f.client.approvalSnapshot(wid);
+    expect(second.records).toEqual([one,roster]);
+    expect(second.policy.policy.members[0].caps).toBe(15);
+    expect(f.requests.at(-1)?.url).toContain(`since=1&policyHead=${policyHead}`);
+    expect(f.requests.filter(({url})=>url.endsWith("/policy"))).toHaveLength(0);
+    f.setRecord({...response,policy:null,records:[],upper:3,next:3,inventoryHash:digest([roster])});
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow("inventory");
+    f.setRecord({...response,policy:null,records:[{...one,changeSequence:3}],upper:3,next:3});
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow("changed");
+    const bad={...roster,changeSequence:3,record:{...roster.record,revision:2}};
+    f.setRecord({...response,policy:null,records:[bad],upper:3,next:3,inventoryHash:digest([bad,one])});
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow("record");
+    f.setRecord({...response,policy:null,records:[],upper:2,next:2,inventoryHash:digest([roster,one])});
+    const unchanged=await f.client.approvalSnapshot(wid);
+    expect(unchanged.records).toBe(second.records);
+    expect(unchanged.policy).toBe(second.policy);
+    expect(unchanged.records).toEqual([one,roster]);
+    expect(f.requests.at(-1)?.url).toContain("since=2");
+  });
+  it("discards partial pages on concurrent writes and starts every new read with an authenticated request",async()=>{
+    const f=setup(),one=await row(f,"decision",1),two=await row(f,"roster",2);
+    const source=f.fetcher.getMockImplementation()!;
+    const pages:URL[]=[];
+    f.fetcher.mockImplementation(async(url,init)=>{
+      const path=new URL(url);
+      if(!path.pathname.endsWith("/approval-snapshot"))return source(url,init);
+      pages.push(path);
+      if(pages.length===2)return new Response("snapshot changed",{status:409});
+      const response={policy:path.searchParams.has("policyHead")?null:policy,policyHead,upper:2,inventoryHash:digest([one,two])};
+      const since=path.searchParams.get("since");
+      return new Response(JSON.stringify({...response,
+        records:since==="0"?[one]:since==="1"?[two]:[],next:since==="0"?1:2,hasMore:since==="0"}));
+    });
+    const [first,after]=await Promise.all([f.client.approvalSnapshot(wid),f.client.approvalSnapshot(wid)]);
+    expect(first).toEqual(after);
+    expect(first.records).toEqual([one,two]);
+    expect(pages.map(url=>[url.searchParams.get("since"),url.searchParams.get("at")]))
+      .toEqual([["0",null],["1","2"],["0",null],["1","2"],["2",null]]);
+  });
+  it("requires the initial signed policy and rechecks permission online when the inventory is unchanged",async()=>{
+    const f=setup(),empty={policy:null,policyHead,records:[],inventoryHash:digest([]),upper:0,next:0,hasMore:false};
+    f.setRecord(empty);
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow("signed policy");
+    f.setRecord({...empty,policy});await f.client.approvalSnapshot(wid);
+    f.fetcher.mockResolvedValueOnce(new Response("access denied",{status:403}));
+    await expect(f.client.approvalSnapshot(wid)).rejects.toMatchObject({statusCode:403});
+    f.client.close();
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow();
+  });
+  it("binds a conditional write to the checked sequence without refetching a verified policy",async()=>{
+    const f=setup(),claim=await row(f,"decision",1);
+    f.setRecord({policy,policyHead,records:[],inventoryHash:digest([]),upper:12,next:12,hasMore:false});
+    const snapshot=await f.client.approvalSnapshot(wid);
+    f.setRecord(claim);
+    const before=f.requests.length;
+    await f.client.put(claim.record,0,{expectedApprovalSequence:snapshot.upper});
+    expect(f.requests.slice(before)).toHaveLength(1);
+    expect(f.requests.at(-1)?.init.headers).toMatchObject({"If-Match":"0","X-Mirage-Approval-Sequence":"12"});
+    await expect(f.client.put(claim.record,0,{expectedApprovalSequence:-1})).rejects.toThrow();
+  });
+  it("rejects a previously verified immutable view after advancing the keyring",async()=>{
+    const f=setup(),ring=new WorkspaceKeyring(wid,f.keys);
+    const empty={records:[],inventoryHash:digest([]),upper:0,next:0,hasMore:false};
+    f.setRecord({...empty,policy,policyHead});
+    const before=(await f.client.approvalSnapshot(wid)).policy;
+    await ring.load(before);
+    const next={policy:vectors.policy.states[1],ops:vectors.policy.ops.slice(0,2)};
+    f.setRecord({...empty,policy:next,policyHead:next.policy.headHash});
+    const after=(await f.client.approvalSnapshot(wid)).policy;
+    await ring.load(after);
+    await expect(ring.load(before)).rejects.toThrow("rollback");
+    f.setRecord({...empty,policy,policyHead});
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow("rollback");
+    ring.close();await expect(ring.load(after)).rejects.toThrow("closed");
   });
 });

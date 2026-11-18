@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prepareTransfer } from "../../src/transfer.js";
+import { recoverDeployment } from "../../src/recoverDeployment.js";
 import { getTokenBalance, NATIVE_TOKEN_ADDRESS } from "../../src/token.js";
 import { TransferAbortedError } from "../../src/errors.js";
-import type { TransferStep } from "../../src/types.js";
+import type { PendingDeployment, TransferStep } from "../../src/types.js";
 import {
   ACCOUNTS,
   getPublicClient,
@@ -15,10 +16,6 @@ import {
   TOKEN_ADDRESS,
 } from "./setup.js";
 import { parseUnits } from "viem";
-
-function bigintReplacer(_key: string, value: unknown) {
-  return typeof value === "bigint" ? value.toString() : value;
-}
 
 const gasOverride = !isTestnet
   ? {
@@ -34,7 +31,6 @@ async function collectSteps(params: Parameters<typeof prepareTransfer>[0]) {
   const steps: TransferStep[] = [];
   for await (const step of prepared.execute()) {
     steps.push(step);
-    console.log(`Step: ${step.step}`, JSON.stringify(step, bigintReplacer));
   }
   return { steps, fees: prepared.fees };
 }
@@ -218,5 +214,46 @@ describe("Full transfer flow", () => {
         // Should not reach the deploy step
       }
     }).rejects.toThrow(TransferAbortedError);
+  });
+
+  it.skipIf(isTestnet)("resumes a mined deployment after the wallet loses its hash response", { timeout: 90_000 }, async () => {
+    const wallet = getWalletClient();
+    const rpc = getPublicClient();
+    const params = {
+      tokenAddress: NATIVE_TOKEN_ADDRESS,
+      recipientAddress: ACCOUNTS.recipient.address,
+      amount: parseUnits("0.01", 18),
+      walletClient: wallet,
+      publicClient: rpc,
+      network: getNetwork(),
+      ...gasOverride,
+    };
+    const prepared = await prepareTransfer(params);
+    const nonceBefore = await rpc.getTransactionCount({ address: wallet.account.address });
+    let saved!: PendingDeployment;
+    const disconnectedWallet = {
+      ...wallet,
+      sendTransaction: async (...args: Parameters<typeof wallet.sendTransaction>) => {
+        const hash = await wallet.sendTransaction(...args);
+        await rpc.waitForTransactionReceipt({ hash });
+        throw new Error("Simulated lost wallet response");
+      },
+    };
+    await expect(prepared.deploy(disconnectedWallet, undefined, {
+      onPrepared(checkpoint) { saved = structuredClone(checkpoint); },
+    })).rejects.toThrow("Simulated lost wallet response");
+
+    // A fresh page has only this private checkpoint. No wallet or transaction
+    // hash is supplied to the lookup, and it must identify the actual initcode.
+    const recovered = await recoverDeployment({ publicClient: getPublicClient(), pending: saved });
+    expect(recovered.secrets.escrowAddress).toBe(saved.secrets.escrowAddress);
+    expect(await rpc.getCode({ address: recovered.escrowAddress })).toMatch(/^0x[0-9a-f]+$/i);
+    expect(await rpc.getTransactionCount({ address: wallet.account.address })).toBe(nonceBefore + 1);
+
+    const resumed = await prepareTransfer({ ...params, publicClient: getPublicClient(), resume: recovered.secrets });
+    const stages: string[] = [];
+    for await (const step of resumed.complete(wallet)) stages.push(step.step);
+    expect(stages).toContain("complete");
+    expect(await rpc.getTransactionCount({ address: wallet.account.address })).toBe(nonceBefore + 1);
   });
 });

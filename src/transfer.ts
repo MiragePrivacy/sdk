@@ -1,12 +1,16 @@
 import {
   isAddress,
   type Address,
+  type Hash,
   type PublicClient,
   type WalletClient,
 } from "viem";
 import type {
   ApprovalCheckpoint,
+  ApprovalCallbacks,
   AssetRequirement,
+  DeploymentHooks,
+  PendingDeployment,
   EscrowKind,
   FeeEstimate,
   FeeRefreshOverrides,
@@ -43,10 +47,11 @@ import type { VerifyAttestationOptions } from "./internal/attestation.js";
 import {
   approveQuotedForDeployment,
   buildQuotedApprovalBuckets,
-  deployQuotedApproved,
+  submitQuotedDeployment,
   estimateQuotedApprovalGas,
   predictContractAddress,
 } from "./internal/escrow.js";
+import { recoverDeployment } from "./recoverDeployment.js";
 import { deriveBlindedSigners } from "./internal/bond.js";
 import { deriveSalt, intentCommitment, randomBytes32 } from "./internal/zk.js";
 import type { IntentOpening as ZkIntentOpening } from "./internal/zk.js";
@@ -83,6 +88,16 @@ export interface TransferParams {
    * scanned in windows.
    */
   maxBlockRange?: bigint;
+}
+
+function isUserRejection(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  while (error && typeof error === "object" && !seen.has(error)) {
+    seen.add(error);
+    if ("code" in error && error.code === 4001) return true;
+    error = "cause" in error ? error.cause : undefined;
+  }
+  return false;
 }
 
 const DEFAULT_POLL_TIMEOUT = 120_000;
@@ -184,13 +199,10 @@ async function buildZkIntent(params: {
 }): Promise<{ request: ZkIntentRequest; opening: ZkIntentOpening }> {
   const instanceDomain = randomBytes32();
   const requestId = randomBytes32();
-  // Count approval nonces from the preview before committing to the address.
-  const preview = await fetchPricingPreview(params.network.apiServer, {
-    chainId: params.network.chainId,
-    escrowType: selectEscrowType(params.rows),
-    signals: buildPricingSignals(params.rows),
-  });
-  const nonceOffset = buildQuotedApprovalBuckets(preview.depositByAsset).length;
+  // Funding consists of the positive transfer principals plus a reward in
+  // the first signal's asset. The signed response must contain those exact assets.
+  const signals = buildPricingSignals(params.rows);
+  const nonceOffset = signals.filter(signal => !isNativeToken(signal.asset as Address)).length;
   const escrow = predictContractAddress(
     params.sender,
     (await params.publicClient.getTransactionCount({
@@ -198,7 +210,7 @@ async function buildZkIntent(params: {
       blockTag: "pending",
     })) + nonceOffset,
   );
-  const orderedRows = buildPricingSignals(params.rows).flatMap((signal) =>
+  const orderedRows = signals.flatMap((signal) =>
     signal.items.map((item) => params.rows[Number(item.client_row_id.slice(4))]),
   );
   const openings = orderedRows.map((row, rowIndex) => ({
@@ -291,6 +303,7 @@ function feeEstimate(
 }
 
 interface TransferContext {
+  expectedEscrowAddress?: Address;
   rows: TransferRow[];
   escrowType: EscrowKind;
   sender: Address;
@@ -429,6 +442,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     depositByAsset: quote.deployment.depositByAsset,
     publicClient: params.publicClient,
     account: sender,
+    predictedEscrowAddress: intent.opening.escrow,
   }).catch(() => undefined);
 
   return {
@@ -437,6 +451,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     sender,
     networkKey,
     screeningReceipts,
+    expectedEscrowAddress: intent.opening.escrow,
     blindedSigners: blinded.blindedSigners,
     blindingScalar: blinded.blindingScalar,
     quote,
@@ -539,12 +554,30 @@ export async function prepareTransfer(
   let transactionGasPrice = params.gasPrice;
   let checkpoint: ApprovalCheckpoint | undefined;
   let deployedSecrets: TransferSecrets | undefined = params.resume;
+  let pending: PendingDeployment | undefined;
+  let broadcastHash: Hash | undefined;
+  let deployment: Promise<Extract<TransferStep, { step: "deploy" }>> | undefined;
   let approvalBroadcast = false;
   let approvalInProgress = false;
 
+  function timeRemaining(reserveSeconds: number) {
+    const minimumExpiry = Date.now() / 1000 + reserveSeconds;
+    return (context.quote.expiresAt ?? 0) > minimumExpiry
+      && context.screeningReceipts?.every(receipt => receipt.expires_at > minimumExpiry) === true;
+  }
+
+  async function canReuseForApproval(): Promise<boolean> {
+    if (approvalInProgress || approvalBroadcast || checkpoint || pending || deployment || deployedSecrets || !timeRemaining(15)) return false;
+    const nonce = await params.publicClient.getTransactionCount({ address: context.sender, blockTag: "pending" });
+    const offset = buildQuotedApprovalBuckets(context.quote.deployment.depositByAsset).length;
+    return predictContractAddress(context.sender, nonce + offset) === context.expectedEscrowAddress && timeRemaining(15);
+  }
+
   async function* approve(
     walletClient: WalletClient,
+    callbacks?: ApprovalCallbacks,
   ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
+    if (pending || deployment || deployedSecrets) throw new MirageError("INVALID_STAGE", "This deployment has already started.");
     if (approvalInProgress) {
       throw new MirageError(
         "INVALID_STAGE",
@@ -560,7 +593,16 @@ export async function prepareTransfer(
         publicClient: params.publicClient,
         account,
         gasPrice: transactionGasPrice,
+        expectedEscrowAddress: context.expectedEscrowAddress,
+        onWalletRequest: callbacks?.onWalletRequest,
+        onBroadcast: hash => {
+          approvalBroadcast = true;
+          callbacks?.onBroadcast?.(hash);
+        },
         onAbortCheck: () => {
+          if (!approvalBroadcast && context.quote.expiresAt !== undefined && !timeRemaining(0)) {
+            throw new MirageError("STALE_PREPARATION", "This quote is expiring. Review a fresh quote before approving.");
+          }
           checkAbort(params.abortSignal);
           assertAccountUnchanged(walletClient, account);
         },
@@ -585,9 +627,15 @@ export async function prepareTransfer(
     }
   }
 
-  async function deploy(
+  function deploy(walletClient: WalletClient, approved?: ApprovalCheckpoint, hooks?: DeploymentHooks) {
+    deployment ??= runDeployment(walletClient, approved, hooks).finally(() => { deployment = undefined; });
+    return deployment;
+  }
+
+  async function runDeployment(
     walletClient: WalletClient,
     suppliedCheckpoint?: ApprovalCheckpoint,
+    hooks?: DeploymentHooks,
   ): Promise<Extract<TransferStep, { step: "deploy" }>> {
     if (deployedSecrets) {
       return {
@@ -608,47 +656,66 @@ export async function prepareTransfer(
       );
     }
 
-    const approved = suppliedCheckpoint ?? checkpoint;
-    const deployParams = {
-      bytecode: context.obfuscation.obfuscatedBytecode,
-      constructorArgs: context.quote.deployment.constructorArgs,
-      depositByAsset: context.quote.deployment.depositByAsset,
-      msgValue: context.quote.deployment.msgValue,
-      walletClient,
-      publicClient: params.publicClient,
-      account,
-      gasEstimate: context.obfuscation.deploymentGasEstimate,
-      gasPrice: transactionGasPrice,
-    };
-    const result = await deployQuotedApproved({ ...deployParams, checkpoint: approved });
-    deployedSecrets = {
-      escrowAddress: result.escrowAddress,
-      escrowType: context.escrowType,
-      blindingScalar: context.blindingScalar,
-      seed: context.obfuscation.seed,
-      selectorMapping: context.obfuscation.selectorMapping,
-      deployHash: result.hash,
-      deployedAt: Date.now(),
-      fromBlock: result.deployBlock,
-      userApproveGas: approved?.approveGasUsed,
-      userDeployGas: result.deployGasUsed,
-      userGasPrice: result.deployEffectiveGasPrice,
-      rewardAmount: context.quote.deployment.rewardAmount,
-      rewardAsset: context.quote.deployment.rewardAsset,
-      quoteCommitment: context.quote.deployment.quoteCommitment,
-      sealedPricingAuthorization: context.quote.sealedPricingAuthorization,
-      serviceFee: context.quote.serviceFee,
-      depositByAsset: context.quote.deployment.depositByAsset,
-      msgValue: context.quote.deployment.msgValue,
-      senderAddress: context.sender,
-    };
-    return {
-      step: "deploy",
-      hash: result.hash,
-      escrowAddress: result.escrowAddress,
-      escrowType: context.escrowType,
-      secrets: deployedSecrets,
-    };
+    if (!pending) {
+      const approved = suppliedCheckpoint ?? checkpoint;
+      const artifact = context.obfuscation;
+      const quote = context.quote;
+      try {
+        broadcastHash = await submitQuotedDeployment({
+          bytecode: artifact.obfuscatedBytecode,
+          constructorArgs: quote.deployment.constructorArgs,
+          depositByAsset: quote.deployment.depositByAsset,
+          msgValue: quote.deployment.msgValue,
+          walletClient,
+          publicClient: params.publicClient,
+          account,
+          gasEstimate: artifact.deploymentGasEstimate,
+          gasPrice: transactionGasPrice,
+          checkpoint: approved,
+          expectedEscrowAddress: context.expectedEscrowAddress,
+          chainId: params.network.chainId,
+          beforeSend: async ({ nonce, escrowAddress, inputHash, fromBlock }) => {
+            checkAbort(params.abortSignal);
+            assertAccountUnchanged(walletClient, account);
+            if (quote.expiresAt !== undefined && quote.expiresAt <= Date.now() / 1000 + 15) {
+              throw new MirageError("STALE_PREPARATION", "Review a fresh quote before deploying the escrow.");
+            }
+            const recovery: PendingDeployment = {
+              version: 1, chainId: params.network.chainId, nonce, fromBlock, inputHash, createdAt: Date.now(),
+              secrets: {
+                escrowAddress,
+                escrowType: context.escrowType,
+                blindingScalar: context.blindingScalar,
+                seed: artifact.seed,
+                selectorMapping: artifact.selectorMapping,
+                userApproveGas: approved?.approveGasUsed,
+                rewardAmount: quote.deployment.rewardAmount,
+                rewardAsset: quote.deployment.rewardAsset,
+                quoteCommitment: quote.deployment.quoteCommitment,
+                sealedPricingAuthorization: quote.sealedPricingAuthorization,
+                serviceFee: quote.serviceFee,
+                depositByAsset: quote.deployment.depositByAsset,
+                msgValue: quote.deployment.msgValue,
+                senderAddress: account,
+              },
+            };
+            await hooks?.onPrepared?.(recovery);
+            pending = recovery;
+            checkAbort(params.abortSignal);
+            assertAccountUnchanged(walletClient, account);
+          },
+        });
+      } catch (error) {
+        // Only an explicit EIP-1193 user rejection permits another wallet submission.
+        if (isUserRejection(error)) pending = undefined;
+        throw error;
+      }
+      await hooks?.onBroadcast?.(broadcastHash);
+    }
+    if (!pending) throw new MirageError("INVALID_DEPLOYMENT", "Deployment checkpoint unavailable.");
+    const step = await recoverDeployment({ publicClient: params.publicClient, pending, hash: broadcastHash });
+    deployedSecrets = step.secrets;
+    return step;
   }
 
   async function* complete(
@@ -681,14 +748,16 @@ export async function prepareTransfer(
     }
 
     let approved: ApprovalCheckpoint | undefined;
-    const approvals = approve(walletClient);
-    while (true) {
-      const next = await approvals.next();
-      if (next.done) {
-        approved = next.value;
-        break;
+    if (!pending && !deployment) {
+      const approvals = approve(walletClient);
+      while (true) {
+        const next = await approvals.next();
+        if (next.done) {
+          approved = next.value;
+          break;
+        }
+        yield next.value;
       }
-      yield next.value;
     }
     const deployed = await deploy(walletClient, approved);
     yield deployed;
@@ -701,6 +770,8 @@ export async function prepareTransfer(
     if (
       approvalBroadcast ||
       approvalInProgress ||
+      pending ||
+      deployment ||
       checkpoint ||
       deployedSecrets
     ) {
@@ -736,10 +807,12 @@ export async function prepareTransfer(
       );
     }
     context.quote = refreshedQuote;
+    context.expectedEscrowAddress = intent.opening.escrow;
     const approvalGasEstimate = await estimateQuotedApprovalGas({
       depositByAsset: context.quote.deployment.depositByAsset,
       publicClient: params.publicClient,
       account: context.sender,
+      predictedEscrowAddress: intent.opening.escrow,
     }).catch(() => undefined);
     context.fees = feeEstimate(
       context.rows,
@@ -757,6 +830,8 @@ export async function prepareTransfer(
     if (
       approvalBroadcast ||
       approvalInProgress ||
+      pending ||
+      deployment ||
       checkpoint ||
       deployedSecrets
     ) {
@@ -797,6 +872,7 @@ export async function prepareTransfer(
     get fees() {
       return context.fees;
     },
+    canReuseForApproval,
     approve,
     deploy,
     complete,
