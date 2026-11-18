@@ -92,6 +92,20 @@ The latter includes the blinding scalar, quote commitment, and opaque sealed
 pricing authorization. Persist it immediately: a reload must submit the same
 authorization that produced the deployed constructor.
 
+To recover a deployment across a reload or a lost wallet response, pass a third
+argument to `prepared.deploy` with `onPrepared(pending)` and `onBroadcast(hash)`.
+The SDK awaits the first callback before asking the wallet to send. Save
+`pending` in device-local storage with a serializer that preserves bigint
+values, then attach the hash to the same record in the second callback.
+Treat the checkpoint as private transfer material.
+
+After reopening, call `recoverDeployment({ publicClient, pending, hash })` on
+the original chain. The hash is optional. Without it, the SDK looks for the
+original sender and nonce. On RPCs without historical state, supply the
+creation hash from the wallet. Recovery verifies the mined creation against
+the checkpoint and returns the deployment step for `prepared.complete`.
+Recovery only reads from the chain.
+
 ## Networks
 
 Built-in configs for `ethereum` and `sepolia`:

@@ -4,8 +4,11 @@ import {ApiError} from "../errors.js";
 import {bytes,canonicalJson,uint,type Json} from "./encoding";
 import {signWorkspaceChallenge,type WorkspaceChallenge} from "./challenge";
 import type {MemberKeys} from "./keys";
-import {applyPolicyOp,currentMemberKey,policyAuthorCheck,policyOpHash,replayPolicy,type InviteAcceptance,type InviteGrant,type Policy,type PolicyOp} from "./policy";
+import {applyPolicyOp,currentMemberKey,replayPolicy,type InviteAcceptance,type InviteGrant,type Policy,type PolicyOp} from "./policy";
 import {verifyRecord,type EncryptedRecord,type RecordType} from "./records";
+import {ApprovalSnapshotReader,type ApprovalSnapshot,type ApprovalSnapshotPage} from "./approval-snapshot";
+import {copyPolicy,verifiedAuthor,verifyPolicyResponse,type VerifiedPolicy} from "./verified-policy";
+export type {ApprovalSnapshot} from "./approval-snapshot";
 import {verifyIdentityLink,verifyIdentityRotation,linkedKeyBranches,linkHash,createIdentityUnlink,type IdentityLinkState,type SignedIdentityLink,type SignedIdentityRotation} from "./identity";
 import type {KeyEnvelope} from "./hpke";
 
@@ -30,7 +33,8 @@ export class WorkspaceClient {
   private readonly base:string;
   private readonly stop=new AbortController();
   private readonly sessions=new Map<Hex,Promise<WorkspaceSession>>();
-  private readonly policies=new Map<Hex,PolicyResponse>();
+  private readonly policies=new Map<Hex,VerifiedPolicy>();
+  private readonly approvalReaders=new Map<Hex,ApprovalSnapshotReader>();
   constructor(private readonly options:WorkspaceClientOptions) {
     this.options={...options,keys:{...options.keys}};
     const url=new URL(options.apiServer);
@@ -38,7 +42,7 @@ export class WorkspaceClient {
     this.base=url.toString().replace(/\/$/,"");bytes(options.principalHash,32);
   }
   /** Abort pending work before the caller disposes its private member keys. */
-  close():void {this.stop.abort();this.sessions.clear();this.policies.clear();}
+  close():void {this.stop.abort();this.sessions.clear();this.policies.clear();this.approvalReaders.clear();}
   private async fetch<T>(path:string,token:string,init:RequestInit={}):Promise<T> {
     this.stop.signal.throwIfAborted();
     const timeout=new AbortController();const timer=setTimeout(()=>timeout.abort(),20_000);
@@ -148,27 +152,44 @@ export class WorkspaceClient {
     try{return await this.fetch<T>(`/workspaces/${workspace}${path}`,session.token,init);}
     catch(error){if(error instanceof ApiError&&error.statusCode===401)this.sessions.delete(workspace);throw error;}
   }
-  private pin(workspace:Hex,response:PolicyResponse,allowRevoked=false):PolicyResponse {
-    const derived=replayPolicy(response.ops);
-    if(derived.workspaceId!==workspace||!same(derived,response.policy))throw new Error("Server policy does not match signed log");
-    const previous=this.policies.get(workspace);
-    if(previous&&(derived.policyVersion<previous.policy.policyVersion||policyOpHash(response.ops[previous.policy.policyVersion-1])!==previous.policy.headHash))
-      throw new Error("Workspace policy rollback or fork");
-    if(!currentMemberKey(derived,this.options.keys.memberKeyId)){
+  private pin(workspace:Hex,response:PolicyResponse,allowRevoked=false):VerifiedPolicy {
+    const verified=verifyPolicyResponse(workspace,response,this.policies.get(workspace));
+    this.policies.set(workspace,verified);
+    if(!currentMemberKey(verified.policy,this.options.keys.memberKeyId)){
       this.sessions.delete(workspace);
+      this.approvalReaders.delete(workspace);
       if(!allowRevoked)throw new Error("Workspace membership revoked");
     }
-    const verified={policy:derived,ops:structuredClone(response.ops)};
-    this.policies.set(workspace,verified);return structuredClone(verified);
+    return verified;
   }
   async create(op:PolicyOp):Promise<PolicyResponse> {
     const expected=applyPolicyOp(null,op);
     const actual=await this.principal<Policy>("/workspaces",{method:"POST",body:JSON.stringify(op)});
     if(!same(actual,expected))throw new Error("Invalid workspace creation response");
-    return this.pin(op.workspaceId,{policy:actual,ops:[op]});
+    return copyPolicy(this.pin(op.workspaceId,{policy:actual,ops:[op]}));
+  }
+  private async readPolicy(workspace:Hex):Promise<VerifiedPolicy> {
+    return this.pin(workspace,await this.workspace<PolicyResponse>(workspace,"/policy"));
   }
   async policy(workspace:Hex):Promise<PolicyResponse> {
-    return this.pin(workspace,await this.workspace<PolicyResponse>(workspace,"/policy"));
+    return copyPolicy(await this.readPolicy(workspace));
+  }
+  /** Refresh the complete, signed proposal and roster inventory for this member. */
+  approvalSnapshot(workspace:Hex):Promise<ApprovalSnapshot> {
+    let reader=this.approvalReaders.get(workspace);
+    if(!reader){
+      reader=new ApprovalSnapshotReader(workspace,
+        query=>this.workspace<ApprovalSnapshotPage>(workspace,`/approval-snapshot?${query}`),
+        ()=>{
+          const policy=this.policies.get(workspace);
+          if(policy&&!currentMemberKey(policy.policy,this.options.keys.memberKeyId))throw new Error("Workspace membership revoked");
+          return policy;
+        },
+        response=>this.pin(workspace,response),
+        ()=>this.stop.signal.throwIfAborted());
+      this.approvalReaders.set(workspace,reader);
+    }
+    return reader.read();
   }
   async append(op:PolicyOp):Promise<PolicyResponse> {
     const previous=await this.policy(op.workspaceId);
@@ -178,7 +199,7 @@ export class WorkspaceClient {
     if(!same(policy,expected))throw new Error("Invalid policy update response");
     // A successful self-replacement returns the exact signed state that revokes
     // this client. Accept that acknowledgement and discard its cached session.
-    return this.pin(op.workspaceId,{policy,ops:[...previous.ops,op]},true);
+    return copyPolicy(this.pin(op.workspaceId,{policy,ops:[...previous.ops,op]},true));
   }
   async createInvite(workspace:Hex,grant:InviteGrant,ciphertext:InviteCiphertext,policyOp?:PolicyOp):Promise<InviteBundle> {
     const bundle=await this.workspace<InviteBundle>(workspace,"/invites",{method:"POST",body:JSON.stringify({grant,ciphertext,...(policyOp?{policyOp}:{})})});
@@ -194,7 +215,7 @@ export class WorkspaceClient {
     const expected=applyPolicyOp(bundle.policy.policy,op);
     const actual=await this.principal<Policy>(`/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(op)});
     if(!same(actual,expected))throw new Error("Invalid invite acceptance response");
-    return this.pin(op.workspaceId,{policy:actual,ops:[...bundle.policy.ops,op]});
+    return copyPolicy(this.pin(op.workspaceId,{policy:actual,ops:[...bundle.policy.ops,op]}));
   }
   async submitPendingInvite(grantId:Hex,acceptance:InviteAcceptance):Promise<void> {
     bytes(grantId,16);const result=await this.principal<{status:string}>(`/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(acceptance)});
@@ -208,7 +229,7 @@ export class WorkspaceClient {
     bytes(grantId,16);const previous=await this.policy(op.workspaceId),expected=applyPolicyOp(previous.policy,op);
     const actual=await this.workspace<Policy>(op.workspaceId,`/invites/${grantId}/finalize`,{method:"POST",body:JSON.stringify(op)});
     if(!same(actual,expected))throw new Error("Invalid invite finalization response");
-    return this.pin(op.workspaceId,{policy:actual,ops:[...previous.ops,op]});
+    return copyPolicy(this.pin(op.workspaceId,{policy:actual,ops:[...previous.ops,op]}));
   }
   private verifyInviteBundle(bundle:InviteBundle,grantId:Hex):void {
     const policy=replayPolicy(bundle.policy.ops);
@@ -224,32 +245,48 @@ export class WorkspaceClient {
     if(new Set(envelopes.map(e=>`${e.kind}:${e.epoch}`)).size!==envelopes.length)throw new Error("Duplicate envelope response");
     return envelopes;
   }
-  private verifyRow(workspace:Hex,row:RecordRow,policy:PolicyResponse,recordId?:Hex):void {
+  private verifyRow(workspace:Hex,row:RecordRow,policy:VerifiedPolicy,recordId?:Hex):void {
     uint(row.changeSequence,53,1);
-    if(row.record.workspaceId!==workspace||(recordId!==undefined&&row.record.recordId!==recordId)||!verifyRecord(row.record,policyAuthorCheck(policy.ops)))
+    if(row.record.workspaceId!==workspace||(recordId!==undefined&&row.record.recordId!==recordId)||!verifyRecord(row.record,verifiedAuthor(policy)))
       throw new Error("Invalid workspace record or author policy");
   }
   async record(workspace:Hex,id:Hex):Promise<RecordRow> {
-    bytes(id,32);let policy=await this.policy(workspace);
+    bytes(id,32);let policy=await this.readPolicy(workspace);
     const row=await this.workspace<RecordRow>(workspace,`/records/${id}`);
-    if(row.record.authorPolicyVersion>policy.policy.policyVersion)policy=await this.policy(workspace);
+    if(row.record.authorPolicyVersion>policy.policy.policyVersion)policy=await this.readPolicy(workspace);
     this.verifyRow(workspace,row,policy,id);return row;
   }
-  async records(workspace:Hex,since?:string,type?:RecordType):Promise<RecordPage> {
-    let policy=await this.policy(workspace);const query=new URLSearchParams();
+  async records(workspace:Hex,since?:string,type?:RecordType,policyHead?:Hex):Promise<RecordPage> {
+    // A caller already synchronizing a signed log can reuse its verified head.
+    // The record request still authenticates live membership, and records from
+    // a later policy force another signed-log read before verification.
+    const pinned=this.policies.get(workspace);
+    let policy=pinned && pinned.policy.headHash===policyHead
+      && currentMemberKey(pinned.policy,this.options.keys.memberKeyId) ? pinned : await this.readPolicy(workspace);
+    const query=new URLSearchParams();
     if(since)query.set("since",since);if(type)query.set("type",type);
     const page=await this.workspace<RecordPage>(workspace,`/records?${query}`);
     if(!Array.isArray(page.records)||page.records.length>100||typeof page.nextCursor!=="string"||page.nextCursor.length>512||typeof page.hasMore!=="boolean")throw new Error("Invalid workspace record page");
-    if(page.records.some(row=>row.record.authorPolicyVersion>policy.policy.policyVersion))policy=await this.policy(workspace);
+    if(page.records.some(row=>row.record.authorPolicyVersion>policy.policy.policyVersion))policy=await this.readPolicy(workspace);
     let last=0;const seen=new Set<string>();
     for(const row of page.records){this.verifyRow(workspace,row,policy);if(row.changeSequence<=last||seen.has(row.record.recordId)||(type&&row.record.type!==type))throw new Error("Invalid sync ordering or type");last=row.changeSequence;seen.add(row.record.recordId);}
     if(page.hasMore&&(!page.records.length||page.nextCursor===since))throw new Error("Workspace sync did not advance");
     return page;
   }
-  async put(record:EncryptedRecord,previousRevision:number):Promise<RecordRow> {
-    uint(previousRevision);const policy=await this.policy(record.workspaceId);
-    if(record.authorKeyId!==this.options.keys.memberKeyId||!verifyRecord(record,policyAuthorCheck(policy.ops)))throw new Error("Invalid record write authority");
-    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}`,{method:"PUT",headers:{"If-Match":String(previousRevision)},body:JSON.stringify(record)});
+  async put(record:EncryptedRecord,previousRevision:number,options:{expectedApprovalSequence?:number}={}):Promise<RecordRow> {
+    uint(previousRevision);
+    const headers:Record<string,string>={"If-Match":String(previousRevision)};
+    let policy:VerifiedPolicy|undefined;
+    if(options.expectedApprovalSequence!==undefined){
+      headers["X-Mirage-Approval-Sequence"]=String(uint(options.expectedApprovalSequence));
+      // The snapshot has already verified the log. The server checks current
+      // policy/epoch and the sequence under the same lock as claim insertion.
+      policy=this.policies.get(record.workspaceId);
+    }
+    policy??=await this.readPolicy(record.workspaceId);
+    if(!currentMemberKey(policy.policy,this.options.keys.memberKeyId))throw new Error("Workspace membership revoked");
+    if(record.authorKeyId!==this.options.keys.memberKeyId||!verifyRecord(record,verifiedAuthor(policy)))throw new Error("Invalid record write authority");
+    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}`,{method:"PUT",headers,body:JSON.stringify(record)});
     this.verifyRow(record.workspaceId,row,policy,record.recordId);
     if(!same(row.record,record))throw new Error("Record write returned a different revision");return row;
   }

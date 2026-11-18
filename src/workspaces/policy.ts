@@ -5,6 +5,7 @@ import { envelopeInfo, type KeyEnvelope } from "./hpke";
 import { linkedKeyBranches, verifyIdentityLink, verifyIdentityRotation, type SignedIdentityLink, type SignedIdentityRotation } from "./identity";
 import { type MemberKeys } from "./keys";
 import { type AuthorPolicyCheck } from "./records";
+import { recordAuthorsAtVersion } from "./record-authors";
 import { verifyEd25519 } from "./signatures";
 
 export const CAPS = { PROPOSE:1, VOTE:2, EXECUTE:4, WRITE:8, ALL:15 } as const;
@@ -370,13 +371,11 @@ export function replayPolicy(ops: readonly PolicyOp[]): Policy {
 
 /** Verify the whole log before allowing historical ciphertext authors. */
 export function policyAuthorCheck(ops: readonly PolicyOp[]): AuthorPolicyCheck {
-  const history = new Map<number,Policy>(); let policy: Policy | null = null;
-  for (const op of ops) { policy = applyPolicyOp(policy,op); history.set(policy.policyVersion,policy); }
-  return (header,capability) => {
-    const at = history.get(header.authorPolicyVersion);
-    if (!at || at.workspaceId !== header.workspaceId || header.keyEpoch > at.keyEpoch) return false;
-    const author = currentMemberKey(at,header.authorKeyId);
-    return !!author && (author.member.caps & capability) === capability && at.envelopes.some(e =>
-      e.recipientKeyId === header.authorKeyId && e.kind === "content" && e.epoch === header.keyEpoch);
-  };
+  const history: AuthorPolicyCheck[] = [];
+  let policy: Policy | null = null;
+  for (const op of ops) {
+    policy = applyPolicyOp(policy, op);
+    history.push(recordAuthorsAtVersion(policy));
+  }
+  return (header, capability) => history[header.authorPolicyVersion - 1]?.(header, capability) === true;
 }

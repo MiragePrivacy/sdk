@@ -3,7 +3,7 @@ import {ApiError} from "../errors.js";
 import {canonicalJson,type Json} from "./encoding";
 import {WorkspaceClient,type PolicyResponse,type RecordRow} from "./client";
 import {HistoryConflictError,completedHistory,historyRecordId,mergeCompletedHistory,parseCompletedHistory,type CompletedHistory,type LocalHistoryRecord} from "./history";
-import {openRecord,sealRecord} from "./records";
+import {openRecord,sealRecord,type AuthorPolicyCheck} from "./records";
 import {policyAuthorCheck} from "./policy";
 import type {MemberKeys} from "./keys";
 
@@ -30,10 +30,10 @@ export interface HistorySyncOptions {
 /** Completed-history uploads only. Durable enqueue/retry is supplied by the frontend outbox. */
 export class HistorySync {
   constructor(private readonly options:HistorySyncOptions){}
-  private async open(row:RecordRow,policy:PolicyResponse,keys:ReadonlyMap<number,Uint8Array>):Promise<CompletedHistory> {
+  private async open(row:RecordRow,authorize:AuthorPolicyCheck,keys:ReadonlyMap<number,Uint8Array>):Promise<CompletedHistory> {
     if(row.record.type!=="execution_event")throw new Error("History record has a different type");
     const key=keys.get(row.record.keyEpoch);if(!key)throw new Error("History epoch is not granted");
-    const body=parseCompletedHistory(await openRecord(row.record,key,policyAuthorCheck(policy.ops)));
+    const body=parseCompletedHistory(await openRecord(row.record,key,authorize));
     if(historyRecordId(body.chainId,body.deployTxHash)!==row.record.recordId)throw new Error("History import ID does not match deployment");
     return body;
   }
@@ -52,7 +52,7 @@ export class HistorySync {
         const currentKey=keys.get(policy.policy.keyEpoch);if(!currentKey)throw new Error("Current workspace content key unavailable");
         let body=original;
         if(existing) {
-          const remote=await this.open(existing,policy,keys);
+          const remote=await this.open(existing,policyAuthorCheck(policy.ops),keys);
           try{body=mergeCompletedHistory(remote,original);}catch(error){
             if(error instanceof HistoryConflictError)throw new HistoryUploadConflict(id,original,remote);
             throw error;
@@ -72,16 +72,20 @@ export class HistorySync {
     const {client,workspaceId}=this.options;
     const policy=await client.policy(workspaceId);const keys=await this.options.loadKeys(policy);
     const grantedEpochs=[...keys.keys()].sort((a,b)=>a-b);const saved=await store.checkpoint();
+    let policyHead=policy.policy.headHash;
     // Newly granted history must be visited even if earlier ciphertext was skipped.
     let cursor=grantedEpochs.some(epoch=>!saved.grantedEpochs.includes(epoch))?undefined:saved.cursor;
     for(let pageCount=0;pageCount<1000;pageCount++) {
-      const page=await client.records(workspaceId,cursor,"execution_event");
+      const page=await client.records(workspaceId,cursor,"execution_event",policyHead);
       // A concurrent policy update may have introduced authors or new epochs.
       const current=await client.policy(workspaceId);const currentKeys=await this.options.loadKeys(current);
+      policyHead=current.policy.headHash;
       const records:SyncedHistory[]=[];
+      let authorize:AuthorPolicyCheck|undefined;
       for(const row of page.records) {
         if(!currentKeys.has(row.record.keyEpoch))continue;
-        records.push({recordId:row.record.recordId,revision:row.record.revision,body:await this.open(row,current,currentKeys)});
+        authorize??=policyAuthorCheck(current.ops);
+        records.push({recordId:row.record.recordId,revision:row.record.revision,body:await this.open(row,authorize,currentKeys)});
       }
       await store.commit(records,{cursor:page.nextCursor,grantedEpochs});cursor=page.nextCursor;
       if(!page.hasMore)return;
