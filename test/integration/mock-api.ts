@@ -3,7 +3,7 @@
  *
  * Implements:
  *   GET  /           — health check
- *   POST /obfuscate_escrow — returns real escrow bytecode (unobfuscated)
+ *   POST /camouflage_escrow — returns real escrow bytecode (uncamouflaged)
  *   POST /pricing/quote — returns an exact escrow deployment quote
  *   POST /compliance/screen — returns a test-only address screening receipt
  *   POST /execution/approve — returns a quote-bound mock execution approval
@@ -109,7 +109,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/obfuscate_escrow") {
+    if (req.method === "POST" && req.url === "/camouflage_escrow") {
       let body = "";
       req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
       req.on("end", () => {
@@ -126,13 +126,13 @@ function createServer(port: number, nomadUrl?: string): http.Server {
 
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
-            obfuscated_bytecode: bytecode,
+            camouflaged_bytecode: bytecode,
             original_size: size,
-            obfuscated_size: size,
+            camouflaged_size: size,
             size_increase_percentage: 0,
             gas_analysis: {
               original_gas_estimate: 1_200_000,
-              obfuscated_gas_estimate: 1_234_567,
+              camouflaged_gas_estimate: 1_234_567,
               gas_overhead_percentage: 2.88,
               function_gas: null,
             },
@@ -147,7 +147,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
             selector_mapping: null,
           }));
         } catch (err) {
-          console.error("[mock-api] obfuscate_escrow error:", err);
+          console.error("[mock-api] camouflage_escrow error:", err);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: String(err) }));
         }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchApiHealth,
   fetchComplianceApproval,
-  fetchObfuscation,
+  fetchCamouflage,
   fetchPricingQuote,
 } from "../src/internal/api.js";
 import { ApiError } from "../src/errors.js";
@@ -16,19 +16,19 @@ const DEPLOY_HASH = `0x${"22".repeat(32)}` as `0x${string}`;
 
 beforeEach(() => vi.restoreAllMocks());
 
-describe("fetchObfuscation", () => {
+describe("fetchCamouflage", () => {
   it("exposes the API-simulated deployment gas units", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        obfuscated_bytecode: "0x6000",
+        camouflaged_bytecode: "0x6000",
         original_size: 2,
-        obfuscated_size: 2,
-        gas_analysis: { obfuscated_gas_estimate: 1_234_567 },
+        camouflaged_size: 2,
+        gas_analysis: { camouflaged_gas_estimate: 1_234_567 },
       }),
     }) as any;
 
-    await expect(fetchObfuscation("https://api.test", "batch")).resolves.toMatchObject({
+    await expect(fetchCamouflage("https://api.test", "batch")).resolves.toMatchObject({
       deploymentGasEstimate: 1_234_567n,
     });
   });

@@ -276,9 +276,9 @@ export async function withdrawFromEscrow(params: {
     functionName: "cancelAndWithdraw",
     args: [],
   });
-  const obfuscatedSelector = selectorMapping?.[standardData.slice(0, 10)];
-  const data = obfuscatedSelector
-    ? (`${obfuscatedSelector}${standardData.slice(10)}` as `0x${string}`)
+  const camouflagedSelector = selectorMapping?.[standardData.slice(0, 10)];
+  const data = camouflagedSelector
+    ? (`${camouflagedSelector}${standardData.slice(10)}` as `0x${string}`)
     : standardData;
   const hash = await walletClient.sendTransaction({
     account,
