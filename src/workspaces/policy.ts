@@ -4,7 +4,7 @@ import { bytes, canonicalJson, uint, utf8, type Json } from "./encoding";
 import { envelopeInfo, type KeyEnvelope } from "./hpke";
 import { linkedKeyBranches, verifyIdentityLink, verifyIdentityRotation, type SignedIdentityLink, type SignedIdentityRotation } from "./identity";
 import { type MemberKeys } from "./keys";
-import { type AuthorPolicyCheck } from "./records";
+import { type AuthorPolicyCheck, type Realm } from "./records";
 import { recordAuthorsAtVersion } from "./record-authors";
 import { verifyEd25519 } from "./signatures";
 
@@ -67,9 +67,13 @@ export interface InviteAcceptance {
   envelopes: KeyEnvelope[];
   inviteSignature: Hex;
 }
+/** ASCII "mirage-support" padded with two zero bytes. */
+export const SUPPORT_MEMBER_ID = "0x6d69726167652d737570706f72740000" as Hex;
 export interface PolicyPayloads {
   create: { memberId:Hex; key:InitialKey; adminPublicKey:Hex; personal:boolean; envelopes:KeyEnvelope[] };
   add_member: { grant:InviteGrant; acceptance:InviteAcceptance; finalization?:{rotation:RotationMaterial;adminEnvelopes:KeyEnvelope[]} };
+  /** Support realm only: the owner grants the support key write access without an invite. */
+  add_support_member: { key:InitialKey; envelopes:KeyEnvelope[] };
   link_key: { memberId:Hex; generation:number; link:SignedIdentityLink; rotations?:SignedIdentityRotation[]; envelopes:KeyEnvelope[] };
   unlink_key: { memberId:Hex; keyId:Hex; rotation:RotationMaterial };
   remove_key: { memberId:Hex; keyId:Hex; rotation:RotationMaterial };
@@ -191,7 +195,7 @@ function appendEnvelopes(policy: Policy, supplied: KeyEnvelope[], expected: stri
 }
 
 /** Pure replay. Failed operations leave the caller's previous state untouched. */
-export function applyPolicyOp(previous: Policy | null, input: PolicyOp): Policy {
+export function applyPolicyOp(previous: Policy | null, input: PolicyOp, realm: Realm = "workspaces"): Policy {
   const op = structuredClone(input);
   const hash = policyOpHash(op);
   requireCondition(verifyEd25519(op.signature,hash,op.signerKeyId),"actor signature");
@@ -212,6 +216,20 @@ export function applyPolicyOp(previous: Policy | null, input: PolicyOp): Policy 
   requireCondition(previous !== null,"missing create");
   requireCondition(op.workspaceId === previous.workspaceId && op.policyVersion === previous.policyVersion + 1 && op.prevOpHash === previous.headHash,"stale or forked head");
   const policy = structuredClone(previous);
+  if (op.kind === "add_support_member") {
+    requireCondition(realm === "support","support members exist only in the support realm");
+    fields(op.payload,["key","envelopes"]);
+    const p = op.payload; initialKey(p.key);
+    const owner = currentMemberKey(previous,op.signerKeyId);
+    requireCondition(owner?.key.holdsAdmin && op.adminSignature !== null && verifyEd25519(op.adminSignature,hash,previous.adminPublicKey),"current owner and admin signature required");
+    requireCondition(!previous.members.some(member => member.memberId === SUPPORT_MEMBER_ID),"member already appeared in workspace");
+    ensureNewKey(previous,p.key.memberKeyId);
+    policy.members.push({memberId:SUPPORT_MEMBER_ID,caps:CAPS.WRITE,addedAtVersion:op.policyVersion,removedAtVersion:null,voteInvalidatedAtVersion:0,
+      keys:[{...p.key,holdsAdmin:false,addedAtVersion:op.policyVersion,removedAtVersion:null}]});
+    // The new key receives exactly the content epochs granted to the signing key.
+    appendEnvelopes(policy,p.envelopes,previous.envelopes.filter(e => e.recipientKeyId === op.signerKeyId && e.kind === "content").map(e => `${p.key.memberKeyId}:content:${e.epoch}`));
+    policy.policyVersion = op.policyVersion; policy.headHash = hash; return policy;
+  }
   if (op.kind === "add_member") {
     fields(op.payload,["grant","acceptance",...(Object.hasOwn(op.payload,"finalization")?["finalization"]:[])]);
     const {grant,acceptance,finalization}=op.payload;
@@ -362,20 +380,20 @@ export function applyPolicyOp(previous: Policy | null, input: PolicyOp): Policy 
   return policy;
 }
 
-export function replayPolicy(ops: readonly PolicyOp[]): Policy {
+export function replayPolicy(ops: readonly PolicyOp[], realm: Realm = "workspaces"): Policy {
   requireCondition(ops.length > 0,"empty log");
   let policy: Policy | null = null;
-  for (const op of ops) policy = applyPolicyOp(policy,op);
+  for (const op of ops) policy = applyPolicyOp(policy,op,realm);
   return policy!;
 }
 
 /** Verify the whole log before allowing historical ciphertext authors. */
-export function policyAuthorCheck(ops: readonly PolicyOp[]): AuthorPolicyCheck {
+export function policyAuthorCheck(ops: readonly PolicyOp[], realm: Realm = "workspaces"): AuthorPolicyCheck {
   const history: AuthorPolicyCheck[] = [];
   let policy: Policy | null = null;
   for (const op of ops) {
-    policy = applyPolicyOp(policy, op);
-    history.push(recordAuthorsAtVersion(policy));
+    policy = applyPolicyOp(policy, op, realm);
+    history.push(recordAuthorsAtVersion(policy, realm));
   }
   return (header, capability) => history[header.authorPolicyVersion - 1]?.(header, capability) === true;
 }

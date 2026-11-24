@@ -4,10 +4,10 @@ import {ApiError} from "../errors.js";
 import {bytes,canonicalJson,randomBytes,randomId,uint,type Json} from "./encoding";
 import {WorkspaceClient,type PolicyResponse} from "./client";
 import {openKey,sealKey} from "./hpke";
-import {openRecord,sealRecord,type EncryptedRecord,type RecordType} from "./records";
+import {openRecord,sealRecord,type EncryptedRecord,type Realm,type RecordType} from "./records";
 import type {MemberKeys} from "./keys";
 import {linkedKeyBranches,createIdentityRotation,verifyIdentityRotation,type SignedIdentityRotation,type IdentityLinkState,type SignedIdentityLink} from "./identity";
-import {applyPolicyOp,currentMemberKey,policyAuthorCheck,signPolicyOp,ZERO_HASH,type InviteAcceptance,type InviteGrant,type PolicyOp,type Policy,type MemberKey,type RotationMaterial} from "./policy";
+import {applyPolicyOp,currentMemberKey,policyAuthorCheck,signPolicyOp,ZERO_HASH,type InitialKey,type InviteAcceptance,type InviteGrant,type PolicyOp,type Policy,type MemberKey,type RotationMaterial} from "./policy";
 import {verifiedAuthor,verifiedView,verifyPolicyResponse,type VerifiedPolicy} from "./verified-policy";
 
 /** Private workspace material lives only in this sign-in's memory. */
@@ -18,7 +18,7 @@ export class WorkspaceKeyring {
   private verified:VerifiedPolicy|null=null;
   private closed=false;
   private pending:Promise<void>=Promise.resolve();
-  constructor(readonly workspaceId:Hex,private readonly member:MemberKeys){}
+  constructor(readonly workspaceId:Hex,private readonly member:MemberKeys,readonly realm:Realm="workspaces"){}
   close():void {
     this.closed=true;for(const key of this.content.values())key.fill(0);this.content.clear();
     this.admin?.fill(0);this.admin=null;this.verified=null;
@@ -31,7 +31,7 @@ export class WorkspaceKeyring {
   }
   private async refresh(response:PolicyResponse):Promise<void> {
     if(this.closed)throw new Error("Workspace keyring closed");
-    const verified=verifyPolicyResponse(this.workspaceId,response,this.verified??undefined,"Invalid keyring policy");
+    const verified=verifyPolicyResponse(this.workspaceId,response,this.verified??undefined,"Invalid keyring policy",this.realm);
     if(verified===this.verified)return;
     const policy=verified.policy;
     const actor=currentMemberKey(policy,this.member.memberKeyId);
@@ -80,6 +80,17 @@ export class WorkspaceKeyring {
     return this.signOperation({workspaceId:this.workspaceId,policyVersion:policy.policyVersion+1,prevOpHash:policy.headHash,kind:"link_key",issuedAt:Math.floor(Date.now()/1000),signerKeyId:this.member.memberKeyId,
       payload:{memberId:actor.member.memberId,generation:peer.generation,link,...(rotations.length?{rotations}:{}),envelopes},signature:ZERO_HASH,adminSignature:null});
   }
+  /** Support realm: grants the support key every content epoch this sign-in holds. */
+  async prepareAddSupportMember(key:InitialKey):Promise<PolicyOp> {
+    if(this.closed||!this.verified||!this.admin)throw new Error("Workspace admin authority unavailable");
+    const policy=this.verified.policy;
+    const envelopes=await Promise.all(policy.envelopes.filter(envelope=>envelope.recipientKeyId===this.member.memberKeyId&&envelope.kind==="content").map(envelope=>{
+      const content=this.content.get(envelope.epoch);if(!content)throw new Error("Historical content key missing");
+      return sealKey({workspaceId:this.workspaceId,kind:"content",epoch:envelope.epoch},key.memberKeyId,key.kemPublicKey,content);
+    }));
+    return this.signOperation({workspaceId:this.workspaceId,policyVersion:policy.policyVersion+1,prevOpHash:policy.headHash,kind:"add_support_member",issuedAt:Math.floor(Date.now()/1000),signerKeyId:this.member.memberKeyId,
+      payload:{key:{memberKeyId:key.memberKeyId,kemPublicKey:key.kemPublicKey,generation:key.generation},envelopes},signature:ZERO_HASH,adminSignature:null});
+  }
   private async replacementMaterial(policy:Policy,recipients:MemberKey[],replaceAdmin:boolean):Promise<RotationMaterial> {
     const epoch=policy.keyEpoch+1;uint(epoch,32,1);
     const content=randomBytes(32),admin=replaceAdmin?randomBytes(32):null;
@@ -113,17 +124,19 @@ export class WorkspaceKeyring {
   async encryptRecord(type:RecordType,body:Json,recordId:Hex=randomId(32),revision=1):Promise<EncryptedRecord> {
     if(this.closed||!this.verified)throw new Error("Workspace keyring unavailable");
     const policy=this.verified.policy,key=this.content.get(policy.keyEpoch);if(!key)throw new Error("Current content key unavailable");
-    return sealRecord({workspaceId:this.workspaceId,recordId,type,revision,keyEpoch:policy.keyEpoch,authorKeyId:this.member.memberKeyId,authorPolicyVersion:policy.policyVersion},body,key,this.member.signingSeed);
+    return sealRecord({workspaceId:this.workspaceId,recordId,type,revision,keyEpoch:policy.keyEpoch,authorKeyId:this.member.memberKeyId,authorPolicyVersion:policy.policyVersion},body,key,this.member.signingSeed,this.realm);
   }
-  async decryptRecord(record:EncryptedRecord,response:PolicyResponse=this.verified!):Promise<Json> {
-    if(this.closed||!response)throw new Error("Workspace keyring unavailable");
+  /** Without `response`, authors are checked against the last loaded policy. */
+  async decryptRecord(record:EncryptedRecord,response?:PolicyResponse):Promise<Json> {
+    if(this.closed||!(response??this.verified))throw new Error("Workspace keyring unavailable");
     const key=this.content.get(record.keyEpoch);if(!key)throw new Error("Record epoch is not granted");
-    const trusted=verifiedView(response);
-    if(trusted)return openRecord(record,key,verifiedAuthor(trusted));
     const known=this.verified;
-    const matches=known && (known===response || (known.policy.headHash===response.policy.headHash &&
-      canonicalJson(known.ops as unknown as Json)===canonicalJson(response.ops as unknown as Json)));
-    return openRecord(record,key,matches?verifiedAuthor(known):policyAuthorCheck(response.ops));
+    if(!response)return openRecord(record,key,verifiedAuthor(known!),this.realm);
+    const trusted=verifiedView(response);
+    if(trusted?.realm===this.realm)return openRecord(record,key,verifiedAuthor(trusted),this.realm);
+    const matches=known && (known.policy.headHash===response.policy.headHash &&
+      canonicalJson(known.ops as unknown as Json)===canonicalJson(response.ops as unknown as Json));
+    return openRecord(record,key,matches?verifiedAuthor(known):policyAuthorCheck(response.ops,this.realm),this.realm);
   }
   async prepareContentRotation():Promise<PolicyOp> {
     const prepared=await this.prepareContentRotationWithKey();prepared.contentKey.fill(0);return prepared.op;
@@ -205,7 +218,7 @@ export class WorkspaceKeyring {
     if(op.kind==="unlink_key")needsAdmin=!!currentMemberKey(policy,op.payload.keyId)?.key.holdsAdmin;
     if(op.kind==="rotate_member")needsAdmin=!!currentMemberKey(policy,this.member.memberKeyId)?.key.holdsAdmin;
     if(needsAdmin&&!this.admin)throw new Error("Workspace admin authority unavailable");
-    const signed=signPolicyOp(op,this.member,needsAdmin?this.admin:null);applyPolicyOp(policy,signed);return signed;
+    const signed=signPolicyOp(op,this.member,needsAdmin?this.admin:null);applyPolicyOp(policy,signed,this.realm);return signed;
   }
 }
 
