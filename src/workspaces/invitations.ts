@@ -9,6 +9,7 @@ import type {MemberKeys} from "./keys";
 import {applyPolicyOp,inviteAcceptanceHash,inviteGrantHash,replayPolicy,signPolicyOp,ZERO_HASH,type InviteAcceptance,type InviteGrant,type PolicyOp} from "./policy";
 import {WorkspaceClient,type InviteBundle,type InviteCiphertext,type PendingInvite,type PolicyResponse} from "./client";
 import {WorkspaceKeyring} from "./personal";
+import type {Realm} from "./records";
 
 const ENCRYPTION_LABEL="mirage-invite-encryption-v1";
 const SIGNING_LABEL="mirage-invite-signing-v1";
@@ -61,7 +62,7 @@ export async function createWorkspaceInvite(input:{client:WorkspaceClient;keyrin
   let policy=input.keyring.policySnapshot(),rotation:PolicyOp|undefined,preparedContent:Uint8Array|undefined;
   if(policy.personal)throw new Error("Personal workspaces cannot invite members");
   if(input.history==="from_invitation"){
-    const prepared=await input.keyring.prepareContentRotationWithKey();rotation=prepared.op;preparedContent=prepared.contentKey;policy=applyPolicyOp(policy,rotation);
+    const prepared=await input.keyring.prepareContentRotationWithKey();rotation=prepared.op;preparedContent=prepared.contentKey;policy=applyPolicyOp(policy,rotation,input.keyring.realm);
   }
   const contentEpochs=input.history==="all"
     ? [...new Set(policy.envelopes.filter(envelope=>envelope.kind==="content").map(envelope=>envelope.epoch))].sort((a,b)=>a-b)
@@ -83,8 +84,8 @@ export async function createWorkspaceInvite(input:{client:WorkspaceClient;keyrin
   } finally {for(const key of content.values())key.fill(0);admin?.fill(0);secret.fill(0);}
 }
 
-export function verifyInviteBundle(bundle:InviteBundle):PolicyResponse {
-  const policy=replayPolicy(bundle.policy.ops);
+export function verifyInviteBundle(bundle:InviteBundle,realm:Realm="workspaces"):PolicyResponse {
+  const policy=replayPolicy(bundle.policy.ops,realm);
   if(canonicalJson(policy as unknown as Json)!==canonicalJson(bundle.policy.policy as unknown as Json))throw new Error("Invite policy does not match its signed log");
   const grant=bundle.grant;
   if(grant.workspaceId!==policy.workspaceId||grant.policyVersion!==policy.policyVersion||grant.adminEpoch!==policy.adminEpoch||grant.keyEpoch!==policy.keyEpoch)throw new Error("Invite is stale");
@@ -93,7 +94,7 @@ export function verifyInviteBundle(bundle:InviteBundle):PolicyResponse {
 }
 
 export async function acceptWorkspaceInvite(client:WorkspaceClient,keys:MemberKeys,grantId:Hex,secretHex:Hex):Promise<AcceptedInvite> {
-  const bundle=await client.invite(grantId);verifyInviteBundle(bundle);
+  const bundle=await client.invite(grantId);verifyInviteBundle(bundle,client.realm);
   const secret=bytes(secretHex,32),inviteSeed=derive(secret,SIGNING_LABEL);
   try {
     const payload=await decryptPayload(secret,bundle),grant=bundle.grant;

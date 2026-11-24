@@ -2263,5 +2263,1124 @@
       "signature": "0xa2c4bbd29b19da68add54c3346df6594e6f93d9527a8bad9cf06f7799de052ba2a61ba0503017811da9ad8ff70089174378cc69e25cde22fbd5ceb3b5e921e03"
     },
     "unlinkHash": "0xff398fceb6adff07fb49539a8a051341fddbd2ee088122cc1268c83682291569"
+  },
+  "support": {
+    "realm": "support",
+    "memberId": "0x6d69726167652d737570706f72740000",
+    "keys": [
+      {
+        "generation": 0,
+        "signingSeed": "0x6161616161616161616161616161616161616161616161616161616161616161",
+        "kemSecret": "0x6262626262626262626262626262626262626262626262626262626262626262",
+        "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+        "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c"
+      },
+      {
+        "generation": 1,
+        "signingSeed": "0x6363636363636363636363636363636363636363636363636363636363636363",
+        "kemSecret": "0x6464646464646464646464646464646464646464646464646464646464646464",
+        "memberKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+        "kemPublicKey": "0x6b3d57762f8badb69433f9c6d060f85f5e5c6b6803a816d141c075f63541ad10"
+      }
+    ],
+    "addSupportMember": {
+      "ops": [
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 1,
+          "prevOpHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "kind": "create",
+          "payload": {
+            "memberId": "0x41414141414141414141414141414141",
+            "key": {
+              "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+              "generation": 0
+            },
+            "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+            "personal": false,
+            "envelopes": [
+              {
+                "workspaceId": "0x35353535353535353535353535353535",
+                "kind": "content",
+                "epoch": 1,
+                "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "enc": "0x57abeccbacd51483ce84111191d452f09f2d0fb768cdeb8aae31766be2a5cd4a",
+                "ciphertext": "0x5a47a1303c35186c62bbca789c09f1ca462142ba5fa649dc957a7c1266cac479464bb2702710cf17c04e0ab1a90054c8"
+              },
+              {
+                "workspaceId": "0x35353535353535353535353535353535",
+                "kind": "admin",
+                "epoch": 1,
+                "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "enc": "0x0c7f110477da249b81236271ec085ef5260753149af25203ab876d202355872e",
+                "ciphertext": "0x7f77bee6cb5362569c8ac059aeb27f6965a33372e773bd82e92801e8bc84ac167c39438d2c9de052f457e13fde30acb1"
+              }
+            ]
+          },
+          "issuedAt": 1788999000,
+          "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "signature": "0x71111ec56ad0206561f6840743e43f1b1624e91afb03b3ab9c391f314982b9418bfef976d499bfda36eb950fa1d56caff5d8a80ef48b940b8f8d33fec4501109",
+          "adminSignature": "0xf44c8c4530d127eed9c914a35df1001370b01f67011acef618bf45428bd5b8cce28e5b5fbf641b0c07a36c8ca6f9d0b3336dbf941ed8cebd97323f2256e31209"
+        },
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 2,
+          "prevOpHash": "0xad08e717b0613a81468a1dbae05b2e31b93ceb1aa9b050cbfa83425b6033cbbc",
+          "kind": "rotate_content",
+          "payload": {
+            "rotation": {
+              "newEpoch": 2,
+              "newAdminPublicKey": null,
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                  "enc": "0x65ef7028f48b486c9bad17aedd1939d39e3d470cca22faddc74341732c7fa537",
+                  "ciphertext": "0x6d1cdebb3f9c981309a909299f09f141f49e769668fa6ba8924660670a3ed9cfa851a94ea9a30f400691955b43bebeb5"
+                }
+              ]
+            }
+          },
+          "issuedAt": 1788999001,
+          "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "signature": "0xab9aa82a8b1d59e0807e3e37544bc4559a6f8bfc9149d248af275c317457ccdc2a2da19825f7b8d45764206e977708c4b77037a975f7e3c17985d8dc4ad20e08",
+          "adminSignature": "0xd0433fcffb28032643c245d1d85be4acd03b8792bc679c6d3b2a69ed3602fbfb77d5d10e46475bbc481c0c842facd8149497e05951775061ae1ffad6cec4e009"
+        },
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 3,
+          "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+          "kind": "add_support_member",
+          "payload": {
+            "key": {
+              "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+              "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+              "generation": 0
+            },
+            "envelopes": [
+              {
+                "workspaceId": "0x35353535353535353535353535353535",
+                "kind": "content",
+                "epoch": 1,
+                "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+              },
+              {
+                "workspaceId": "0x35353535353535353535353535353535",
+                "kind": "content",
+                "epoch": 2,
+                "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+              }
+            ]
+          },
+          "issuedAt": 1788999002,
+          "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+          "signature": "0x2fa2ea30e009d5151db92a3b1a9afa58c88e59f49133d130b447b748f82a3805e736272c2e63c649316ce92988b8726ec02cda58d32a50ca5de6a37566ddc70b",
+          "adminSignature": "0x46c0f1be679a31e1a34ec233ef97648e889ba9f8a98317207d481dcc23b6e21fb821b6012b6e4c7d06584b4001d1e227167a208a96bc2b5c549c2d4ce215d204"
+        },
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 4,
+          "prevOpHash": "0x2200dc052c619938a9e1cc2c449dc7e54bcc6769f156299916cde1a39813380a",
+          "kind": "rotate_member",
+          "payload": {
+            "memberId": "0x6d69726167652d737570706f72740000",
+            "pointer": {
+              "oldKey": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+              "oldKem": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+              "newKey": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+              "newKem": "0x6b3d57762f8badb69433f9c6d060f85f5e5c6b6803a816d141c075f63541ad10",
+              "generation": 1,
+              "issuedAt": 1788999003,
+              "signatureOld": "0x50213b042676b2888bc21959e59b160f15eddd9aacb2debf16d759f019ccb523b75c58279c1702f46c9d85a97545e468fab448ca8766ce4ddbb67fe79f73030f",
+              "signatureNew": "0x26714c13d02ad677dd1dd4edc03658700c1b43e2dccaf1eec423fb3c8d752a2b7ef80ff51caa4d800003cb6de17df563942e5140139abb1f4f0a5a2249148001"
+            },
+            "rotation": {
+              "newEpoch": 3,
+              "newAdminPublicKey": null,
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 3,
+                  "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                  "enc": "0xe161e71f81d1a448668e11dd3bd1fc052ebd30c788630317d2b64143da9fb055",
+                  "ciphertext": "0x9c8f33ba047d8c3f3421ecad02a26b95132215419c60c58034533a3453d7b740b784f7df0008b928f6955a668c77abd8"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 3,
+                  "recipientKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+                  "enc": "0xf80e44977f38249f7da158928a47a95499ce554a820eb2cab25aec93b4259f0d",
+                  "ciphertext": "0x7e6188b268a43fc4988850ce9651f45755bf0e02363aa25d5a8b8e35b159eea0b189664b76401f4062e70896c9d5e0c0"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+                  "enc": "0x801b075357f15ccccd575e2181e8aaf4da471626752ebb5852bfaca502b1aa0e",
+                  "ciphertext": "0xdf97906a308854de09328e71f9221cea2eeb69ddeb63416679a0517895932e74dc5ef54d32e8069051877ffd592e9870"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+                  "enc": "0x42ea97470d15c82557b59d5b2b06887f6d1781f42fa902b35e4a81f77dc6e24f",
+                  "ciphertext": "0x1d7d8d6cd2ac4661b76d40f73982acbdc92c76df081ff6c0a1532d29a2b45917f4b766a1ffd38591a6a3174957b3afe0"
+                }
+              ]
+            }
+          },
+          "issuedAt": 1788999003,
+          "signerKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+          "signature": "0x06f747a286ff833b9f4047d611ee5455067117230106d191b03266db7e099f1ce8e8354d2dc0929981e964d4983bbf868d8c6bca3b1afdeccbf69fa8dba3bd07",
+          "adminSignature": null
+        }
+      ],
+      "states": [
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 1,
+          "headHash": "0xad08e717b0613a81468a1dbae05b2e31b93ceb1aa9b050cbfa83425b6033cbbc",
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "adminEpoch": 1,
+          "keyEpoch": 1,
+          "approvalThreshold": 0,
+          "pendingThreshold": null,
+          "personal": false,
+          "members": [
+            {
+              "memberId": "0x41414141414141414141414141414141",
+              "caps": 15,
+              "addedAtVersion": 1,
+              "removedAtVersion": null,
+              "voteInvalidatedAtVersion": 0,
+              "keys": [
+                {
+                  "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                  "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                  "generation": 0,
+                  "holdsAdmin": true,
+                  "addedAtVersion": 1,
+                  "removedAtVersion": null
+                }
+              ]
+            }
+          ],
+          "envelopes": [
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x57abeccbacd51483ce84111191d452f09f2d0fb768cdeb8aae31766be2a5cd4a",
+              "ciphertext": "0x5a47a1303c35186c62bbca789c09f1ca462142ba5fa649dc957a7c1266cac479464bb2702710cf17c04e0ab1a90054c8"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x0c7f110477da249b81236271ec085ef5260753149af25203ab876d202355872e",
+              "ciphertext": "0x7f77bee6cb5362569c8ac059aeb27f6965a33372e773bd82e92801e8bc84ac167c39438d2c9de052f457e13fde30acb1"
+            }
+          ]
+        },
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 2,
+          "headHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "adminEpoch": 1,
+          "keyEpoch": 2,
+          "approvalThreshold": 0,
+          "pendingThreshold": null,
+          "personal": false,
+          "members": [
+            {
+              "memberId": "0x41414141414141414141414141414141",
+              "caps": 15,
+              "addedAtVersion": 1,
+              "removedAtVersion": null,
+              "voteInvalidatedAtVersion": 0,
+              "keys": [
+                {
+                  "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                  "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                  "generation": 0,
+                  "holdsAdmin": true,
+                  "addedAtVersion": 1,
+                  "removedAtVersion": null
+                }
+              ]
+            }
+          ],
+          "envelopes": [
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x57abeccbacd51483ce84111191d452f09f2d0fb768cdeb8aae31766be2a5cd4a",
+              "ciphertext": "0x5a47a1303c35186c62bbca789c09f1ca462142ba5fa649dc957a7c1266cac479464bb2702710cf17c04e0ab1a90054c8"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x0c7f110477da249b81236271ec085ef5260753149af25203ab876d202355872e",
+              "ciphertext": "0x7f77bee6cb5362569c8ac059aeb27f6965a33372e773bd82e92801e8bc84ac167c39438d2c9de052f457e13fde30acb1"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x65ef7028f48b486c9bad17aedd1939d39e3d470cca22faddc74341732c7fa537",
+              "ciphertext": "0x6d1cdebb3f9c981309a909299f09f141f49e769668fa6ba8924660670a3ed9cfa851a94ea9a30f400691955b43bebeb5"
+            }
+          ]
+        },
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 3,
+          "headHash": "0x2200dc052c619938a9e1cc2c449dc7e54bcc6769f156299916cde1a39813380a",
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "adminEpoch": 1,
+          "keyEpoch": 2,
+          "approvalThreshold": 0,
+          "pendingThreshold": null,
+          "personal": false,
+          "members": [
+            {
+              "memberId": "0x41414141414141414141414141414141",
+              "caps": 15,
+              "addedAtVersion": 1,
+              "removedAtVersion": null,
+              "voteInvalidatedAtVersion": 0,
+              "keys": [
+                {
+                  "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                  "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                  "generation": 0,
+                  "holdsAdmin": true,
+                  "addedAtVersion": 1,
+                  "removedAtVersion": null
+                }
+              ]
+            },
+            {
+              "memberId": "0x6d69726167652d737570706f72740000",
+              "caps": 8,
+              "addedAtVersion": 3,
+              "removedAtVersion": null,
+              "voteInvalidatedAtVersion": 0,
+              "keys": [
+                {
+                  "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                  "generation": 0,
+                  "holdsAdmin": false,
+                  "addedAtVersion": 3,
+                  "removedAtVersion": null
+                }
+              ]
+            }
+          ],
+          "envelopes": [
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x57abeccbacd51483ce84111191d452f09f2d0fb768cdeb8aae31766be2a5cd4a",
+              "ciphertext": "0x5a47a1303c35186c62bbca789c09f1ca462142ba5fa649dc957a7c1266cac479464bb2702710cf17c04e0ab1a90054c8"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x0c7f110477da249b81236271ec085ef5260753149af25203ab876d202355872e",
+              "ciphertext": "0x7f77bee6cb5362569c8ac059aeb27f6965a33372e773bd82e92801e8bc84ac167c39438d2c9de052f457e13fde30acb1"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x65ef7028f48b486c9bad17aedd1939d39e3d470cca22faddc74341732c7fa537",
+              "ciphertext": "0x6d1cdebb3f9c981309a909299f09f141f49e769668fa6ba8924660670a3ed9cfa851a94ea9a30f400691955b43bebeb5"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+              "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+              "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+              "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+              "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+            }
+          ]
+        },
+        {
+          "workspaceId": "0x35353535353535353535353535353535",
+          "policyVersion": 4,
+          "headHash": "0xe1984c3a28fbd718bd4498f02648e06fecd9a3b496b0300a0320c702661e94e0",
+          "adminPublicKey": "0x43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+          "adminEpoch": 1,
+          "keyEpoch": 3,
+          "approvalThreshold": 0,
+          "pendingThreshold": null,
+          "personal": false,
+          "members": [
+            {
+              "memberId": "0x41414141414141414141414141414141",
+              "caps": 15,
+              "addedAtVersion": 1,
+              "removedAtVersion": null,
+              "voteInvalidatedAtVersion": 0,
+              "keys": [
+                {
+                  "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                  "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                  "generation": 0,
+                  "holdsAdmin": true,
+                  "addedAtVersion": 1,
+                  "removedAtVersion": null
+                }
+              ]
+            },
+            {
+              "memberId": "0x6d69726167652d737570706f72740000",
+              "caps": 8,
+              "addedAtVersion": 3,
+              "removedAtVersion": null,
+              "voteInvalidatedAtVersion": 0,
+              "keys": [
+                {
+                  "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                  "generation": 0,
+                  "holdsAdmin": false,
+                  "addedAtVersion": 3,
+                  "removedAtVersion": 4
+                },
+                {
+                  "memberKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+                  "kemPublicKey": "0x6b3d57762f8badb69433f9c6d060f85f5e5c6b6803a816d141c075f63541ad10",
+                  "generation": 1,
+                  "holdsAdmin": false,
+                  "addedAtVersion": 4,
+                  "removedAtVersion": null
+                }
+              ]
+            }
+          ],
+          "envelopes": [
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x57abeccbacd51483ce84111191d452f09f2d0fb768cdeb8aae31766be2a5cd4a",
+              "ciphertext": "0x5a47a1303c35186c62bbca789c09f1ca462142ba5fa649dc957a7c1266cac479464bb2702710cf17c04e0ab1a90054c8"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "admin",
+              "epoch": 1,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x0c7f110477da249b81236271ec085ef5260753149af25203ab876d202355872e",
+              "ciphertext": "0x7f77bee6cb5362569c8ac059aeb27f6965a33372e773bd82e92801e8bc84ac167c39438d2c9de052f457e13fde30acb1"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0x65ef7028f48b486c9bad17aedd1939d39e3d470cca22faddc74341732c7fa537",
+              "ciphertext": "0x6d1cdebb3f9c981309a909299f09f141f49e769668fa6ba8924660670a3ed9cfa851a94ea9a30f400691955b43bebeb5"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+              "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+              "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+              "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+              "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 1,
+              "recipientKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+              "enc": "0x801b075357f15ccccd575e2181e8aaf4da471626752ebb5852bfaca502b1aa0e",
+              "ciphertext": "0xdf97906a308854de09328e71f9221cea2eeb69ddeb63416679a0517895932e74dc5ef54d32e8069051877ffd592e9870"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 2,
+              "recipientKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+              "enc": "0x42ea97470d15c82557b59d5b2b06887f6d1781f42fa902b35e4a81f77dc6e24f",
+              "ciphertext": "0x1d7d8d6cd2ac4661b76d40f73982acbdc92c76df081ff6c0a1532d29a2b45917f4b766a1ffd38591a6a3174957b3afe0"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 3,
+              "recipientKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+              "enc": "0xe161e71f81d1a448668e11dd3bd1fc052ebd30c788630317d2b64143da9fb055",
+              "ciphertext": "0x9c8f33ba047d8c3f3421ecad02a26b95132215419c60c58034533a3453d7b740b784f7df0008b928f6955a668c77abd8"
+            },
+            {
+              "workspaceId": "0x35353535353535353535353535353535",
+              "kind": "content",
+              "epoch": 3,
+              "recipientKeyId": "0xa7f6dfaf8f38b89ba8ce649b594f91e4d01fdc57f9c9493df43b5e50a9987367",
+              "enc": "0xf80e44977f38249f7da158928a47a95499ce554a820eb2cab25aec93b4259f0d",
+              "ciphertext": "0x7e6188b268a43fc4988850ce9651f45755bf0e02363aa25d5a8b8e35b159eea0b189664b76401f4062e70896c9d5e0c0"
+            }
+          ]
+        }
+      ],
+      "hashes": [
+        "0xad08e717b0613a81468a1dbae05b2e31b93ceb1aa9b050cbfa83425b6033cbbc",
+        "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+        "0x2200dc052c619938a9e1cc2c449dc7e54bcc6769f156299916cde1a39813380a",
+        "0xe1984c3a28fbd718bd4498f02648e06fecd9a3b496b0300a0320c702661e94e0"
+      ],
+      "rejected": [
+        {
+          "name": "missing_admin_signature",
+          "after": 2,
+          "reason": "admin signature required",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x2fa2ea30e009d5151db92a3b1a9afa58c88e59f49133d130b447b748f82a3805e736272c2e63c649316ce92988b8726ec02cda58d32a50ca5de6a37566ddc70b",
+            "adminSignature": null
+          }
+        },
+        {
+          "name": "wrong_admin_signature",
+          "after": 2,
+          "reason": "invalid workspace signature",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x2fa2ea30e009d5151db92a3b1a9afa58c88e59f49133d130b447b748f82a3805e736272c2e63c649316ce92988b8726ec02cda58d32a50ca5de6a37566ddc70b",
+            "adminSignature": "0x34cd6eec9eb4bef8ecba9f73aba8429241fc13c00b91b687b8486879dd4fe67199befc14dfc73903325e82fb6170407785dfc6011a0822afa855acebff7bfe05"
+          }
+        },
+        {
+          "name": "tampered_key_not_resigned",
+          "after": 2,
+          "reason": "invalid workspace signature",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 1
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x2fa2ea30e009d5151db92a3b1a9afa58c88e59f49133d130b447b748f82a3805e736272c2e63c649316ce92988b8726ec02cda58d32a50ca5de6a37566ddc70b",
+            "adminSignature": "0x46c0f1be679a31e1a34ec233ef97648e889ba9f8a98317207d481dcc23b6e21fb821b6012b6e4c7d06584b4001d1e227167a208a96bc2b5c549c2d4ce215d204"
+          }
+        },
+        {
+          "name": "payload_with_member_id_and_caps",
+          "after": 2,
+          "reason": "invalid policy payload",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ],
+              "memberId": "0x6d69726167652d737570706f72740000",
+              "caps": 8
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0xf1ac1f9afa0022379c7a7453a237e40d7c80c5fc8244288ab43a5ae74b903cfdc23b692453c27bdda4ef90afa857d0a6e8de35cf054e598870893bc6d274690a",
+            "adminSignature": "0x3f50c11bf67ca8dd943a277c45463abb2b17cd5345ab5778d8b52b6034f7aa5c004622117cea77730358ad3ce2731a563d3471661c27b4d4952b0c6c81f41d06"
+          }
+        },
+        {
+          "name": "add_member_kind",
+          "after": 2,
+          "reason": "invalid policy payload",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0xc83ca4a6e3f507fba7fe17f7b5f842b9e0364d37ab279bdbfe3e28ef5e44dbcb3068075761ad6a60d2df822af1a05c92e2807a2234761d24ffc4380cd0f6b100",
+            "adminSignature": "0x085697ca3d96438c5212a361ceca4713aa7fca1211518e9c90c7fc5ec5139da2a18abb13b6a43aac0d464856e5943662f24169eb87d46022b4326da732b4f903"
+          }
+        },
+        {
+          "name": "admin_envelope_included",
+          "after": 2,
+          "reason": "incomplete envelope set",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "admin",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x83bb95076dd31485a48b795c77905301d9106bc94477aed9a8a443abfc34f379",
+                  "ciphertext": "0xec821ad98f057ff158c34ff37d298e785565b9c6e8f4b1c38b2a3e327d6a356ffb597bcf16948b627cfe834ecbb47d0a"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x4731c7ff299e152bdac549fc3460cfa7c6e56a4aa243752a25939fa62518487afc8f18a1c250d556a0de72c8e53d3e24cc1d1eaa5c772f150cf7aa419ea05309",
+            "adminSignature": "0x1ffdf1f3ac7bada3ba0eef9dac5d0e0edd2e7cd9d55652e7c510d1c66f9d08723b8a9fe76fac2fe36d52b7054d1ce920caf6ce338bfab58d7c546fb26b708402"
+          }
+        },
+        {
+          "name": "missing_history_envelope",
+          "after": 2,
+          "reason": "incomplete envelope set",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0xb6263fd2ab94ab6b4d68e6cd9c94c33aa4405d172078e062ed47a91d3ad1160aa1211f83592447094ada6ef179f0aab8f2781b2c0306309118c7e5b9db5f5a0c",
+            "adminSignature": "0xbd06cc486c6d66db8aa6eb0a184242e2d3b0ee4102c4d29b98130ca6c987d415c4db9e8dda4c6f648ae1c64611684b49d0d33facbfbc39f458eb15e230e8fe05"
+          }
+        },
+        {
+          "name": "duplicate_envelope",
+          "after": 2,
+          "reason": "duplicate envelope",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x00bdb27c19b0d1959599c17664866272f1c1c1d3b0f64374228aa541749c2d794e03476a097eaf973ec2e78f749e8257fbe122814abe59be86ea5edb0842e806",
+            "adminSignature": "0x9cc394275a70aea5eccd0a85fc8a85a22e9b41b405902ee69894515b2d4736ee964e940f919056dd63ff7021393e327b59d3f055419b7bd083168983cb004c06"
+          }
+        },
+        {
+          "name": "envelope_for_other_recipient",
+          "after": 2,
+          "reason": "wrong envelope recipients or epochs",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x7017ef61c4bee94e8c0a2f7060748ce4800d14e9db52043adc9e0f4a5e113e8a8082abef811af8f2d304ed046d8b6db5de3173387a0398dabbc643020af17801",
+            "adminSignature": "0x5d12621dd6206eca09334b6bf950c94804f188c938256cb67b96cfff4fe1f35e698ed39db02e1a6df5c82f41dfea71daf02c573728442b066e779b87961e6501"
+          }
+        },
+        {
+          "name": "envelope_for_other_workspace",
+          "after": 2,
+          "reason": "envelope workspace mismatch",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x36363636363636363636363636363636",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x5cfea254b09a81813ffd20a8ce723146950a2c7d0c8c5a33b03a1f5486545832f3a824b09bfd5316155419668c1c2c73a9bb9e9a834e4e0bdbe854997c27470d",
+            "adminSignature": "0x6f3bb93ff3fe546b57fb16661e5dce961b9ac80939fc7551aa2b8cb393313e15695a4ea054dc4b9a2d47ac0638391830622797b92385420b6e364ffc89369502"
+          }
+        },
+        {
+          "name": "key_reused",
+          "after": 2,
+          "reason": "key already appeared in workspace",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+                "kemPublicKey": "0x6d8cf82937d49d014a2c9a71d147af6f71a0c13a02951a75e8df610c07f39c2f",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0xe1652903098a032ea746301e33e4d6fd838807dabdcc46a2ba5d88ac5538b0ac12796a88939710646aff3583fa3014ab49ace5a381368d6229a15467b909280e",
+            "adminSignature": "0x585dcfa297907223246a44cd11856052e22917946f0fd76bf70f3c5f947211dd9e92d0e070026464e6388c85a2cf7a40284c45ac3826118a929b7b4c488cc306"
+          }
+        },
+        {
+          "name": "unknown_payload_field",
+          "after": 2,
+          "reason": "invalid policy payload",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x4a4f8ccde198d66e99b4c014418a3223ce256c98900ae4a6811fd10f7eb84c2c",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ],
+              "holdsAdmin": true
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0xe086dde7c4c4230776bb8d41049c4cc469dd0b5bea5d57ba772f236fdaba9af74549dd615417a109d1fa734b2dfae8920f59b27a1d2db97079329a010eb73e0f",
+            "adminSignature": "0x4ab657d2c4c1a86b3091b62d80b8ace9e0d2bc5b6e9a2dc3c8228f16ead4ba13cd99b87108c829df2a6eec06b4947636943ca9f1bd9b44237d5e51ad1df54f0c"
+          }
+        },
+        {
+          "name": "non_contributory_kem_key",
+          "after": 2,
+          "reason": "non-contributory KEM key",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 3,
+            "prevOpHash": "0xec918bd8e2324d9f9dc032f04e54aabf94011085cbb890ff6c9449ca2ae8e613",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                "kemPublicKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0x13a1709e2c2f8e3646904ccaeb2e5ef1be4481acbdb2ae6a2e87fabad2e3ef55",
+                  "ciphertext": "0x87951f6deab7f0620d98db6709a109d9f9aa867aad2f0acb89f57d5d13de0509c35f4886da013e9f2d1115def162ee93"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+                  "enc": "0xcb2117c1ba640a3daa9a83c517747ee51a4d72ce17b36642618f554032176e4f",
+                  "ciphertext": "0xc1a4abc43f3a7bbb25dac9eceec5a2bd042c4d6d87437e1242396f8b846fc52bd6cc2c01c9b2c14ee6f3e4d09b240641"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x0d3cd527f16781cb416366bddcbd3815bdbcdb343ec8437b6d4576134b1134bee73c7e12368a19c7c287319ebd8af8596f4a0077e1166788c71ed204bbe29005",
+            "adminSignature": "0x55b0ef266416fc1c9821fbbe9e1828fe8108dcefafeacdc7bfd44e8eafa983d697abb0b8c912cffc6547cf3d5a06c6ad5d20a6748c1d62df55ad8c74fb28f907"
+          }
+        },
+        {
+          "name": "signer_without_admin",
+          "after": 3,
+          "reason": "owner required",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 4,
+            "prevOpHash": "0x2200dc052c619938a9e1cc2c449dc7e54bcc6769f156299916cde1a39813380a",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                "kemPublicKey": "0xcd48d0681ea73f09a00f83859bd10880df56822019cda3c883e0d1514e35b106",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                  "enc": "0x1881bf8a946d333bcb6479038e16c592c3cf5a265faa3d1994763eca24e6020e",
+                  "ciphertext": "0xe734952cdefa6ac0c38b348ad1ce9f0074ce32b0bb669868a281f0b0a30f8f4a2c22fca02348039734c2837a08665e20"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                  "enc": "0xf87550da2c0c51582539e874d91c25a4998170f0bf84240d8d60a06ebe916422",
+                  "ciphertext": "0x206d0c112d1f176125d7f51b5ada784e28f9e299079f356d95b471400d6a4627ced23bd9245983722d60a3974f4a8ef1"
+                }
+              ]
+            },
+            "issuedAt": 1788999003,
+            "signerKeyId": "0xaf06a3e3291714e4f356c19c9b15cd1951ec6e6662aa77be07547f289383341d",
+            "signature": "0xb24745fecb689efd6982ce18568f9dd0e156c50f4fa4e913fce7cdeb3c4ae23b5ec2faa9c9cb9c7c743e416705eaae8ef6a16a754c56a05d1310f47e29aed107",
+            "adminSignature": "0x83ad6c8fdacc221294a2148b04cbfe7a9dd964734d5944206787416a918700929dfd1d87b7c0e89782a960c6fe253e5f66f62e4625e548c92487998954318e0b"
+          }
+        },
+        {
+          "name": "support_member_already_added",
+          "after": 3,
+          "reason": "member already appeared in workspace",
+          "op": {
+            "workspaceId": "0x35353535353535353535353535353535",
+            "policyVersion": 4,
+            "prevOpHash": "0x2200dc052c619938a9e1cc2c449dc7e54bcc6769f156299916cde1a39813380a",
+            "kind": "add_support_member",
+            "payload": {
+              "key": {
+                "memberKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                "kemPublicKey": "0xcd48d0681ea73f09a00f83859bd10880df56822019cda3c883e0d1514e35b106",
+                "generation": 0
+              },
+              "envelopes": [
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 1,
+                  "recipientKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                  "enc": "0x1881bf8a946d333bcb6479038e16c592c3cf5a265faa3d1994763eca24e6020e",
+                  "ciphertext": "0xe734952cdefa6ac0c38b348ad1ce9f0074ce32b0bb669868a281f0b0a30f8f4a2c22fca02348039734c2837a08665e20"
+                },
+                {
+                  "workspaceId": "0x35353535353535353535353535353535",
+                  "kind": "content",
+                  "epoch": 2,
+                  "recipientKeyId": "0xe2fe2a39b7326642827d6d82d497622cd6c297fe78270eaa436b01f086b6f3cb",
+                  "enc": "0xf87550da2c0c51582539e874d91c25a4998170f0bf84240d8d60a06ebe916422",
+                  "ciphertext": "0x206d0c112d1f176125d7f51b5ada784e28f9e299079f356d95b471400d6a4627ced23bd9245983722d60a3974f4a8ef1"
+                }
+              ]
+            },
+            "issuedAt": 1788999002,
+            "signerKeyId": "0x52de971c5e7c97a487ed8b64af104d316f69fa25ad66e35f1c6659482d68b42f",
+            "signature": "0x1c12bad85afebd65bf809e3a16b1533a13ed46472804a4dcc3882c6de6834ab3483249949b719626e9e9dd71f1c1c957e7ee03dcf4d1d7a03f903e841f04ee08",
+            "adminSignature": "0x60c69c20bf6195897c477d41144117ceb00076dc1505db43177eadcae284285c41f32371ffd49ac34fd102cf486caabfedb8907284aef7d612e206a038ffe209"
+          }
+        }
+      ]
+    }
   }
 }

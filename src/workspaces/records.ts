@@ -5,7 +5,12 @@ import { buffer, bytes, canonicalJson, randomBytes, uint, utf8, type Json } from
 import { verifyEd25519 } from "./signatures";
 
 export const RECORD_TYPES = ["payment_request", "decision", "execution_event", "contact", "payment_template", "roster"] as const;
-export type RecordType = typeof RECORD_TYPES[number];
+export const SUPPORT_RECORD_TYPES = ["support_ticket", "support_message", "support_report", "support_identity", "roster"] as const;
+export type SupportRecordType = typeof SUPPORT_RECORD_TYPES[number];
+export type RecordType = typeof RECORD_TYPES[number] | SupportRecordType;
+/** Realms share every signed format; they differ in routes, record types and direct member provisioning. */
+export type Realm = "workspaces" | "support";
+export const realmRecordTypes = (realm: Realm): readonly RecordType[] => realm === "support" ? SUPPORT_RECORD_TYPES : RECORD_TYPES;
 export interface RecordHeader {
   workspaceId: Hex;
   recordId: Hex;
@@ -22,9 +27,9 @@ export const RECORD_AAD_TYPE = "MirageRecordAAD(bytes16 workspaceId,bytes32 reco
 export const RECORD_SIGNATURE_TYPE = "MirageRecord(bytes32 aadHash,bytes32 authorKeyId,bytes12 nonce,bytes32 ciphertextHash)";
 export const MAX_RECORD_BYTES = 1024 * 1024;
 
-export function recordAad(header: RecordHeader): Hex {
+export function recordAad(header: RecordHeader, realm: Realm = "workspaces"): Hex {
   bytes(header.workspaceId, 16); bytes(header.recordId, 32); bytes(header.authorKeyId, 32);
-  if (!RECORD_TYPES.includes(header.type)) throw new Error("Invalid record type");
+  if (!realmRecordTypes(realm).includes(header.type)) throw new Error("Invalid record type");
   uint(header.revision, 53, 1); uint(header.keyEpoch, 32, 1); uint(header.authorPolicyVersion, 53, 1);
   return encodeAbiParameters(
     [{type:"bytes32"},{type:"bytes16"},{type:"bytes32"},{type:"bytes32"},{type:"uint64"},{type:"uint32"},{type:"uint64"}],
@@ -33,20 +38,20 @@ export function recordAad(header: RecordHeader): Hex {
   );
 }
 
-export function recordHash(record: Omit<EncryptedRecord, "signature">): Hex {
+export function recordHash(record: Omit<EncryptedRecord, "signature">, realm: Realm = "workspaces"): Hex {
   bytes(record.nonce, 12);
   if (record.ciphertext.length > MAX_RECORD_BYTES * 2 + 2) throw new Error("Workspace record too large");
   const ciphertext = bytes(record.ciphertext);
   if (ciphertext.length < 16) throw new Error("Invalid record ciphertext");
   return keccak256(encodeAbiParameters(
     [{type:"bytes32"},{type:"bytes32"},{type:"bytes32"},{type:"bytes12"},{type:"bytes32"}],
-    [keccak256(utf8(RECORD_SIGNATURE_TYPE)), keccak256(recordAad(record)), record.authorKeyId, record.nonce, keccak256(ciphertext)],
+    [keccak256(utf8(RECORD_SIGNATURE_TYPE)), keccak256(recordAad(record, realm)), record.authorKeyId, record.nonce, keccak256(ciphertext)],
   ));
 }
 
-export function verifyRecord(record: EncryptedRecord, authorize: AuthorPolicyCheck): boolean {
+export function verifyRecord(record: EncryptedRecord, authorize: AuthorPolicyCheck, realm: Realm = "workspaces"): boolean {
   try {
-    const hash = recordHash(record);
+    const hash = recordHash(record, realm);
     if (!verifyEd25519(record.signature, hash, record.authorKeyId)) return false;
     const capability = record.type === "payment_request" ? 1 : record.type === "decision" ? 2 : 8;
     return authorize(Object.freeze({ workspaceId: record.workspaceId, recordId: record.recordId, type: record.type,
@@ -60,12 +65,12 @@ async function aesKey(key: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {
   return globalThis.crypto.subtle.importKey("raw", buffer(key), "AES-GCM", false, [usage]);
 }
 
-export async function sealRecord(header: RecordHeader, body: Json, contentKey: Uint8Array, signingSeed: Uint8Array): Promise<EncryptedRecord> {
+export async function sealRecord(header: RecordHeader, body: Json, contentKey: Uint8Array, signingSeed: Uint8Array, realm: Realm = "workspaces"): Promise<EncryptedRecord> {
   // Copy metadata before the first await so callers cannot change what was encrypted.
   const snapshot = { workspaceId: header.workspaceId, recordId: header.recordId, type: header.type,
     revision: header.revision, keyEpoch: header.keyEpoch, authorKeyId: header.authorKeyId,
     authorPolicyVersion: header.authorPolicyVersion };
-  const aad = bytes(recordAad(snapshot));
+  const aad = bytes(recordAad(snapshot, realm));
   if (bytesToHex(ed25519.getPublicKey(signingSeed)) !== snapshot.authorKeyId) throw new Error("Record author does not match signing key");
   const canonicalBody = canonicalJson(body);
   const contentHash = bytesToHex(sha256(utf8(canonicalBody)));
@@ -76,14 +81,14 @@ export async function sealRecord(header: RecordHeader, body: Json, contentKey: U
   const ciphertext = new Uint8Array(await globalThis.crypto.subtle.encrypt({ name:"AES-GCM", iv:buffer(nonce), additionalData:buffer(aad), tagLength:128 }, key, buffer(plaintext)));
   plaintext.fill(0);
   const record = { ...snapshot, nonce:bytesToHex(nonce), ciphertext:bytesToHex(ciphertext) };
-  return { ...record, signature:bytesToHex(ed25519.sign(bytes(recordHash(record)), signingSeed)) };
+  return { ...record, signature:bytesToHex(ed25519.sign(bytes(recordHash(record, realm)), signingSeed)) };
 }
 
-export async function openRecord(record: EncryptedRecord, contentKey: Uint8Array, authorize: AuthorPolicyCheck): Promise<Json> {
+export async function openRecord(record: EncryptedRecord, contentKey: Uint8Array, authorize: AuthorPolicyCheck, realm: Realm = "workspaces"): Promise<Json> {
   const snapshot = { ...record };
-  if (!verifyRecord(snapshot, authorize)) throw new Error("Invalid record signature or author policy");
+  if (!verifyRecord(snapshot, authorize, realm)) throw new Error("Invalid record signature or author policy");
   const key = await aesKey(contentKey, "decrypt");
-  const plaintext = new Uint8Array(await globalThis.crypto.subtle.decrypt({ name:"AES-GCM", iv:buffer(bytes(snapshot.nonce, 12)), additionalData:buffer(bytes(recordAad(snapshot))), tagLength:128 }, key, buffer(bytes(snapshot.ciphertext))));
+  const plaintext = new Uint8Array(await globalThis.crypto.subtle.decrypt({ name:"AES-GCM", iv:buffer(bytes(snapshot.nonce, 12)), additionalData:buffer(bytes(recordAad(snapshot, realm))), tagLength:128 }, key, buffer(bytes(snapshot.ciphertext))));
   try {
     const inner = JSON.parse(new TextDecoder("utf-8", { fatal:true }).decode(plaintext));
     if (inner === null || typeof inner !== "object" || Array.isArray(inner) ||
