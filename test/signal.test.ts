@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { submitSignal } from "../src/internal/nomad.js";
+import { complianceKey, signedAdmission } from "./helpers/admission.js";
 import { nomadProxyUrl } from "../src/internal/api.js";
 import { MissingBlindingScalarError } from "../src/errors.js";
 import type { ExecutionApproval, NetworkKeyStatus } from "../src/types.js";
@@ -22,6 +23,7 @@ vi.mock("eciesjs", () => ({
 
 const networkKey: NetworkKeyStatus = {
   publicKey: `0x${"02".repeat(33)}`,
+  complianceKeys: [complianceKey],
   attested: true,
   debug: false,
   chainId: 1,
@@ -39,6 +41,7 @@ const executionApproval: ExecutionApproval = {
 };
 
 const baseParams = {
+  seed: `0x${"77".repeat(32)}`,
   escrowType: "batch" as const,
   escrowAddress: ESCROW,
   blindingScalar: SCALAR,
@@ -51,7 +54,7 @@ const baseParams = {
 
 beforeEach(() => {
   captured.payload = undefined;
-  globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => "accepted" }) as any;
+  globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: "admitted", admissionReceipt: signedAdmission() }) }) as any;
 });
 
 describe("submitSignal", () => {
@@ -96,11 +99,24 @@ describe("submitSignal", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("posts the ciphertext as a JSON hex string", async () => {
+  it("posts ciphertext with the original approval and deployment seed", async () => {
     await submitSignal(baseParams);
     const [url, init] = vi.mocked(globalThis.fetch).mock.calls[0];
     expect(url).toBe("http://api.test/nomad/31337/signal");
-    expect(init!.body).toBe(JSON.stringify("0x010203"));
+    expect(JSON.parse(String(init!.body))).toEqual({ payload: "0x010203", executionApproval, seed: baseParams.seed, escrowType: "batch" });
+  });
+
+  it("retries a lost admission response with the same ciphertext", async () => {
+    vi.mocked(globalThis.fetch).mockRejectedValueOnce(new TypeError("connection lost"));
+    await submitSignal(baseParams);
+    const calls = vi.mocked(globalThis.fetch).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][1]!.body).toBe(calls[1][1]!.body);
+  });
+
+  it("rejects a receipt for different ciphertext", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce({ ok: true, json: async () => ({ admissionReceipt: signedAdmission({}, "0x040506") }) } as Response);
+    await expect(submitSignal(baseParams)).rejects.toMatchObject({ code: "INVALID_ADMISSION" });
   });
 });
 

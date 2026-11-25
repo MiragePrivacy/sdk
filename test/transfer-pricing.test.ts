@@ -6,6 +6,7 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { prepareTransfer, previewTransfer } from "../src/transfer.js";
 import { createNetworkConfig } from "../src/networks.js";
 import { NATIVE_TOKEN_ADDRESS } from "../src/token.js";
+import { complianceKey, signedAdmission } from "./helpers/admission.js";
 
 const SENDER = "0x0000000000000000000000000000000000000001" as const;
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
@@ -66,7 +67,7 @@ beforeEach(() => {
       return {
         ok: true,
         json: async () => ({
-          payload: { publicKey: networkKey, chainId: attestedChainId, pricingKeys: [] },
+          payload: { publicKey: networkKey, chainId: attestedChainId, pricingKeys: [], complianceKeys: [complianceKey] },
           attestation: null,
           isDebug: true,
         }),
@@ -323,6 +324,20 @@ describe("prepareTransfer pricing flow", () => {
       code: "API_ERROR",
       statusCode: 403,
     });
+  });
+
+  it("resumes an admitted request without recertifying or re-encrypting after quote expiry", async () => {
+    const prepared = await prepareTransfer({ tokenAddress: USDC, recipientAddress: RECIPIENT_A,
+      amount: 100n, publicClient: {} as any, network, resume: VALID_RESUME });
+    const receipt = signedAdmission({ escrowContract: SENDER });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ status: "admitted", admissionReceipt: receipt }) }) as any;
+    const completion = prepared.complete({ account: { address: SENDER } } as any);
+    const next = await completion.next();
+    expect(next.value).toEqual({ step: "signal", response: JSON.stringify({ status: "admitted", admissionReceipt: receipt }) });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[0][0])).toMatch(/admission\/lookup$/);
+    await completion.return(undefined);
   });
 });
 

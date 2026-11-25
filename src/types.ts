@@ -162,6 +162,8 @@ export interface AttestationVerification {
 
 export interface NetworkKeyStatus {
   publicKey: string;
+  /** Admission authorities committed to by the verified attestation payload. */
+  complianceKeys?: string[];
   /** True when the node served a quote. Says nothing about its validity. */
   attested: boolean;
   debug: boolean;
@@ -274,6 +276,19 @@ export interface ExecutionApproval {
   runtimeCodeHash: `0x${string}`;
   quoteCommitment: `0x${string}`;
   approvedAt: number;
+  signature: string;
+}
+
+/** Durable permission for one exact encrypted request, with its original clocks. */
+export interface AdmissionReceipt {
+  version: number;
+  chainId: number;
+  escrowContract: Address;
+  quoteCommitment: `0x${string}`;
+  payloadHash: `0x${string}`;
+  acceptedAt: number;
+  executeUntil: number;
+  redeemUntil: number;
   signature: string;
 }
 
