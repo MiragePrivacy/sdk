@@ -60,7 +60,7 @@ describe("workspace realms",()=>{
   it("keeps a separate record type list per realm",async()=>{
     expect(realmRecordTypes("workspaces")).toBe(RECORD_TYPES);expect(realmRecordTypes("support")).toBe(SUPPORT_RECORD_TYPES);
     expect(RECORD_TYPES).toEqual(["payment_request","decision","execution_event","contact","payment_template","roster"]);
-    expect(SUPPORT_RECORD_TYPES).toEqual(["support_ticket","support_message","support_report","support_identity","roster"]);
+    expect(SUPPORT_RECORD_TYPES).toEqual(["support_ticket","support_message","support_report","support_feedback","support_identity","roster"]);
     const keys=deriveMemberKeys(vectors.unlock[0].signature as Hex),content=new Uint8Array(32).fill(43),log=ops().slice(0,2);
     const header=(type:RecordHeader["type"]):RecordHeader=>({workspaceId:wid,recordId:hash(0x44),type,revision:1,keyEpoch:1,authorKeyId:keys.memberKeyId,authorPolicyVersion:1});
     await expect(sealRecord(header("support_ticket"),{},content,keys.signingSeed)).rejects.toThrow("Invalid record type");
@@ -386,7 +386,8 @@ describe("support sessions",()=>{
     const f=await deployment(),u=await f.user(1),admin=f.admin();
     const session=opened(await openSupportWorkspace({...u,root:f.identity.root,create:true}));
     const input=buildSupportReport({status:"failed",chainId:1,blindingScalar:"0xscalar",seed:"0xseed",mnemonic:"never"},{message:"reverted",step:"deploy"},{clientVersion:"1.0.0",userAgent:"vitest"});
-    const report=await session.submitReport({...input,transaction:{...input.transaction,smuggled:"x"}});
+    const feedback=await session.submitFeedback("A suggestion");
+    const report=await session.submitReport({...input,note:"My note",transaction:{...input.transaction,smuggled:"x"}});
     expect(report.transaction).toEqual({status:"failed",chainId:1,blindingScalar:"0xscalar",seed:"0xseed"});
     expect(report).toMatchObject({error:{message:"reverted",step:"deploy"},clientVersion:"1.0.0",fromSupport:false});expect(report.ticketId).toBeUndefined();
     const ticket=await session.createTicket({subject:"Deploy failed",category:"transaction",text:"See report",reportId:report.reportId});
@@ -398,6 +399,8 @@ describe("support sessions",()=>{
     await expect(session.submitReport({...input,transaction:{sealedPricingAuthorization:"x".repeat(130_000),seed:"y".repeat(130_000)}})).rejects.toThrow("too large");
 
     const desk=await admin.open(session.workspaceId);
+    expect(desk.feedback()).toEqual([feedback]);
+    expect(desk.reports().find(r=>r.reportId===report.reportId)?.note).toBe("My note");
     expect(desk.reports().map(r=>r.reportId).sort()).toEqual([report.reportId,second.reportId].sort());
     expect(desk.reports().find(r=>r.reportId===report.reportId)!.transaction.blindingScalar).toBe("0xscalar");
 
