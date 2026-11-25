@@ -13,7 +13,7 @@ const NESTED_KEYS = ["attestation"] as const;
  * MRENCLAVE, which changes on every rebuild.
  */
 export const MIRAGE_MRSIGNER =
-  "0xeb81f8f64bf9d8e4bba26943a1161e7ca4e878b0775c33637e60516badfb52c3";
+  "0xdf0e51115690eb159899cb337d036acd3d30dbc0124363875b3e04216b5abf06";
 
 /**
  * TCB states and Intel advisories accepted on every network. All Mirage nodes
