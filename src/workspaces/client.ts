@@ -140,7 +140,7 @@ export class WorkspaceClient {
     const session=await this.principal<WorkspaceSession>(`${this.prefix}/workspaces/${workspace}/sessions`,{method:"POST",body:JSON.stringify({memberKeyId:member,nonce:challenge.nonce,signature})});
     const now=Math.floor(Date.now()/1000);
     uint(session.expiresAt,53,1);uint(session.caps,4);uint(session.policyVersion,53,1);
-    if(session.workspaceId!==workspace||session.memberKeyId!==member||typeof session.token!=="string"||!(this.realm==="support"?/^mirage_sp_[A-Za-z0-9_-]{43}$/:/^mirage_ws_[A-Za-z0-9_-]{43}$/).test(session.token)||session.expiresAt<=now||session.expiresAt>now+3630)
+    if(session.workspaceId!==workspace||session.memberKeyId!==member||typeof session.token!=="string"||!(this.realm==="support"?/^mirage_sp_(?:guest_)?[A-Za-z0-9_-]{43}$/:/^mirage_ws_[A-Za-z0-9_-]{43}$/).test(session.token)||session.expiresAt<=now||session.expiresAt>now+3630)
       throw new Error("Invalid workspace session response");
     return session;
   }

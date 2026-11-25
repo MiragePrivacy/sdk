@@ -5,7 +5,7 @@ import { buffer, bytes, canonicalJson, randomBytes, uint, utf8, type Json } from
 import { verifyEd25519 } from "./signatures";
 
 export const RECORD_TYPES = ["payment_request", "decision", "execution_event", "contact", "payment_template", "roster"] as const;
-export const SUPPORT_RECORD_TYPES = ["support_ticket", "support_message", "support_report", "support_identity", "roster"] as const;
+export const SUPPORT_RECORD_TYPES = ["support_ticket", "support_message", "support_report", "support_feedback", "support_identity", "roster"] as const;
 export type SupportRecordType = typeof SUPPORT_RECORD_TYPES[number];
 export type RecordType = typeof RECORD_TYPES[number] | SupportRecordType;
 /** Realms share every signed format; they differ in routes, record types and direct member provisioning. */

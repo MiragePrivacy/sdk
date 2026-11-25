@@ -87,7 +87,7 @@ export async function fetchSupportConfig(apiServer:string,root:SupportRoot,optio
 // Record bodies
 // ---------------------------------------------------------------------------
 
-export const TICKET_CATEGORIES=["transaction","bug","feedback","other"] as const;
+export const TICKET_CATEGORIES=["support","transaction","bug","feedback","other"] as const;
 export type TicketCategory=typeof TICKET_CATEGORIES[number];
 export type TicketStatus="open"|"closed";
 export type SupportRole="user"|"support";
@@ -98,14 +98,16 @@ export interface SupportTicketBody {
 }
 export interface SupportMessageBody {version:1;kind:"support_message";ticketId:Hex;text:string;sentAt:string;staffLabel?:string}
 export interface SupportReportError {message:string;code?:string;step:typeof SUPPORT_REPORT_STEPS[number]}
-export interface SupportReportInput {clientVersion:string;userAgent:string;error:SupportReportError;transaction:{[field:string]:Json}}
+export interface SupportFeedbackBody {version:1;kind:"support_feedback";text:string;createdAt:string}
+export interface SupportFeedback {feedbackId:Hex;text:string;createdAt:string}
+export interface SupportReportInput {note?:string;clientVersion:string;userAgent:string;error:SupportReportError;transaction:{[field:string]:Json}}
 export interface SupportReportBody extends SupportReportInput {version:1;kind:"support_report";ticketId?:Hex;createdAt:string}
 export interface SupportIdentityGeneration {generation:number;privateKey:Hex;address:Hex}
 /** `pendingRotation` names the generation whose rollout to user workspaces is unfinished. */
 export interface SupportIdentityBody {version:1;kind:"support_identity";generations:SupportIdentityGeneration[];pendingRotation?:number}
 export interface SupportRosterBody {version:1;workspaceName?:string;memberLabels?:{[memberId:string]:string};invitationLabels?:{[grantId:string]:string}}
 export interface SupportTombstone {version:1;kind:SupportRecordType;deleted:true}
-export type SupportBody=SupportTicketBody|SupportMessageBody|SupportReportBody|SupportIdentityBody|SupportRosterBody;
+export type SupportBody=SupportTicketBody|SupportMessageBody|SupportReportBody|SupportFeedbackBody|SupportIdentityBody|SupportRosterBody;
 
 function invalid(what:string):never {throw new Error(`Invalid ${what}`);}
 function object(value:unknown,what:string,required:readonly string[],optional:readonly string[]=[]):{[key:string]:Json} {
@@ -142,14 +144,19 @@ export function parseSupportMessage(value:Json):SupportMessageBody {
   if(v.version!==1||v.kind!=="support_message"||!id(v.ticketId,32)||!text(v.text,MAX_SUPPORT_MESSAGE_CHARS,1)||!iso(v.sentAt)||(v.staffLabel!==undefined&&!text(v.staffLabel,100,1)))invalid("support message");
   return v as unknown as SupportMessageBody;
 }
+function parseSupportFeedback(value:Json):SupportFeedbackBody {
+  const v=object(value,"support feedback",["version","kind","text","createdAt"]);
+  if(v.version!==1||v.kind!=="support_feedback"||!text(v.text,MAX_SUPPORT_MESSAGE_CHARS,1)||!iso(v.createdAt))invalid("support feedback");
+  return v as unknown as SupportFeedbackBody;
+}
 function reportError(value:unknown):SupportReportError {
   const v=object(value,"support report error",["message","step"],["code"]);
   if(!text(v.message,4000)||!SUPPORT_REPORT_STEPS.includes(v.step as SupportReportError["step"])||(v.code!==undefined&&!text(v.code,200)))invalid("support report error");
   return v as unknown as SupportReportError;
 }
 export function parseSupportReport(value:Json):SupportReportBody {
-  const v=object(value,"support report",["version","kind","createdAt","clientVersion","userAgent","error","transaction"],["ticketId"]);
-  if(v.version!==1||v.kind!=="support_report"||!iso(v.createdAt)||!text(v.clientVersion,200)||!text(v.userAgent,1000)||(v.ticketId!==undefined&&!id(v.ticketId,32))||
+  const v=object(value,"support report",["version","kind","createdAt","clientVersion","userAgent","error","transaction"],["ticketId","note"]);
+  if(v.version!==1||v.kind!=="support_report"||!iso(v.createdAt)||(v.note!==undefined&&!text(v.note,MAX_SUPPORT_MESSAGE_CHARS,1))||!text(v.clientVersion,200)||!text(v.userAgent,1000)||(v.ticketId!==undefined&&!id(v.ticketId,32))||
     v.transaction===null||typeof v.transaction!=="object"||Array.isArray(v.transaction))invalid("support report");
   // Fields outside the allowlist are never surfaced, even when another client sent them.
   return {...(v as unknown as SupportReportBody),error:reportError(v.error),transaction:reportTransaction(v.transaction)};
@@ -179,6 +186,7 @@ export function parseSupportBody(type:SupportRecordType,value:Json):SupportBody|
   switch(type){
     case "support_ticket":return parseSupportTicket(value);
     case "support_message":return parseSupportMessage(value);
+    case "support_feedback":return parseSupportFeedback(value);
     case "support_report":return parseSupportReport(value);
     case "support_identity":return parseSupportIdentity(value);
     case "roster":return parseSupportRoster(value);
@@ -367,6 +375,14 @@ export class SupportSession {
     return this.live<SupportMessageBody>("support_message").filter(entry=>entry.body.ticketId===ticketId).map(entry=>this.message(entry));
   }
   reports():SupportReport[] {return this.live<SupportReportBody>("support_report").reverse().map(entry=>this.report(entry));}
+  feedback():SupportFeedback[] {
+    return this.live<SupportFeedbackBody>("support_feedback").reverse().map(({recordId,body})=>({feedbackId:recordId,text:body.text,createdAt:body.createdAt}));
+  }
+  async submitFeedback(text:string):Promise<SupportFeedback> {
+    const body=parseSupportFeedback({version:1,kind:"support_feedback",text,createdAt:new Date().toISOString()});
+    const entry=await this.write("support_feedback",body);
+    return {feedbackId:entry.recordId,text:body.text,createdAt:body.createdAt};
+  }
   private async write(type:SupportRecordType,body:SupportBody|SupportTombstone,recordId:Hex=randomId(32),previousRevision=0):Promise<Entry> {
     await this.refresh();
     const row=await this.client.put(await this.keyring.encryptRecord(type,body as unknown as Json,recordId,previousRevision+1),previousRevision);
@@ -389,9 +405,9 @@ export class SupportSession {
       else this.ingest(row,body);
     });
   }
-  async createTicket(input:{subject:string;category:TicketCategory;text:string;reportId?:Hex}):Promise<SupportTicket> {
+  async createTicket(input:{subject:string;category?:TicketCategory;text:string;reportId?:Hex}):Promise<SupportTicket> {
     const now=new Date().toISOString();
-    const ticket=parseSupportTicket({version:1,kind:"support_ticket",subject:input.subject,category:input.category,status:"open",createdAt:now,reportIds:input.reportId?[input.reportId]:[]});
+    const ticket=parseSupportTicket({version:1,kind:"support_ticket",subject:input.subject,category:input.category??"support",status:"open",createdAt:now,reportIds:input.reportId?[input.reportId]:[]});
     // Validate the first message before anything is written.
     parseSupportMessage({version:1,kind:"support_message",ticketId:randomId(32),text:input.text,sentAt:now});
     const entry=await this.write("support_ticket",ticket);
@@ -419,7 +435,7 @@ export class SupportSession {
       if(ticket?.type!=="support_ticket"||!ticket.body)throw new Error("Unknown support ticket");
     }
     const body=parseSupportReport({version:1,kind:"support_report",createdAt:new Date().toISOString(),clientVersion:report.clientVersion,userAgent:report.userAgent,
-      error:report.error as unknown as Json,transaction:report.transaction,...(ticketId?{ticketId}:{})});
+      error:report.error as unknown as Json,transaction:report.transaction,...(report.note!==undefined?{note:report.note}:{}),...(ticketId?{ticketId}:{})});
     if(utf8(canonicalJson(body as unknown as Json)).length>MAX_REPORT_BYTES)throw new Error("Support report is too large");
     const entry=await this.write("support_report",body);
     if(ticketId)await this.reviseTicket(ticketId,ticket=>ticket.reportIds.includes(entry.recordId)?null:{...ticket,reportIds:[...ticket.reportIds,entry.recordId]});
