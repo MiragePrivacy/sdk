@@ -7,14 +7,15 @@ import {openKey,sealKey} from "./hpke";
 import {openRecord,sealRecord,type EncryptedRecord,type RecordType} from "./records";
 import type {MemberKeys} from "./keys";
 import {linkedKeyBranches,createIdentityRotation,verifyIdentityRotation,type SignedIdentityRotation,type IdentityLinkState,type SignedIdentityLink} from "./identity";
-import {applyPolicyOp,currentMemberKey,policyAuthorCheck,policyOpHash,replayPolicy,signPolicyOp,ZERO_HASH,type InviteAcceptance,type InviteGrant,type PolicyOp,type Policy,type MemberKey,type RotationMaterial} from "./policy";
+import {applyPolicyOp,currentMemberKey,policyAuthorCheck,signPolicyOp,ZERO_HASH,type InviteAcceptance,type InviteGrant,type PolicyOp,type Policy,type MemberKey,type RotationMaterial} from "./policy";
+import {verifiedAuthor,verifiedView,verifyPolicyResponse,type VerifiedPolicy} from "./verified-policy";
 
 /** Private workspace material lives only in this sign-in's memory. */
 export class WorkspaceKeyring {
   private readonly content=new Map<number,Uint8Array>();
   private admin:Uint8Array|null=null;
   private adminEpoch=0;
-  private verified:PolicyResponse|null=null;
+  private verified:VerifiedPolicy|null=null;
   private closed=false;
   private pending:Promise<void>=Promise.resolve();
   constructor(readonly workspaceId:Hex,private readonly member:MemberKeys){}
@@ -24,16 +25,15 @@ export class WorkspaceKeyring {
   }
   /** Serializes refreshes so a stale response cannot replace a newer policy/key set. */
   async load(input:PolicyResponse):Promise<ReadonlyMap<number,Uint8Array>> {
-    const snapshot=structuredClone(input);
+    const snapshot=verifiedView(input)?input:structuredClone(input);
     const task=this.pending.catch(()=>undefined).then(()=>this.refresh(snapshot));this.pending=task;
     await task;if(this.closed)throw new Error("Workspace keyring closed");return this.content;
   }
   private async refresh(response:PolicyResponse):Promise<void> {
     if(this.closed)throw new Error("Workspace keyring closed");
-    const policy=replayPolicy(response.ops);
-    if(policy.workspaceId!==this.workspaceId||canonicalJson(policy as unknown as Json)!==canonicalJson(response.policy as unknown as Json))throw new Error("Invalid keyring policy");
-    const previous=this.verified?.policy;
-    if(previous&&(policy.policyVersion<previous.policyVersion||policyOpHash(response.ops[previous.policyVersion-1])!==previous.headHash))throw new Error("Workspace keyring policy rollback");
+    const verified=verifyPolicyResponse(this.workspaceId,response,this.verified??undefined,"Invalid keyring policy");
+    if(verified===this.verified)return;
+    const policy=verified.policy;
     const actor=currentMemberKey(policy,this.member.memberKeyId);
     if(!actor){this.close();throw new Error("Workspace membership revoked");}
     const supplied=policy.envelopes.filter(e=>e.recipientKeyId===this.member.memberKeyId);
@@ -54,7 +54,7 @@ export class WorkspaceKeyring {
       for(const [epoch,key] of opened)this.content.set(epoch,key);opened.clear();
       if(admin){this.admin?.fill(0);this.admin=admin;admin=null;this.adminEpoch=policy.adminEpoch;}
       if(!actor.key.holdsAdmin){this.admin?.fill(0);this.admin=null;this.adminEpoch=0;}
-      this.verified={policy,ops:response.ops};
+      this.verified=verified;
     }finally{for(const key of opened.values())key.fill(0);admin?.fill(0);}
   }
   /** Copies this member's granted history and owner authority to its linked key. */
@@ -118,7 +118,12 @@ export class WorkspaceKeyring {
   async decryptRecord(record:EncryptedRecord,response:PolicyResponse=this.verified!):Promise<Json> {
     if(this.closed||!response)throw new Error("Workspace keyring unavailable");
     const key=this.content.get(record.keyEpoch);if(!key)throw new Error("Record epoch is not granted");
-    return openRecord(record,key,policyAuthorCheck(response.ops));
+    const trusted=verifiedView(response);
+    if(trusted)return openRecord(record,key,verifiedAuthor(trusted));
+    const known=this.verified;
+    const matches=known && (known===response || (known.policy.headHash===response.policy.headHash &&
+      canonicalJson(known.ops as unknown as Json)===canonicalJson(response.ops as unknown as Json)));
+    return openRecord(record,key,matches?verifiedAuthor(known):policyAuthorCheck(response.ops));
   }
   async prepareContentRotation():Promise<PolicyOp> {
     const prepared=await this.prepareContentRotationWithKey();prepared.contentKey.fill(0);return prepared.op;
