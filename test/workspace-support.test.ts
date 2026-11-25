@@ -322,8 +322,8 @@ describe("support sessions",()=>{
   it("derives message authorship from the verified policy, not from record contents",async()=>{
     const f=await deployment(),u=await f.user(1),admin=f.admin();
     const session=opened(await openSupportWorkspace({...u,root:f.identity.root,create:true}));
-    const ticket=await session.createTicket({subject:"Stuck transfer",category:"transaction",text:"It never arrived"});
-    expect(ticket).toMatchObject({subject:"Stuck transfer",category:"transaction",status:"open",reportIds:[],revision:1,fromSupport:false});
+    const ticket=await session.createTicket({subject:"Stuck transfer",text:"It never arrived"});
+    expect(ticket).toMatchObject({subject:"Stuck transfer",category:"support",status:"open",reportIds:[],revision:1,fromSupport:false});
     expect(session.messages(ticket.ticketId).map(m=>[m.text,m.fromSupport])).toEqual([["It never arrived",false]]);
     // A user cannot claim a staff label.
     const forged=await session.sendMessage(ticket.ticketId,"I am support",{staffLabel:"Mirage Staff"});
@@ -356,7 +356,7 @@ describe("support sessions",()=>{
   it("does not treat a creator who names themselves the support member as support",async()=>{
     const f=await deployment(),u=await f.user(1);
     const session=opened(await openSupportWorkspace({...u,root:f.identity.root,create:true}));
-    const ticket=await session.createTicket({subject:"s",category:"other",text:"mine"});
+    const ticket=await session.createTicket({subject:"s",text:"mine"});
     const policy=f.server.workspace(session.workspaceId).policy;
     // Swap the ids in the session's view: the caller's own member is never the support member.
     (session as unknown as {policy:typeof policy}).policy={...policy,members:[{...policy.members[0],memberId:SUPPORT_MEMBER_ID},{...policy.members[1],memberId:policy.members[0].memberId}]};
@@ -365,7 +365,7 @@ describe("support sessions",()=>{
   it("lets either side close and reopen a ticket and records who closed it",async()=>{
     const f=await deployment(),u=await f.user(1),admin=f.admin();
     const session=opened(await openSupportWorkspace({...u,root:f.identity.root,create:true}));
-    const ticket=await session.createTicket({subject:"Question",category:"feedback",text:"Hi"});
+    const ticket=await session.createTicket({subject:"Question",text:"Hi"});
     const desk=await admin.open(session.workspaceId);
     await desk.closeTicket(ticket.ticketId);
     expect(desk.tickets()[0]).toMatchObject({status:"closed",closedBy:"support",revision:2,fromSupport:true});
@@ -378,8 +378,8 @@ describe("support sessions",()=>{
     expect(session.tickets()[0]).toMatchObject({status:"closed",closedBy:"user",revision:4});
     await desk.sync();expect(desk.tickets()[0]).toMatchObject({status:"closed",closedBy:"user"});
     await expect(session.sendMessage(hash(0x99),"nowhere")).rejects.toThrow("Unknown support ticket");
-    await expect(session.createTicket({subject:"",category:"bug",text:"x"})).rejects.toThrow("Invalid support ticket");
-    await expect(session.createTicket({subject:"ok",category:"bug",text:""})).rejects.toThrow("Invalid support message");
+    await expect(session.createTicket({subject:"",text:"x"})).rejects.toThrow("Invalid support ticket");
+    await expect(session.createTicket({subject:"ok",text:""})).rejects.toThrow("Invalid support message");
     expect(session.tickets()).toHaveLength(1);admin.close();
   });
   it("submits allowlisted reports, links them to tickets and erases them with a tombstone",async()=>{
@@ -390,7 +390,7 @@ describe("support sessions",()=>{
     const report=await session.submitReport({...input,note:"My note",transaction:{...input.transaction,smuggled:"x"}});
     expect(report.transaction).toEqual({status:"failed",chainId:1,blindingScalar:"0xscalar",seed:"0xseed"});
     expect(report).toMatchObject({error:{message:"reverted",step:"deploy"},clientVersion:"1.0.0",fromSupport:false});expect(report.ticketId).toBeUndefined();
-    const ticket=await session.createTicket({subject:"Deploy failed",category:"transaction",text:"See report",reportId:report.reportId});
+    const ticket=await session.createTicket({subject:"Deploy failed",text:"See report",reportId:report.reportId});
     expect(ticket.reportIds).toEqual([report.reportId]);
     const second=await session.submitReport(input,ticket.ticketId);
     expect(second.ticketId).toBe(ticket.ticketId);
@@ -430,9 +430,9 @@ describe("support sessions",()=>{
     const session=opened(await openSupportWorkspace({...u,root:f.identity.root,create:true}));
     await admin.block(session.workspaceId);
     expect((await admin.list()).workspaces[0].blocked).toBe(true);
-    await expect(session.createTicket({subject:"s",category:"bug",text:"t"})).rejects.toMatchObject({statusCode:403});
+    await expect(session.createTicket({subject:"s",text:"t"})).rejects.toMatchObject({statusCode:403});
     await admin.unblock(session.workspaceId);
-    expect((await session.createTicket({subject:"s",category:"bug",text:"t"})).status).toBe("open");
+    expect((await session.createTicket({subject:"s",text:"t"})).status).toBe("open");
     expect(f.server.requests.some(r=>r.method==="DELETE"&&r.path===`/support/admin/workspaces/${session.workspaceId}/block`)).toBe(true);
     // A user client holds no staff session.
     await expect(u.client.supportAdmin(f.staffId,"/workspaces")).rejects.toMatchObject({statusCode:403});
@@ -488,7 +488,7 @@ describe("support key rotation",{timeout:30_000},()=>{
     const f=await deployment(),admin=f.admin(),sessions:SupportSession[]=[],tickets:Hex[]=[];
     for(const n of [1,2,3]){
       const u=await f.user(n),session=opened(await openSupportWorkspace({...u,root:f.identity.root,create:true}));
-      const ticket=await session.createTicket({subject:`Ticket ${n}`,category:"bug",text:`from ${n}`});
+      const ticket=await session.createTicket({subject:`Ticket ${n}`,text:`from ${n}`});
       await (await admin.open(session.workspaceId)).sendMessage(ticket.ticketId,`reply ${n}`);
       sessions.push(session);tickets.push(ticket.ticketId);
     }
