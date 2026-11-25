@@ -405,9 +405,9 @@ export class SupportSession {
       else this.ingest(row,body);
     });
   }
-  async createTicket(input:{subject:string;category?:TicketCategory;text:string;reportId?:Hex}):Promise<SupportTicket> {
+  async createTicket(input:{subject:string;text:string;reportId?:Hex}):Promise<SupportTicket> {
     const now=new Date().toISOString();
-    const ticket=parseSupportTicket({version:1,kind:"support_ticket",subject:input.subject,category:input.category??"support",status:"open",createdAt:now,reportIds:input.reportId?[input.reportId]:[]});
+    const ticket=parseSupportTicket({version:1,kind:"support_ticket",subject:input.subject,category:"support",status:"open",createdAt:now,reportIds:input.reportId?[input.reportId]:[]});
     // Validate the first message before anything is written.
     parseSupportMessage({version:1,kind:"support_message",ticketId:randomId(32),text:input.text,sentAt:now});
     const entry=await this.write("support_ticket",ticket);

@@ -19,7 +19,7 @@ argument. Omitting it gives the existing behaviour.
 | Discovery challenge | `/identity/challenge` | `/support/identity/challenge` |
 | Identity registry | `/identity/links`, `/identity/rotations` | the same, shared |
 | Session token | `mirage_ws_` + 43 base64url characters | `mirage_sp_` + 43 base64url characters |
-| Record types | `payment_request`, `decision`, `execution_event`, `contact`, `payment_template`, `roster` | `support_ticket`, `support_message`, `support_report`, `support_identity`, `roster` |
+| Record types | `payment_request`, `decision`, `execution_event`, `contact`, `payment_template`, `roster` | `support_ticket`, `support_message`, `support_report`, `support_feedback`, `support_identity`, `roster` |
 | `add_support_member` | rejected | accepted, through its own route |
 | Personal workspaces | yes | no |
 
@@ -96,19 +96,22 @@ and `roster` additionally require the author key to hold admin at
 unknown fields are rejected unless noted.
 
 ```text
-support_ticket   { version: 1, kind, subject (1..200 chars), category: transaction|bug|feedback|other,
+support_ticket   { version: 1, kind, subject (1..200 chars), category: support (legacy: transaction|bug|feedback|other),
                    status: open|closed, createdAt: ISO, closedAt?: ISO, closedBy?: user|support,
                    reportIds: bytes32[] }
 support_message  { version: 1, kind, ticketId: bytes32, text (1..8000 chars), sentAt: ISO, staffLabel? }
-support_report   { version: 1, kind, ticketId?: bytes32, createdAt: ISO, clientVersion, userAgent,
+support_report   { version: 1, kind, ticketId?: bytes32, createdAt: ISO, clientVersion, userAgent, note?: text (1..8000 chars),
                    error: { message, code?, step: approve|deploy|execute|cancel|other },
                    transaction: { allowlisted fields } }
+support_feedback { version: 1, kind, text (1..8000 chars), createdAt: ISO }
 support_identity { version: 1, kind, generations: [{ generation, privateKey: bytes32, address }],
                    pendingRotation?: generation }
 roster           { version: 1, workspaceName?, memberLabels?: { memberId: label },
                    invitationLabels?: { grantId: label } }
 tombstone        { version: 1, kind: <record type>, deleted: true }
 ```
+
+Device signers sign the SIWE statement `Submit encrypted feedback and reports to Mirage.` to obtain a support-only principal. Its workspace sessions use the `mirage_sp_guest_` prefix and can write `support_feedback` and `support_report`. A regular wallet or email sign-in is required for ticket and message writes.
 
 - `closedAt` and `closedBy` are present exactly when `status` is `closed`.
 - ISO timestamps are the `Date.prototype.toISOString` form.
