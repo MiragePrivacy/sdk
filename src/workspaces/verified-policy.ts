@@ -3,11 +3,12 @@ import type { PolicyResponse } from "./client";
 import { canonicalJson, type Json } from "./encoding";
 import { applyPolicyOp, policyOpHash } from "./policy";
 import { recordAuthorsAtVersion } from "./record-authors";
-import type { AuthorPolicyCheck } from "./records";
+import type { AuthorPolicyCheck, Realm } from "./records";
 
 /** Internal, client-owned copies. Never return these objects directly to callers. */
 export interface VerifiedPolicy extends PolicyResponse {
   authors: AuthorPolicyCheck[];
+  realm: Realm;
 }
 
 const views = new WeakMap<VerifiedPolicy, PolicyResponse>();
@@ -39,10 +40,10 @@ const equal = (left: unknown, right: unknown) =>
 
 export function verifyPolicyResponse(
   workspace: Hex, response: PolicyResponse, previous?: VerifiedPolicy,
-  mismatch = "Server policy does not match signed log",
+  mismatch = "Server policy does not match signed log", realm: Realm = "workspaces",
 ): VerifiedPolicy {
   const known = verifiedView(response);
-  if (known) {
+  if (known?.realm === realm) {
     if (known.policy.workspaceId !== workspace) throw new Error(mismatch);
     if (previous && known !== previous && (known.ops.length < previous.ops.length ||
         policyOpHash(known.ops[previous.ops.length - 1]) !== previous.policy.headHash)) {
@@ -58,7 +59,7 @@ export function verifyPolicyResponse(
     if (!equal(ops.slice(0, previous.ops.length), previous.ops)) {
       // A different signature for the same operation must still be verified.
       // Only an independently valid log extending the pinned head may replace it.
-      const verified = verifyPolicyResponse(workspace, response, undefined, mismatch);
+      const verified = verifyPolicyResponse(workspace, response, undefined, mismatch, realm);
       if (policyOpHash(ops[previous.ops.length - 1]) !== previous.policy.headHash) {
         throw new Error("Workspace policy rollback or fork");
       }
@@ -68,14 +69,14 @@ export function verifyPolicyResponse(
   let policy = previous?.policy ?? null;
   const authors = previous?.authors.slice() ?? [];
   for (const op of ops.slice(authors.length)) {
-    policy = applyPolicyOp(policy, op);
-    authors.push(recordAuthorsAtVersion(policy));
+    policy = applyPolicyOp(policy, op, realm);
+    authors.push(recordAuthorsAtVersion(policy, realm));
   }
   if (!policy || policy.workspaceId !== workspace || !equal(policy, response.policy)) {
     throw new Error(mismatch);
   }
   if (previous && policy === previous.policy) return previous;
-  return { policy, ops: structuredClone(ops), authors };
+  return { policy, ops: structuredClone(ops), authors, realm };
 }
 
 export function copyPolicy({ policy, ops }: PolicyResponse): PolicyResponse {

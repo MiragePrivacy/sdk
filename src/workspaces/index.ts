@@ -12,3 +12,4 @@ export * from "./personal";
 export * from "./invitations";
 
 export * from "./management";
+export * from "./support";
