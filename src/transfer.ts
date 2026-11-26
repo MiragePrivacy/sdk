@@ -1,5 +1,6 @@
 import {
   isAddress,
+  getAddress,
   type Address,
   type Hash,
   type PublicClient,
@@ -14,6 +15,8 @@ import type {
   EscrowKind,
   FeeEstimate,
   FeeRefreshOverrides,
+  FundingMode,
+  FundingAuthorizationRequest,
   GasPrice,
   NetworkConfig,
   NetworkKeyStatus,
@@ -25,6 +28,7 @@ import type {
   TransferStep,
 } from "./types.js";
 import {
+  ApiError,
   MirageError,
   MissingBlindingScalarError,
 } from "./errors.js";
@@ -60,9 +64,12 @@ import { lookupAdmission } from "./internal/admission.js";
 import { pollTransfers } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
 import { assertAccountUnchanged, getAccount } from "./internal/account.js";
+import { authorizeReceipt, isErc3009Asset } from "./internal/erc3009.js";
 import { isNativeToken } from "./token.js";
 
 export interface TransferParams {
+  /** Opt into signed USDC receipts when supported by both the chain and the API. */
+  fundingMode?: FundingMode;
   /** Single-recipient form. Mutually exclusive with `transfers`. */
   tokenAddress?: Address;
   recipientAddress?: Address;
@@ -145,6 +152,22 @@ function selectEscrowType(rows: TransferRow[]): EscrowKind {
   return isNativeToken(rows[0].tokenAddress) ? "native" : "erc20";
 }
 
+function authorizedAsset(mode: FundingMode | undefined, chainId: number, rows: TransferRow[]): Address | undefined {
+  const row = mode === "erc3009" ? rows.find(({ tokenAddress }) => isErc3009Asset(chainId, tokenAddress)) : undefined;
+  return row && getAddress(row.tokenAddress);
+}
+
+/** Older servers omit mode from successful responses. Upgraded servers explicitly signal unavailable artifacts. */
+function modeUnavailable(error: unknown): boolean {
+  if (error instanceof MirageError && error.code === "FUNDING_MODE_MISMATCH") return true;
+  if (!(error instanceof ApiError)) return false;
+  if (error.statusCode === 422 && typeof error.body === "string") {
+    return /unknown field [`"']funding_mode[`"']/.test(error.body);
+  }
+  return (error.statusCode === 400 || error.statusCode === 503)
+    && (error.body as { details?: unknown } | undefined)?.details === "ERC3009_UNAVAILABLE";
+}
+
 function resolveSender(params: TransferParams): Address {
   const walletSender = params.walletClient
     ? getAccount(params.walletClient)
@@ -192,6 +215,7 @@ function attestationOptions(network: NetworkConfig): {
  * already receives the scalar inside the Signal and recovers the same value.
  */
 async function buildZkIntent(params: {
+  authorizedAsset?: Address;
   network: NetworkConfig;
   sender: Address;
   rows: TransferRow[];
@@ -203,7 +227,9 @@ async function buildZkIntent(params: {
   // Funding consists of the positive transfer principals plus a reward in
   // the first signal's asset. The signed response must contain those exact assets.
   const signals = buildPricingSignals(params.rows);
-  const nonceOffset = signals.filter(signal => !isNativeToken(signal.asset as Address)).length;
+  const nonceOffset = signals.filter(signal =>
+    !isNativeToken(signal.asset as Address) && getAddress(signal.asset) !== params.authorizedAsset,
+  ).length;
   const escrow = predictContractAddress(
     params.sender,
     (await params.publicClient.getTransactionCount({
@@ -291,6 +317,7 @@ function feeEstimate(
       ? approvalGasEstimate + deploymentGasEstimate
       : undefined;
   return {
+    fundingMode: quote.fundingMode ?? "allowance",
     serviceFee: quote.serviceFee,
     approvalGasEstimate,
     deploymentGasEstimate,
@@ -304,6 +331,7 @@ function feeEstimate(
 }
 
 interface TransferContext {
+  authorizedAsset?: Address;
   expectedEscrowAddress?: Address;
   rows: TransferRow[];
   escrowType: EscrowKind;
@@ -336,6 +364,8 @@ function quoteFromResume(params: TransferParams): PricingQuote {
         (resume.escrowType === "erc20" &&
           !isNativeToken(rows[0].tokenAddress))));
   if (
+    (resume.fundingMode !== undefined && resume.fundingMode !== "allowance" &&
+      (resume.fundingMode !== "erc3009" || !authorizedAsset(resume.fundingMode, params.network.chainId, rows))) ||
     !["erc20", "native", "batch"].includes(resume.escrowType) ||
     !escrowMatchesRows ||
     typeof resume.quoteCommitment !== "string" ||
@@ -360,6 +390,7 @@ function quoteFromResume(params: TransferParams): PricingQuote {
   }
   return {
     chainId: params.network.chainId,
+    fundingMode: resume.fundingMode,
     serviceFee: resume.serviceFee,
     deployment: {
       escrowType: resume.escrowType,
@@ -412,6 +443,8 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
 
   const screeningReceipts = await screenAddresses(params.network.apiServer, params.network.chainId, [sender, ...rows.map(row => row.recipientAddress)]);
   const blinded = deriveBlindedSigners(networkKey.publicKey, rows.length);
+  const receiptAsset = authorizedAsset(params.fundingMode, params.network.chainId, rows);
+  const mode = receiptAsset ? "erc3009" : "allowance";
   // An ERC-20 escrow settles against a commitment rather than stored transfer
   // details, and the commitment binds the escrow address, so it must be
   // predicted before the constructor is priced.
@@ -419,6 +452,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     network: params.network,
     sender,
     rows,
+    authorizedAsset: receiptAsset,
     blindingScalar: blinded.blindingScalar,
     publicClient: params.publicClient,
   });
@@ -427,11 +461,12 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
       chainId: params.network.chainId,
       sender,
       escrowType,
+      fundingMode: mode,
       blindedSigners: blinded.blindedSigners,
       intent: intent?.request,
       signals: buildPricingSignals(rows),
     }),
-    fetchCamouflage(params.network.apiServer, escrowType),
+    fetchCamouflage(params.network.apiServer, escrowType, mode),
   ]);
   if (quote.deployment.escrowType !== escrowType) {
     throw new MirageError(
@@ -440,6 +475,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     );
   }
   const approvalGasEstimate = await estimateQuotedApprovalGas({
+    authorizedAsset: receiptAsset,
     depositByAsset: quote.deployment.depositByAsset,
     publicClient: params.publicClient,
     account: sender,
@@ -453,6 +489,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     networkKey,
     screeningReceipts,
     expectedEscrowAddress: intent.opening.escrow,
+    authorizedAsset: receiptAsset,
     blindedSigners: blinded.blindedSigners,
     blindingScalar: blinded.blindingScalar,
     quote,
@@ -489,6 +526,7 @@ function assertQuotedAccount(
 const PREVIEW_SENDER = "0x0000000000000000000000000000000000000001" as const;
 
 export interface PreviewParams {
+  fundingMode?: FundingMode;
   tokenAddress?: Address;
   recipientAddress?: Address;
   amount?: bigint;
@@ -511,16 +549,25 @@ export async function previewTransfer(
 ): Promise<TransferPreview> {
   const rows = resolveRows(params);
   const escrowType = selectEscrowType(rows);
-  const [preview, camouflage] = await Promise.all([
-    fetchPricingPreview(params.network.apiServer, {
-      chainId: params.network.chainId,
-      escrowType,
-      signals: buildPricingSignals(rows),
-    }),
-    fetchCamouflage(params.network.apiServer, escrowType).catch(
-      () => undefined,
-    ),
-  ]);
+  const receiptAsset = authorizedAsset(params.fundingMode, params.network.chainId, rows);
+  const mode = receiptAsset ? "erc3009" : "allowance";
+  let preview: Awaited<ReturnType<typeof fetchPricingPreview>>;
+  let camouflage: CamouflageResult | undefined;
+  try {
+    [preview, camouflage] = await Promise.all([
+      fetchPricingPreview(params.network.apiServer, {
+        chainId: params.network.chainId, escrowType, fundingMode: mode, signals: buildPricingSignals(rows),
+      }),
+      fetchCamouflage(params.network.apiServer, escrowType, mode).catch(error => {
+        if (mode === "erc3009") throw error;
+        return undefined;
+      }),
+    ]);
+    if (mode === "erc3009" && preview.fundingMode !== mode) return previewTransfer({ ...params, fundingMode: "allowance" });
+  } catch (error) {
+    if (mode === "erc3009" && modeUnavailable(error)) return previewTransfer({ ...params, fundingMode: "allowance" });
+    throw error;
+  }
   checkAbort(params.abortSignal);
 
   const approvalGasEstimate = params.publicClient
@@ -528,11 +575,13 @@ export async function previewTransfer(
         depositByAsset: preview.depositByAsset,
         publicClient: params.publicClient,
         account: PREVIEW_SENDER,
+        authorizedAsset: receiptAsset,
       }).catch(() => undefined)
     : undefined;
 
   const deploymentGasEstimate = camouflage?.deploymentGasEstimate;
   return {
+    fundingMode: mode,
     serviceFee: preview.serviceFee,
     approvalGasEstimate,
     deploymentGasEstimate,
@@ -551,13 +600,19 @@ export async function previewTransfer(
 export async function prepareTransfer(
   params: TransferParams,
 ): Promise<PreparedTransfer> {
-  const context = await buildContext(params);
+  const context = await buildContext(params).catch(error => {
+    if (!params.resume && params.fundingMode === "erc3009" && modeUnavailable(error)) {
+      return buildContext({ ...params, fundingMode: "allowance" });
+    }
+    throw error;
+  });
   let transactionGasPrice = params.gasPrice;
   let checkpoint: ApprovalCheckpoint | undefined;
   let deployedSecrets: TransferSecrets | undefined = params.resume;
   let pending: PendingDeployment | undefined;
   let broadcastHash: Hash | undefined;
   let deployment: Promise<Extract<TransferStep, { step: "deploy" }>> | undefined;
+  let authorization: `0x${string}` | undefined;
   let approvalBroadcast = false;
   let approvalInProgress = false;
 
@@ -570,7 +625,7 @@ export async function prepareTransfer(
   async function canReuseForApproval(): Promise<boolean> {
     if (approvalInProgress || approvalBroadcast || checkpoint || pending || deployment || deployedSecrets || !timeRemaining(15)) return false;
     const nonce = await params.publicClient.getTransactionCount({ address: context.sender, blockTag: "pending" });
-    const offset = buildQuotedApprovalBuckets(context.quote.deployment.depositByAsset).length;
+    const offset = buildQuotedApprovalBuckets(context.quote.deployment.depositByAsset, context.authorizedAsset).length;
     return predictContractAddress(context.sender, nonce + offset) === context.expectedEscrowAddress && timeRemaining(15);
   }
 
@@ -579,6 +634,7 @@ export async function prepareTransfer(
     callbacks?: ApprovalCallbacks,
   ): AsyncGenerator<TransferStep, ApprovalCheckpoint> {
     if (pending || deployment || deployedSecrets) throw new MirageError("INVALID_STAGE", "This deployment has already started.");
+    if (checkpoint && context.authorizedAsset) return checkpoint;
     if (approvalInProgress) {
       throw new MirageError(
         "INVALID_STAGE",
@@ -588,7 +644,40 @@ export async function prepareTransfer(
     approvalInProgress = true;
     try {
       const account = assertQuotedAccount(walletClient, context.sender);
+      if (context.authorizedAsset && !authorization) {
+        const escrowAddress = context.expectedEscrowAddress!;
+        const asset = context.authorizedAsset;
+        const checkAuthorizationContext = async () => {
+          checkAbort(params.abortSignal);
+          assertQuotedAccount(walletClient, context.sender);
+          const [chainId, walletChainId, nonce] = await Promise.all([
+            params.publicClient.getChainId(),
+            walletClient.account?.type === "json-rpc" ? walletClient.getChainId() : walletClient.chain?.id,
+            params.publicClient.getTransactionCount({ address: account, blockTag: "pending" }),
+          ]);
+          const offset = buildQuotedApprovalBuckets(context.quote.deployment.depositByAsset, asset).length;
+          if (chainId !== params.network.chainId || walletChainId !== chainId
+            || predictContractAddress(account, nonce + offset) !== escrowAddress || !timeRemaining(15)) {
+            throw new MirageError("STALE_PREPARATION", "Review a fresh quote before authorizing this escrow.");
+          }
+        };
+        await checkAuthorizationContext();
+        const bucket = buildQuotedApprovalBuckets(context.quote.deployment.depositByAsset).find(item => item.tokenAddress === asset)!;
+        const request: FundingAuthorizationRequest = Object.freeze({
+          tokenAddress: asset, amount: bucket.amount, escrowAddress, validBefore: context.quote.expiresAt!,
+        });
+        const witness = await authorizeReceipt(walletClient, params.publicClient, params.network.chainId, account, request, () => {
+          checkAbort(params.abortSignal);
+          assertQuotedAccount(walletClient, context.sender);
+          if (!timeRemaining(15)) throw new MirageError("STALE_PREPARATION", "Review a fresh quote before signing.");
+          callbacks?.onAuthorizationRequest?.(request);
+        });
+        await checkAuthorizationContext();
+        authorization = witness;
+        yield { step: "authorize", ...request };
+      }
       const iterator = approveQuotedForDeployment({
+        authorizedAsset: context.authorizedAsset,
         depositByAsset: context.quote.deployment.depositByAsset,
         walletClient,
         publicClient: params.publicClient,
@@ -601,7 +690,7 @@ export async function prepareTransfer(
           callbacks?.onBroadcast?.(hash);
         },
         onAbortCheck: () => {
-          if (!approvalBroadcast && context.quote.expiresAt !== undefined && !timeRemaining(0)) {
+          if ((!approvalBroadcast || context.authorizedAsset) && context.quote.expiresAt !== undefined && !timeRemaining(0)) {
             throw new MirageError("STALE_PREPARATION", "This quote is expiring. Review a fresh quote before approving.");
           }
           checkAbort(params.abortSignal);
@@ -658,6 +747,9 @@ export async function prepareTransfer(
     }
 
     if (!pending) {
+      if (approvalInProgress || (context.authorizedAsset && (!authorization || !checkpoint))) {
+        throw new MirageError("INVALID_STAGE", "Complete transfer funding authorization before deploying.");
+      }
       const approved = suppliedCheckpoint ?? checkpoint;
       const artifact = context.camouflage;
       const quote = context.quote;
@@ -665,6 +757,7 @@ export async function prepareTransfer(
         broadcastHash = await submitQuotedDeployment({
           bytecode: artifact.camouflagedBytecode,
           constructorArgs: quote.deployment.constructorArgs,
+          authorization,
           depositByAsset: quote.deployment.depositByAsset,
           msgValue: quote.deployment.msgValue,
           walletClient,
@@ -686,6 +779,7 @@ export async function prepareTransfer(
               secrets: {
                 escrowAddress,
                 escrowType: context.escrowType,
+                ...(context.authorizedAsset ? { fundingMode: "erc3009" as const } : {}),
                 blindingScalar: context.blindingScalar,
                 seed: artifact.seed,
                 selectorMapping: artifact.selectorMapping,
@@ -769,6 +863,7 @@ export async function prepareTransfer(
     overrides: FeeRefreshOverrides = {},
   ): Promise<FeeEstimate> {
     if (
+      authorization ||
       approvalBroadcast ||
       approvalInProgress ||
       pending ||
@@ -790,6 +885,7 @@ export async function prepareTransfer(
       network: params.network,
       sender: context.sender,
       rows: context.rows,
+      authorizedAsset: context.authorizedAsset,
       blindingScalar: context.blindingScalar,
       publicClient: params.publicClient,
     });
@@ -797,6 +893,7 @@ export async function prepareTransfer(
       chainId: params.network.chainId,
       sender: context.sender,
       escrowType: context.escrowType,
+      fundingMode: context.quote.fundingMode,
       blindedSigners: context.blindedSigners,
       intent: intent.request,
       signals: buildPricingSignals(context.rows),
@@ -810,6 +907,7 @@ export async function prepareTransfer(
     context.quote = refreshedQuote;
     context.expectedEscrowAddress = intent.opening.escrow;
     const approvalGasEstimate = await estimateQuotedApprovalGas({
+      authorizedAsset: context.authorizedAsset,
       depositByAsset: context.quote.deployment.depositByAsset,
       publicClient: params.publicClient,
       account: context.sender,
@@ -829,6 +927,7 @@ export async function prepareTransfer(
     overrides: FeeRefreshOverrides = {},
   ): Promise<FeeEstimate> {
     if (
+      authorization ||
       approvalBroadcast ||
       approvalInProgress ||
       pending ||
@@ -915,6 +1014,7 @@ async function* completeTransfer(
       chainId: network.chainId,
       seed: resume.seed,
       escrowType: resume.escrowType,
+      fundingMode: resume.fundingMode,
       quoteCommitment: resume.quoteCommitment,
       screeningReceipts,
     });
@@ -938,6 +1038,7 @@ async function* completeTransfer(
     const response = await submitSignal({
       seed: resume.seed,
       escrowType: resume.escrowType,
+      fundingMode: resume.fundingMode,
       escrowAddress: escrow,
       blindingScalar: resume.blindingScalar,
       sealedPricingAuthorization: resume.sealedPricingAuthorization,

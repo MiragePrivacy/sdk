@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 import { ApiError, MissingBlindingScalarError } from "../errors.js";
 import { nomadProxyUrl } from "./api.js";
-import type { EscrowKind, ExecutionApproval, NetworkKeyStatus } from "../types.js";
+import type { EscrowKind, ExecutionApproval, FundingMode, NetworkKeyStatus } from "../types.js";
 import { lookupAdmission, verifyAdmissionReceipt } from "./admission.js";
 
 async function encryptSignal(payload: Uint8Array, publicKeyHex: string): Promise<Uint8Array> {
@@ -21,6 +21,7 @@ function toHexString(bytes: Uint8Array): string {
 
 export interface SignalParams {
   seed: string;
+  fundingMode?: FundingMode;
   escrowType: EscrowKind;
   escrowAddress: Address;
   blindingScalar: `0x${string}`;
@@ -67,7 +68,8 @@ export async function submitSignal(params: SignalParams): Promise<string> {
   const payload = `0x${toHexString(encrypted)}` as `0x${string}`;
   // Reuse the exact ciphertext if a connection fails after durable admission.
   const body = JSON.stringify({ payload, executionApproval: params.executionApproval,
-    seed: params.seed, escrowType: params.escrowType });
+    seed: params.seed, escrowType: params.escrowType,
+    ...(params.fundingMode === "erc3009" ? { fundingMode: params.fundingMode } : {}) });
   const request = () => fetch(`${nomadProxyUrl(params.apiServer, params.chainId)}/signal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

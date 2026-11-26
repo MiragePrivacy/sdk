@@ -98,21 +98,23 @@ export function predictContractAddress(deployerAddress: Address, nonce: number):
 /** Convert the API's exact funding map into ERC-20 approval calls. */
 export function buildQuotedApprovalBuckets(
   depositByAsset: Record<string, bigint>,
+  authorizedAsset?: Address,
 ): Array<{ tokenAddress: Address; amount: bigint }> {
   return Object.entries(depositByAsset)
     .map(([asset, amount]) => ({ tokenAddress: getAddress(asset), amount }))
-    .filter(({ tokenAddress, amount }) => !isNativeToken(tokenAddress) && amount > 0n);
+    .filter(({ tokenAddress, amount }) => !isNativeToken(tokenAddress) && tokenAddress !== authorizedAsset && amount > 0n);
 }
 
 /** Simulate every exact ERC-20 approval required before escrow deployment. */
 export async function estimateQuotedApprovalGas(params: {
   predictedEscrowAddress?: Address;
+  authorizedAsset?: Address;
   depositByAsset: Record<string, bigint>;
   publicClient: PublicClient;
   account: Address;
 }): Promise<bigint> {
   const { depositByAsset, publicClient, account } = params;
-  const buckets = buildQuotedApprovalBuckets(depositByAsset);
+  const buckets = buildQuotedApprovalBuckets(depositByAsset, params.authorizedAsset);
   if (buckets.length === 0) return 0n;
 
   const predictedEscrowAddress = params.predictedEscrowAddress ?? predictContractAddress(
@@ -171,6 +173,7 @@ async function approveToken(params: ApprovalCallbacks & {
 /** Approve the exact API-quoted deposits against the predicted escrow. */
 export async function* approveQuotedForDeployment(params: ApprovalCallbacks & {
   expectedEscrowAddress?: Address;
+  authorizedAsset?: Address;
   depositByAsset: Record<string, bigint>;
   walletClient: WalletClient;
   publicClient: PublicClient;
@@ -182,7 +185,7 @@ export async function* approveQuotedForDeployment(params: ApprovalCallbacks & {
   ApprovalCheckpoint
 > {
   const { depositByAsset, walletClient, publicClient, account, gasPrice, onAbortCheck } = params;
-  const buckets = buildQuotedApprovalBuckets(depositByAsset);
+  const buckets = buildQuotedApprovalBuckets(depositByAsset, params.authorizedAsset);
   const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
   const predictedEscrowAddress = predictContractAddress(account, nonce + buckets.length);
   if (params.expectedEscrowAddress && predictedEscrowAddress !== params.expectedEscrowAddress) {
@@ -224,6 +227,7 @@ export async function* approveQuotedForDeployment(params: ApprovalCallbacks & {
 export async function submitQuotedDeployment(params: {
   bytecode: `0x${string}`;
   constructorArgs: `0x${string}`;
+  authorization?: `0x${string}`;
   depositByAsset: Record<string, bigint>;
   msgValue: bigint;
   walletClient: WalletClient;
@@ -255,7 +259,7 @@ export async function submitQuotedDeployment(params: {
     throw new ContractError("Approval checkpoint belongs to a different account");
   }
 
-  const data = `${bytecode}${constructorArgs.slice(2)}` as const;
+  const data = `${bytecode}${constructorArgs.slice(2)}${params.authorization?.slice(2) ?? ""}` as const;
   // Simulate current allowances while independently capturing the deployment
   // nonce and the recovery search bound. None depends on another RPC response.
   const [chainId, nonce, fromBlock, localGasEstimate] = await Promise.all([

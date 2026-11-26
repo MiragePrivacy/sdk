@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getContractAddress } from "viem";
+import { getContractAddress, hashDomain, getTypesForEIP712Domain } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { fetchCamouflage } from "../src/internal/api.js";
 import * as bond from "../src/internal/bond.js";
 import { deriveSalt, intentCommitment } from "../src/internal/zk.js";
@@ -50,6 +51,7 @@ let attestUrl: string | undefined;
 let forceUnsignedQuote: boolean;
 let signedFundingOverride: Record<string, string> | undefined;
 let quoteTtl: number | undefined;
+let supportsReceiptFunding: boolean;
 
 beforeEach(() => {
   pricingBody = undefined;
@@ -60,6 +62,7 @@ beforeEach(() => {
   forceUnsignedQuote = false;
   signedFundingOverride = undefined;
   quoteTtl = 300;
+  supportsReceiptFunding = true;
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/compliance/screen")) {
@@ -85,6 +88,7 @@ beforeEach(() => {
       return {
         ok: true,
         json: async () => ({
+          funding_mode: supportsReceiptFunding ? camouflageBody.funding_mode : undefined,
           camouflaged_bytecode: "0x6000",
           original_size: 2,
           camouflaged_size: 2,
@@ -105,10 +109,11 @@ beforeEach(() => {
       return {
         ok: true,
         json: async () => ({
-          chain_id: 31337,
+          chain_id: pricingBody.chain_id,
           service_fee: { asset: rewardAsset, amount: "25" },
           deployment: {
             escrow_type: quotedEscrowType ?? pricingBody.escrow_type,
+            funding_mode: supportsReceiptFunding ? pricingBody.funding_mode : undefined,
             constructor_args: preview ? null : "0x1234",
             quote_commitment: preview ? null : COMMITMENT,
             reward_asset: rewardAsset,
@@ -969,4 +974,153 @@ it("uses the legacy escrow endpoint with the same seed when the new route is una
   expect(result.camouflagedBytecode).toBe("0x6000");
   expect(result.camouflagedSize).toBe(2);
   expect(result.deploymentGasEstimate).toBe(53_000n);
+});
+
+describe("USDC receipt funding", () => {
+  const usdt = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as const;
+  const sepoliaUsdc = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as const;
+  const mockUsdc = "0xd7b9DC75d34f895325E4dA3129C180e8822CcCfd" as const;
+  const signer = privateKeyToAccount(`0x${"07".repeat(32)}`);
+
+  function setup(tokens: readonly `0x${string}`[], chainId = 1) {
+    attestedChainId = chainId;
+    const asset = chainId === 1 ? USDC : sepoliaUsdc;
+    const name = chainId === 1 ? "USD Coin" : "USDC";
+    const domain = { chainId, verifyingContract: asset, name, version: "2" };
+    let nonce = 5;
+    const rpc = {
+      getChainId: vi.fn(async () => chainId),
+      getTransactionCount: vi.fn(async () => nonce),
+      estimateContractGas: vi.fn(async () => 50_000n),
+      readContract: vi.fn(async ({functionName}) => functionName === "name" ? name :
+        hashDomain({domain, types:{EIP712Domain:getTypesForEIP712Domain({domain})}})),
+      waitForTransactionReceipt: vi.fn(async () => ({status:"success",gasUsed:40_000n})),
+    };
+    const wallet = {
+      account: signer, chain: {id:chainId},
+      signTypedData: vi.fn(({account: _, ...typed}) => signer.signTypedData(typed)),
+      writeContract: vi.fn(async () => { nonce += 1; return DEPLOY_HASH; }),
+      sendTransaction: vi.fn(),
+    };
+    const params = {
+      network:{...network, chainId}, publicClient:rpc as any, senderAddress:signer.address,
+      transfers:tokens.map((tokenAddress, i) => ({
+        tokenAddress,recipientAddress:i === 1 ? RECIPIENT_B : RECIPIENT_A,amount:100n,
+      })), fundingMode:"erc3009" as const,
+    };
+    return {params, wallet, rpc, advance: () => { nonce += 1; }};
+  }
+
+  it.each([[1, USDC], [11155111, sepoliaUsdc]] as const)(
+    "binds a hashless exact authorization to the deployment nonce on chain %i", async (chainId, asset) => {
+      const {params, wallet, rpc} = setup([asset], chainId);
+      const preview = await previewTransfer(params);
+      expect(preview).toMatchObject({fundingMode:"erc3009", approvalGasEstimate:0n});
+      const prepared = await prepareTransfer(params);
+      expect(prepared.fees).toMatchObject({fundingMode:"erc3009", approvalGasEstimate:0n});
+      const escrowAddress = getContractAddress({from:signer.address,nonce:5n});
+      const onAuthorizationRequest = vi.fn();
+      const approvals = prepared.approve(wallet as any, {onAuthorizationRequest});
+      const signed = await approvals.next();
+      expect(signed.value).toMatchObject({step:"authorize",tokenAddress:asset,amount:125n,escrowAddress});
+      expect(onAuthorizationRequest).toHaveBeenCalledWith(expect.objectContaining({amount:125n,escrowAddress}));
+      expect(wallet.signTypedData).toHaveBeenCalledWith(expect.objectContaining({
+        primaryType:"ReceiveWithAuthorization", domain:expect.objectContaining({chainId,verifyingContract:asset}),
+        message:expect.objectContaining({from:signer.address,to:escrowAddress,value:125n,validAfter:0n,
+          validBefore:BigInt((signed.value as any).validBefore),nonce:expect.stringMatching(/^0x[0-9a-f]{64}$/)}),
+      }));
+      expect(await approvals.next()).toMatchObject({done:true,value:{approvals:[],approveGasUsed:0n}});
+      await prepared.approve(wallet as any).next();
+      expect(wallet.signTypedData).toHaveBeenCalledTimes(1);
+      expect(wallet.writeContract).not.toHaveBeenCalled();
+      expect(rpc.estimateContractGas).not.toHaveBeenCalled();
+    },
+  );
+
+  it("signs before a mixed batch allowance and counts each remaining approval nonce", async () => {
+    const {params, wallet} = setup([usdt, USDC, USDC]);
+    const prepared = await prepareTransfer(params);
+    expect(prepared.fees.approvalGasEstimate).toBe(50_000n);
+    const approvals = prepared.approve(wallet as any);
+    const escrowAddress = getContractAddress({from:signer.address,nonce:6n});
+    expect(await approvals.next()).toMatchObject({value:{step:"authorize",tokenAddress:USDC,amount:200n,escrowAddress}});
+    expect(wallet.writeContract).not.toHaveBeenCalled();
+    expect(await approvals.next()).toMatchObject({value:{step:"approve",tokenAddress:usdt,total:1}});
+    expect(wallet.writeContract).toHaveBeenCalledWith(expect.objectContaining({address:usdt,args:[escrowAddress,125n]}));
+    expect(await approvals.next()).toMatchObject({value:{approveGasUsed:40_000n}});
+  });
+
+  it("recomputes the commitment and quote at the legacy nonce when the API predates authorization", async () => {
+    supportsReceiptFunding = false;
+    const {params, wallet} = setup([USDC]);
+    expect((await previewTransfer(params)).fundingMode).toBe("allowance");
+    const prepared = await prepareTransfer(params);
+    expect(prepared.fees.fundingMode).toBe("allowance");
+    const approvals = prepared.approve(wallet as any);
+    expect(await approvals.next()).toMatchObject({value:{step:"approve"}});
+    expect(wallet.writeContract).toHaveBeenCalledWith(expect.objectContaining({
+      args:[getContractAddress({from:signer.address,nonce:6n}),125n],
+    }));
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
+    const requests = vi.mocked(fetch).mock.calls.filter(([url,init]) =>
+      String(url).endsWith("/pricing/quote") && JSON.parse(init!.body as string).sender);
+    expect(requests.map(([,init]) => JSON.parse(init!.body as string).funding_mode)).toEqual(["erc3009",undefined]);
+    expect(JSON.parse(requests[0][1]!.body as string).intent.commitment)
+      .not.toBe(JSON.parse(requests[1][1]!.body as string).intent.commitment);
+  });
+
+  it.each([
+    ["unknown field `funding_mode`, expected escrow_type", true],
+    ["unknown field `signals`, expected escrow_type", false],
+  ] as const)("handles the old server's strict JSON decoder: %s", async (details, compatible) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).endsWith("/pricing/quote") && JSON.parse(init!.body as string).funding_mode) {
+        return new Response(details, { status:422 });
+      }
+      return original(url, init);
+    });
+    const {params, wallet} = setup([USDC]);
+    if (compatible) {
+      expect((await previewTransfer(params)).fundingMode).toBe("allowance");
+      expect((await prepareTransfer(params)).fees.fundingMode).toBe("allowance");
+    } else {
+      await expect(prepareTransfer(params)).rejects.toMatchObject({statusCode:422});
+    }
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
+  });
+
+  it("uses ordinary allowances for a mock token with the same symbol", async () => {
+    const {params, wallet} = setup([mockUsdc],11155111);
+    const prepared = await prepareTransfer(params);
+    expect(prepared.fees.fundingMode).toBe("allowance");
+    expect(await prepared.approve(wallet as any).next()).toMatchObject({value:{step:"approve"}});
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
+  });
+
+  it("keeps a rejected signature and stale nonce from triggering any fallback transaction", async () => {
+    const {params, wallet, advance} = setup([usdt, USDC]);
+    const prepared = await prepareTransfer(params);
+    wallet.signTypedData.mockRejectedValueOnce(Object.assign(new Error("rejected"), {code:4001}));
+    await expect(prepared.approve(wallet as any).next()).rejects.toMatchObject({code:4001});
+    await expect(prepared.deploy(wallet as any)).rejects.toMatchObject({code:"INVALID_STAGE"});
+    advance();
+    await expect(prepared.approve(wallet as any).next()).rejects.toMatchObject({code:"STALE_PREPARATION"});
+    expect(wallet.writeContract).not.toHaveBeenCalled();
+    expect(wallet.sendTransaction).not.toHaveBeenCalled();
+    expect(wallet.signTypedData).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an incorrect domain, inflated funding amount, or missing quote expiry before signing", async () => {
+    const {params, wallet, rpc} = setup([USDC]);
+    rpc.readContract.mockImplementation(async ({functionName}) => functionName === "name" ? "USD Coin" : COMMITMENT);
+    const prepared = await prepareTransfer(params);
+    await expect(prepared.approve(wallet as any).next()).rejects.toMatchObject({code:"UNSUPPORTED_AUTHORIZATION"});
+    signedFundingOverride = {[USDC]:"99999"};
+    await expect(prepareTransfer(params)).rejects.toMatchObject({code:"INVALID_PRICING_QUOTE"});
+    signedFundingOverride = undefined;
+    quoteTtl = undefined;
+    await expect(prepareTransfer(params)).rejects.toMatchObject({code:"INVALID_PRICING_QUOTE"});
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
+  });
 });
