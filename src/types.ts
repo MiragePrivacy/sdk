@@ -236,6 +236,26 @@ export interface ApprovalCheckpoint {
   approveGasUsed: bigint;
 }
 
+/** Device-local recovery data. Store before asking the wallet to deploy. */
+export interface PendingDeployment {
+  version: 1;
+  chainId: number;
+  nonce: number;
+  /** Earliest block to consider for sender/nonce discovery, as a decimal string. */
+  fromBlock?: string;
+  /** Keccak-256 of the entire creation transaction input, including constructor arguments. */
+  inputHash: Hash;
+  createdAt: number;
+  secrets: Omit<TransferSecrets, "deployHash" | "deployedAt" | "fromBlock" | "userDeployGas" | "userGasPrice">;
+}
+
+export interface DeploymentHooks {
+  /** A rejected write prevents the wallet request. Keep this private to the originating device. */
+  onPrepared?(pending: PendingDeployment): void | Promise<void>;
+  /** Runs as soon as the wallet returns the hash, before receipt polling. */
+  onBroadcast?(hash: Hash): void | Promise<void>;
+}
+
 export type TransferStep =
   | { step: "fees"; fees: FeeEstimate }
   /** Emitted once per distinct ERC20 requiring an allowance. */
@@ -292,6 +312,13 @@ export interface AdmissionReceipt {
   signature: string;
 }
 
+export interface ApprovalCallbacks {
+  /** Called immediately before each ERC-20 approval is handed to the wallet. */
+  onWalletRequest?: () => void;
+  /** Called when the wallet returns the hash, before waiting for the receipt. */
+  onBroadcast?: (hash: Hash) => void;
+}
+
 export interface PreparedTransfer {
   fees: FeeEstimate;
   /**
@@ -309,10 +336,13 @@ export interface PreparedTransfer {
    * calls when overrides are supplied. Throws once approval has begun.
    */
   updateTransfers(transfers: TransferRow[], overrides?: FeeRefreshOverrides): Promise<FeeEstimate>;
-  approve(walletClient: WalletClient): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
+  /** Recheck quote, screening expiry and committed escrow address before adopting a displayed quote. */
+  canReuseForApproval?(): Promise<boolean>;
+  approve(walletClient: WalletClient, callbacks?: ApprovalCallbacks): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
   deploy(
     walletClient: WalletClient,
     checkpoint?: ApprovalCheckpoint,
+    hooks?: DeploymentHooks,
   ): Promise<Extract<TransferStep, { step: "deploy" }>>;
   complete(
     walletClient: WalletClient,
