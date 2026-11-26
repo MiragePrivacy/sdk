@@ -9,6 +9,16 @@ export type NetworkKind = "ethereum";
  */
 export type EscrowKind = "erc20" | "native" | "batch";
 
+export type FundingMode = "allowance" | "erc3009";
+
+export interface FundingAuthorizationRequest {
+  tokenAddress: Address;
+  amount: bigint;
+  escrowAddress: Address;
+  /** Unix seconds. */
+  validBefore: number;
+}
+
 export interface NetworkConfig {
   id: NetworkId;
   kind: NetworkKind;
@@ -55,6 +65,7 @@ export interface NetworkConfig {
 }
 
 export interface FeeEstimate {
+  fundingMode?: FundingMode;
   /** Single public fee quoted by the API; no node/platform split is exposed. */
   serviceFee: AssetAmount;
   /** Sum of gas units for every exact ERC-20 approval required by the quote. */
@@ -84,6 +95,7 @@ export interface FeeEstimate {
  * never be executed.
  */
 export interface TransferPreview {
+  fundingMode?: FundingMode;
   serviceFee: AssetAmount;
   /**
    * Sum of gas units for every exact ERC-20 approval, simulated against a
@@ -202,6 +214,7 @@ export interface TransferRow {
  * authorized to bond, so a resumed transfer must supply the original value.
  */
 export interface TransferSecrets {
+  fundingMode?: FundingMode;
   escrowAddress: Address;
   escrowType: EscrowKind;
   /** Scalar used for a single signer or the batch's ordered one-time bid signers. */
@@ -258,6 +271,7 @@ export interface DeploymentHooks {
 
 export type TransferStep =
   | { step: "fees"; fees: FeeEstimate }
+  | ({ step: "authorize" } & FundingAuthorizationRequest)
   /** Emitted once per distinct ERC20 requiring an allowance. */
   | { step: "approve"; hash: Hash; tokenAddress: Address; index: number; total: number }
   | {
@@ -313,6 +327,8 @@ export interface AdmissionReceipt {
 }
 
 export interface ApprovalCallbacks {
+  /** Called before signing a token receipt authorization. No transaction is broadcast. */
+  onAuthorizationRequest?: (request: FundingAuthorizationRequest) => void;
   /** Called immediately before each ERC-20 approval is handed to the wallet. */
   onWalletRequest?: () => void;
   /** Called when the wallet returns the hash, before waiting for the receipt. */

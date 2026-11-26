@@ -1,6 +1,7 @@
 // Public API
 export { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "./networks.js";
 export { prepareTransfer, previewTransfer, executeTransfer } from "./transfer.js";
+export { isErc3009Asset } from "./internal/erc3009.js";
 export { recoverDeployment } from "./recoverDeployment.js";
 export type { TransferParams, PreviewParams } from "./transfer.js";
 export type {
@@ -48,6 +49,8 @@ export type {
   NetworkConfig,
   EscrowKind,
   FeeEstimate,
+  FundingMode,
+  FundingAuthorizationRequest,
   AssetAmount,
   FeeRefreshOverrides,
   AssetRequirement,

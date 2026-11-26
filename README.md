@@ -70,7 +70,7 @@ const prepared = await prepareTransfer({
   network: networks.ethereum,
 });
 
-// Approve button. The generator yields immediately after each token approval.
+// The generator yields each completed signature or mined allowance approval.
 const approvals = prepared.approve(walletClient);
 let checkpoint;
 while (true) {
@@ -79,7 +79,7 @@ while (true) {
     checkpoint = next.value;
     break;
   }
-  console.log(next.value.hash);
+  if (next.value.step === "approve") console.log(next.value.hash);
 }
 
 // Deploy button. Persist `deployed.secrets` immediately.
@@ -95,6 +95,10 @@ for await (const event of prepared.complete(walletClient, deployed.secrets)) {
 The latter includes the blinding scalar, quote commitment, and opaque sealed
 pricing authorization. Persist it immediately: a reload must submit the same
 authorization that produced the deployed constructor.
+
+For native Circle USDC on Ethereum or Sepolia, pass `fundingMode: "erc3009"` to `previewTransfer` and `prepareTransfer`. Display the selected `.fundingMode` from the preview or prepared fees. The SDK requests a new allowance quote if the server does not support signed receipt funding. Other ERC-20s continue to use ordinary allowances.
+
+In receipt mode, `approve()` first asks the wallet to sign Circle's `ReceiveWithAuthorization` for the exact USDC deposit and predicted escrow. It yields an `authorize` event, which has no transaction hash. Each remaining ERC-20 requires one allowance. The deployment consumes the USDC signature and funds the escrow atomically. The signature stays inside the prepared transfer until submission, so the application must retain that instance through deployment. After a rejected or unsupported signature, the application can offer a fresh review using `fundingMode: "allowance"`. The SDK does not submit an allowance in response to a signing failure.
 
 To recover a deployment across a reload or a lost wallet response, pass a third
 argument to `prepared.deploy` with `onPrepared(pending)` and `onBroadcast(hash)`.
@@ -137,7 +141,7 @@ now requires an API server with the proxy configured.
 `prepareTransfer` returns a `PreparedTransfer` with the API quote in `.fees` and an async `.execute()` pipeline:
 
 1. **fees** - Public API service fee and exact funding requirements
-2. **approve** - One exact approval per ERC-20 funding asset
+2. **authorize / approve** - An optional USDC typed signature, followed by one on-chain approval per remaining ERC-20 funding asset
 3. **deploy** - Exact API-quoted escrow deployment
 4. **compliance** - Execution approval bound to the deployment and quote
 5. **signal** - Minimal encrypted Signal envelope submission to Nomad

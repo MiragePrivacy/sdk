@@ -1,7 +1,9 @@
 import type { Address } from "viem";
+import { isErc3009Asset } from "./erc3009.js";
 import { ApiError, MirageError } from "../errors.js";
 import type {
   EscrowKind,
+  FundingMode,
   ExecutionApproval,
   NetworkConfig,
   NetworkKeyStatus,
@@ -23,6 +25,7 @@ export interface CamouflageResult {
 export async function fetchCamouflage(
   apiServer: string,
   escrowType: EscrowKind,
+  fundingMode?: FundingMode,
 ): Promise<CamouflageResult> {
   // Generate random 32-byte seed
   const seedBytes = new Uint8Array(32);
@@ -34,9 +37,10 @@ export async function fetchCamouflage(
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ options: { seed }, escrow_type: escrowType }),
+    body: JSON.stringify({ options: { seed }, escrow_type: escrowType, ...fundingFields(fundingMode) }),
   };
   type EscrowCamouflageResponse = {
+    funding_mode?: unknown;
     camouflaged_bytecode?: string;
     obfuscated_bytecode?: string;
     selector_mapping?: Record<string, string>;
@@ -57,6 +61,7 @@ export async function fetchCamouflage(
     res = await request<EscrowCamouflageResponse>(`${apiServer}/obfuscate_escrow`, init);
   }
 
+  assertFundingMode(fundingMode, res.funding_mode);
   const bytecode = (res.camouflaged_bytecode ?? res.obfuscated_bytecode)?.trim();
   const size = res.camouflaged_size ?? res.obfuscated_size;
   if (!bytecode || size == null) {
@@ -71,6 +76,22 @@ export async function fetchCamouflage(
     deploymentGasEstimate: gas == null ? undefined : BigInt(gas),
     seed,
   };
+}
+
+function fundingFields(mode?: FundingMode) {
+  return mode === "erc3009" ? { funding_mode: mode } : {};
+}
+
+function readFundingMode(value: unknown): FundingMode {
+  if (value === undefined || value === "allowance") return "allowance";
+  if (value === "erc3009") return value;
+  throw new MirageError("INVALID_PRICING_QUOTE", "Unknown funding mode returned by the API.");
+}
+
+function assertFundingMode(requested: FundingMode | undefined, actual: unknown) {
+  if (readFundingMode(actual) !== (requested ?? "allowance")) {
+    throw new MirageError("FUNDING_MODE_MISMATCH", "The funding mode returned by the API differs from the request.");
+  }
 }
 
 export type ComplianceApproval = ExecutionApproval;
@@ -106,6 +127,7 @@ export interface PricingSignalRequest {
 }
 
 export interface PricingQuote {
+  fundingMode?: FundingMode;
   chainId: number;
   expiresAt?: number;
   serviceFee: { asset: Address; amount: bigint };
@@ -126,6 +148,7 @@ export interface PricingQuote {
  * funding as a signed quote but omits every deployable field.
  */
 export interface PricingPreviewQuote {
+  fundingMode: FundingMode;
   chainId: number;
   serviceFee: { asset: Address; amount: bigint };
   rewardAsset: Address;
@@ -140,6 +163,7 @@ interface PricingQuoteResponse {
   service_fee: { asset: Address; amount: string };
   deployment: {
     escrow_type: EscrowKind;
+    funding_mode?: FundingMode;
     constructor_args: `0x${string}` | null;
     quote_commitment: `0x${string}` | null;
     reward_asset: Address;
@@ -177,12 +201,14 @@ export async function fetchPricingPreview(
   params: {
     chainId: number;
     escrowType: EscrowKind;
+    fundingMode?: FundingMode;
     signals: PricingSignalRequest[];
   },
 ): Promise<PricingPreviewQuote> {
   const res = await postPricingQuote(apiServer, {
     chain_id: params.chainId,
     escrow_type: params.escrowType,
+    ...fundingFields(params.fundingMode),
     // Copy only priced fields: full transfer rows cannot leak recipients.
     signals: params.signals.map(signal => ({
       asset: signal.asset, execution_mode: signal.execution_mode,
@@ -190,7 +216,10 @@ export async function fetchPricingPreview(
     })),
   });
 
+  const fundingMode = readFundingMode(res.deployment.funding_mode);
+  if (fundingMode === "erc3009") assertFundingMode(params.fundingMode, fundingMode);
   return {
+    fundingMode,
     chainId: res.chain_id,
     serviceFee: { asset: res.service_fee.asset, amount: BigInt(res.service_fee.amount) },
     rewardAsset: res.deployment.reward_asset,
@@ -207,6 +236,7 @@ export async function fetchPricingQuote(
     chainId: number;
     sender: Address;
     escrowType: EscrowKind;
+    fundingMode?: FundingMode;
     blindedSigners: Address[];
     /** Required for ERC-20 escrows and rejected for every other kind. */
     intent?: ZkIntentRequest;
@@ -217,6 +247,7 @@ export async function fetchPricingQuote(
     chain_id: params.chainId,
     sender: params.sender,
     escrow_type: params.escrowType,
+    ...fundingFields(params.fundingMode),
     blinded_signers: params.blindedSigners,
     ...(params.intent ? { intent: params.intent } : {}),
     signals: params.signals,
@@ -234,6 +265,10 @@ export async function fetchPricingQuote(
     );
   }
 
+  assertFundingMode(params.fundingMode, res.deployment.funding_mode);
+  if (params.fundingMode === "erc3009" && (!Number.isSafeInteger(res.expires_at) || (res.expires_at ?? 0) <= Date.now() / 1000)) {
+    throw new MirageError("INVALID_PRICING_QUOTE", "Receipt funding requires an unexpired quote.");
+  }
   const depositByAsset = parseDepositByAsset(res.deployment.deposit_by_asset);
   const expectedAssets = new Set(params.signals.map(signal => signal.asset.toLowerCase()));
   if (res.deployment.reward_asset.toLowerCase() !== params.signals[0]?.asset.toLowerCase()
@@ -241,7 +276,17 @@ export async function fetchPricingQuote(
     || expectedAssets.size !== 0) {
     throw new MirageError("INVALID_PRICING_QUOTE", "Signed funding assets do not match the requested transfer.");
   }
+  if (params.fundingMode === "erc3009") {
+    const authorized = params.signals.find(signal => isErc3009Asset(params.chainId, signal.asset));
+    const bucket = Object.entries(depositByAsset).find(([asset]) => isErc3009Asset(params.chainId, asset));
+    const principal = authorized?.items.reduce((total, item) => total + BigInt(item.amount), 0n);
+    const reward = isErc3009Asset(params.chainId, res.deployment.reward_asset) ? BigInt(res.deployment.reward_amount) : 0n;
+    if (res.chain_id !== params.chainId || principal === undefined || bucket?.[1] !== principal + reward) {
+      throw new MirageError("INVALID_PRICING_QUOTE", "USDC authorization does not match the quoted chain, principal, and reward.");
+    }
+  }
   return {
+    fundingMode: readFundingMode(res.deployment.funding_mode),
     chainId: res.chain_id,
     serviceFee: { asset: res.service_fee.asset, amount: BigInt(res.service_fee.amount) },
     deployment: {
@@ -330,6 +375,7 @@ export async function fetchComplianceApproval(
     chainId: number;
     seed: string;
     escrowType: EscrowKind;
+    fundingMode?: FundingMode;
     quoteCommitment: `0x${string}`;
     screeningReceipts: AddressScreeningReceipt[];
   },
@@ -339,6 +385,7 @@ export async function fetchComplianceApproval(
     chain_id: params.chainId,
     seed: params.seed,
     escrow_type: params.escrowType,
+    ...fundingFields(params.fundingMode),
     quote_commitment: params.quoteCommitment,
     screening_receipts: params.screeningReceipts,
   };
