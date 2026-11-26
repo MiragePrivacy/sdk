@@ -59,12 +59,13 @@ describe("workspace realms",()=>{
   });
   it("keeps a separate record type list per realm",async()=>{
     expect(realmRecordTypes("workspaces")).toBe(RECORD_TYPES);expect(realmRecordTypes("support")).toBe(SUPPORT_RECORD_TYPES);
-    expect(RECORD_TYPES).toEqual(["payment_request","decision","execution_event","contact","payment_template","roster"]);
+    expect(RECORD_TYPES).toEqual(["payment_request","decision","execution_event","contact","payment_template","roster","proposal_cancellation"]);
     expect(SUPPORT_RECORD_TYPES).toEqual(["support_ticket","support_message","support_report","support_feedback","support_identity","roster"]);
     const keys=deriveMemberKeys(vectors.unlock[0].signature as Hex),content=new Uint8Array(32).fill(43),log=ops().slice(0,2);
     const header=(type:RecordHeader["type"]):RecordHeader=>({workspaceId:wid,recordId:hash(0x44),type,revision:1,keyEpoch:1,authorKeyId:keys.memberKeyId,authorPolicyVersion:1});
     await expect(sealRecord(header("support_ticket"),{},content,keys.signingSeed)).rejects.toThrow("Invalid record type");
     await expect(sealRecord(header("payment_request"),{},content,keys.signingSeed,"support")).rejects.toThrow("Invalid record type");
+    await expect(sealRecord(header("proposal_cancellation"),{},content,keys.signingSeed,"support")).rejects.toThrow("Invalid record type");
     const ticket=await sealRecord(header("support_ticket"),{a:1},content,keys.signingSeed,"support");
     expect(verifyRecord(ticket,policyAuthorCheck(log,"support"),"support")).toBe(true);
     expect(verifyRecord(ticket,policyAuthorCheck(log))).toBe(false);

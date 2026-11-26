@@ -112,6 +112,23 @@ describe("workspace client",()=>{
     f.setPolicy({policy,ops:vectors.policy.ops.slice(0,2)});
     await expect(f.client.policy(wid)).rejects.toThrow("signed log");
   });
+  it("sends a proposal ID with a signed cancellation and verifies the synced row", async () => {
+    const f = setup(), ring = new WorkspaceKeyring(wid, f.keys);
+    await ring.load(await f.client.policy(wid));
+    const proposalId = `0x${"66".repeat(32)}` as Hex;
+    const cancellation = await ring.encryptRecord("proposal_cancellation", { proposalId });
+    const row = { record: cancellation, changeSequence: 1, createdAt: "2026-09-10", updatedAt: "2026-09-10" };
+    f.setRecord(row);
+    await expect(f.client.put(cancellation, 0)).rejects.toThrow("Proposal ID required");
+    expect(await f.client.put(cancellation, 0, proposalId)).toEqual(row);
+    expect(await f.client.put(cancellation, 0, { proposalId })).toEqual(row);
+    const write = f.requests.find(request => request.init.method === "PUT")!;
+    expect(new URL(write.url).searchParams.get("proposalId")).toBe(proposalId);
+    expect(JSON.parse(write.init.body as string)).toEqual(cancellation);
+    f.setPage({ records: [row], nextCursor: "cursor", hasMore: false });
+    expect((await f.client.records(wid, undefined, "proposal_cancellation")).records).toEqual([row]);
+    ring.close();
+  });
   it("verifies record context and sync ordering before returning data",async()=>{
     const f=setup();const encrypted=await sealRecord({workspaceId:wid,recordId:`0x${"77".repeat(32)}`,type:"execution_event",revision:1,keyEpoch:1,authorPolicyVersion:1,authorKeyId:f.keys.memberKeyId}, {status:"success"},new Uint8Array(32).fill(43),f.keys.signingSeed);
     const row={record:encrypted,changeSequence:1,createdAt:"2026-09-10",updatedAt:"2026-09-10"};
@@ -137,12 +154,24 @@ describe("workspace approval snapshots",()=>{
   const digest=(rows:RecordRow[])=>bytesToHex(sha256(new TextEncoder().encode(
     rows.map(({record})=>`${record.recordId}:${record.signature}\n`).sort().join(""),
   )));
-  async function row(f:ReturnType<typeof setup>,type:"roster"|"decision",index:number,revision=1):Promise<RecordRow>{
-    const record=await sealRecord({workspaceId:wid,recordId:`0x${(type==="roster"?"44":"77").repeat(32)}`,type,
+  async function row(f:ReturnType<typeof setup>,type:"roster"|"decision"|"proposal_cancellation",index:number,revision=1):Promise<RecordRow>{
+    const ids={roster:"44",decision:"77",proposal_cancellation:"88"};
+    const record=await sealRecord({workspaceId:wid,recordId:`0x${ids[type].repeat(32)}`,type,
       revision,keyEpoch:1,authorPolicyVersion:1,authorKeyId:f.keys.memberKeyId},
       {value:revision},new Uint8Array(32).fill(43),f.keys.signingSeed);
     return {record,changeSequence:index,createdAt:"today",updatedAt:"today"};
   }
+  it("includes newly canceled proposals in snapshot deltas and rejects replacements",async()=>{
+    const f=setup(),cancellation=await row(f,"proposal_cancellation",1);
+    f.setRecord({policy,policyHead,records:[],inventoryHash:digest([]),upper:0,next:0,hasMore:false});
+    await f.client.approvalSnapshot(wid);
+    f.setRecord({policy:null,policyHead,records:[cancellation],inventoryHash:digest([cancellation]),upper:1,next:1,hasMore:false});
+    expect((await f.client.approvalSnapshot(wid)).records).toEqual([cancellation]);
+
+    const replacement=await row(f,"proposal_cancellation",2,2);
+    f.setRecord({policy:null,policyHead,records:[replacement],inventoryHash:digest([replacement]),upper:2,next:2,hasMore:false});
+    await expect(f.client.approvalSnapshot(wid)).rejects.toThrow("changed or rolled back");
+  });
   it("reads one authenticated delta per warm check, preserves private copies and rejects omitted or altered records",async()=>{
     const f=setup(),one=await row(f,"decision",1),roster=await row(f,"roster",2);
     const response={policy,policyHead,inventoryHash:digest([one]),records:[one],upper:1,next:1,hasMore:false};

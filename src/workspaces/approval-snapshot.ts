@@ -24,7 +24,7 @@ export interface ApprovalSnapshotPage {
   records: RecordRow[];
 }
 
-const types = new Set(["payment_request", "decision", "payment_template", "roster"]);
+const types = new Set(["payment_request", "decision", "payment_template", "proposal_cancellation", "roster"]);
 
 function inventoryHash(rows: Map<Hex, RecordRow>): Hex {
   const hash = sha256.create();

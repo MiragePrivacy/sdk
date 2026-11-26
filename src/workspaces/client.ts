@@ -301,12 +301,18 @@ export class WorkspaceClient {
     if(page.hasMore&&(!page.records.length||page.nextCursor===since))throw new Error("Workspace sync did not advance");
     return page;
   }
-  async put(record:EncryptedRecord,previousRevision:number,options:{expectedApprovalSequence?:number}={}):Promise<RecordRow> {
+  /** Cancellation writes include the proposal ID so the server can verify its shared execution slot. */
+  async put(record:EncryptedRecord,previousRevision:number,options:{expectedApprovalSequence?:number;proposalId?:Hex}|Hex={}):Promise<RecordRow> {
+    const {expectedApprovalSequence,proposalId}=typeof options==="string"
+      ? {proposalId:options,expectedApprovalSequence:undefined}
+      : options;
+    if((record.type==="proposal_cancellation")!==(proposalId!==undefined))throw new Error("Proposal ID required only for cancellation");
+    if(proposalId!==undefined)bytes(proposalId,32);
     uint(previousRevision);
     const headers:Record<string,string>={"If-Match":String(previousRevision)};
     let policy:VerifiedPolicy|undefined;
-    if(options.expectedApprovalSequence!==undefined){
-      headers["X-Mirage-Approval-Sequence"]=String(uint(options.expectedApprovalSequence));
+    if(expectedApprovalSequence!==undefined){
+      headers["X-Mirage-Approval-Sequence"]=String(uint(expectedApprovalSequence));
       // The snapshot has already verified the log. The server checks current
       // policy/epoch and the sequence under the same lock as claim insertion.
       policy=this.policies.get(record.workspaceId);
@@ -314,7 +320,8 @@ export class WorkspaceClient {
     policy??=await this.readPolicy(record.workspaceId);
     if(!currentMemberKey(policy.policy,this.options.keys.memberKeyId))throw new Error("Workspace membership revoked");
     if(record.authorKeyId!==this.options.keys.memberKeyId||!verifyRecord(record,verifiedAuthor(policy),this.realm))throw new Error("Invalid record write authority");
-    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}`,{method:"PUT",headers,body:JSON.stringify(record)});
+    const query=proposalId===undefined?"":`?proposalId=${proposalId}`;
+    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}${query}`,{method:"PUT",headers,body:JSON.stringify(record)});
     this.verifyRow(record.workspaceId,row,policy,record.recordId);
     if(!same(row.record,record))throw new Error("Record write returned a different revision");return row;
   }
