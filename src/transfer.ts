@@ -29,7 +29,7 @@ import {
   MissingBlindingScalarError,
 } from "./errors.js";
 import type {
-  ObfuscationResult,
+  CamouflageResult,
   AddressScreeningReceipt,
   PricingQuote,
   PricingSignalRequest,
@@ -39,7 +39,7 @@ import {
   fetchComplianceApproval,
   screenAddresses,
   fetchNetworkKey,
-  fetchObfuscation,
+  fetchCamouflage,
   fetchPricingPreview,
   fetchPricingQuote,
 } from "./internal/api.js";
@@ -313,7 +313,7 @@ interface TransferContext {
   blindingScalar: `0x${string}`;
   quote: PricingQuote;
   fees: FeeEstimate;
-  obfuscation?: ObfuscationResult;
+  camouflage?: CamouflageResult;
   screeningReceipts?: AddressScreeningReceipt[];
 }
 
@@ -422,7 +422,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
     blindingScalar: blinded.blindingScalar,
     publicClient: params.publicClient,
   });
-  const [quote, obfuscation] = await Promise.all([
+  const [quote, camouflage] = await Promise.all([
     fetchPricingQuote(params.network.apiServer, {
       chainId: params.network.chainId,
       sender,
@@ -431,7 +431,7 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
       intent: intent?.request,
       signals: buildPricingSignals(rows),
     }),
-    fetchObfuscation(params.network.apiServer, escrowType),
+    fetchCamouflage(params.network.apiServer, escrowType),
   ]);
   if (quote.deployment.escrowType !== escrowType) {
     throw new MirageError(
@@ -460,9 +460,9 @@ async function buildContext(params: TransferParams): Promise<TransferContext> {
       rows,
       quote,
       approvalGasEstimate,
-      obfuscation.deploymentGasEstimate,
+      camouflage.deploymentGasEstimate,
     ),
-    obfuscation,
+    camouflage,
   };
 }
 
@@ -511,13 +511,13 @@ export async function previewTransfer(
 ): Promise<TransferPreview> {
   const rows = resolveRows(params);
   const escrowType = selectEscrowType(rows);
-  const [preview, obfuscation] = await Promise.all([
+  const [preview, camouflage] = await Promise.all([
     fetchPricingPreview(params.network.apiServer, {
       chainId: params.network.chainId,
       escrowType,
       signals: buildPricingSignals(rows),
     }),
-    fetchObfuscation(params.network.apiServer, escrowType).catch(
+    fetchCamouflage(params.network.apiServer, escrowType).catch(
       () => undefined,
     ),
   ]);
@@ -531,7 +531,7 @@ export async function previewTransfer(
       }).catch(() => undefined)
     : undefined;
 
-  const deploymentGasEstimate = obfuscation?.deploymentGasEstimate;
+  const deploymentGasEstimate = camouflage?.deploymentGasEstimate;
   return {
     serviceFee: preview.serviceFee,
     approvalGasEstimate,
@@ -650,7 +650,7 @@ export async function prepareTransfer(
     const account = assertQuotedAccount(walletClient, context.sender);
     checkAbort(params.abortSignal);
     assertAccountUnchanged(walletClient, account);
-    if (!context.obfuscation) {
+    if (!context.camouflage) {
       throw new MirageError(
         "MISSING_OBFUSCATION",
         "Escrow bytecode was not fetched",
@@ -659,11 +659,11 @@ export async function prepareTransfer(
 
     if (!pending) {
       const approved = suppliedCheckpoint ?? checkpoint;
-      const artifact = context.obfuscation;
+      const artifact = context.camouflage;
       const quote = context.quote;
       try {
         broadcastHash = await submitQuotedDeployment({
-          bytecode: artifact.obfuscatedBytecode,
+          bytecode: artifact.camouflagedBytecode,
           constructorArgs: quote.deployment.constructorArgs,
           depositByAsset: quote.deployment.depositByAsset,
           msgValue: quote.deployment.msgValue,
@@ -819,7 +819,7 @@ export async function prepareTransfer(
       context.rows,
       context.quote,
       approvalGasEstimate,
-      context.obfuscation?.deploymentGasEstimate,
+      context.camouflage?.deploymentGasEstimate,
     );
     return context.fees;
   }

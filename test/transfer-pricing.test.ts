@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getContractAddress } from "viem";
+import { fetchCamouflage } from "../src/internal/api.js";
 import * as bond from "../src/internal/bond.js";
 import { deriveSalt, intentCommitment } from "../src/internal/zk.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -42,7 +43,7 @@ function toHex(bytes: Uint8Array): string {
 
 const networkKey = `0x${toHex(secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true))}`;
 let pricingBody: any;
-let obfuscationBody: any;
+let camouflageBody: any;
 let quotedEscrowType: "erc20" | "native" | "batch" | undefined;
 let attestedChainId: number;
 let attestUrl: string | undefined;
@@ -52,7 +53,7 @@ let quoteTtl: number | undefined;
 
 beforeEach(() => {
   pricingBody = undefined;
-  obfuscationBody = undefined;
+  camouflageBody = undefined;
   quotedEscrowType = undefined;
   attestedChainId = 31337;
   attestUrl = undefined;
@@ -79,15 +80,15 @@ beforeEach(() => {
         }),
       } as Response;
     }
-    if (url.endsWith("/obfuscate_escrow")) {
-      obfuscationBody = JSON.parse(String(init?.body));
+    if (url.endsWith("/camouflage_escrow")) {
+      camouflageBody = JSON.parse(String(init?.body));
       return {
         ok: true,
         json: async () => ({
-          obfuscated_bytecode: "0x6000",
+          camouflaged_bytecode: "0x6000",
           original_size: 2,
-          obfuscated_size: 2,
-          gas_analysis: { obfuscated_gas_estimate: 1_234_567 },
+          camouflaged_size: 2,
+          gas_analysis: { camouflaged_gas_estimate: 1_234_567 },
           selector_mapping: null,
         }),
       } as Response;
@@ -406,7 +407,7 @@ describe("prepareTransfer pricing flow", () => {
     });
 
     expect(pricingBody.escrow_type).toBe("erc20");
-    expect(obfuscationBody.escrow_type).toBe("erc20");
+    expect(camouflageBody.escrow_type).toBe("erc20");
     expect(pricingBody.blinded_signers).toHaveLength(1);
     expect(pricingBody.signals).toEqual([
       {
@@ -432,7 +433,7 @@ describe("prepareTransfer pricing flow", () => {
     });
 
     expect(pricingBody.escrow_type).toBe("native");
-    expect(obfuscationBody.escrow_type).toBe("native");
+    expect(camouflageBody.escrow_type).toBe("native");
     expect(pricingBody.blinded_signers).toHaveLength(1);
     expect(prepared.fees.rewardAsset).toBe(NATIVE_TOKEN_ADDRESS);
   });
@@ -484,7 +485,7 @@ describe("prepareTransfer pricing flow", () => {
 
     expect(pricingBody.blinded_signers).toHaveLength(3);
     expect(pricingBody.escrow_type).toBe("batch");
-    expect(obfuscationBody.escrow_type).toBe("batch");
+    expect(camouflageBody.escrow_type).toBe("batch");
     expect(pricingBody.signals.map((signal: any) => signal.asset)).toEqual([
       NATIVE_TOKEN_ADDRESS,
       USDC,
@@ -944,4 +945,28 @@ it("screens changed recipients before replacing a prepared quote", async () => {
   expect(pricingBody.signals[0].items[0].recipient).toBe(RECIPIENT_B);
   expect(pricingBody.intent.commitment).toMatch(/^0x[0-9a-f]{64}$/);
   expect(pricingBody.intent.commitment).not.toBe(initialCommitment);
+});
+
+
+it("uses the legacy escrow endpoint with the same seed when the new route is unavailable", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(Response.json({
+      obfuscated_bytecode: "6000",
+      obfuscated_size: 2,
+      original_size: 2,
+      gas_analysis: { obfuscated_gas_estimate: 53_000 },
+    }));
+  globalThis.fetch = fetchMock;
+
+  const result = await fetchCamouflage("https://example.test", "native");
+
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "https://example.test/camouflage_escrow",
+    "https://example.test/obfuscate_escrow",
+  ]);
+  expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[1][1].body);
+  expect(result.camouflagedBytecode).toBe("0x6000");
+  expect(result.camouflagedSize).toBe(2);
+  expect(result.deploymentGasEstimate).toBe(53_000n);
 });

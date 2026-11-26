@@ -10,20 +10,20 @@ import { verifyAttestation, type VerifyAttestationOptions } from "./attestation.
 
 import { request } from "./request.js";
 
-export interface ObfuscationResult {
-  obfuscatedBytecode: `0x${string}`;
+export interface CamouflageResult {
+  camouflagedBytecode: `0x${string}`;
   selectorMapping?: Record<string, string>;
   originalSize: number;
-  obfuscatedSize: number;
-  /** API-simulated gas units for deploying the obfuscated escrow. */
+  camouflagedSize: number;
+  /** API-simulated gas units for deploying the camouflaged escrow. */
   deploymentGasEstimate?: bigint;
   seed: string;
 }
 
-export async function fetchObfuscation(
+export async function fetchCamouflage(
   apiServer: string,
   escrowType: EscrowKind,
-): Promise<ObfuscationResult> {
+): Promise<CamouflageResult> {
   // Generate random 32-byte seed
   const seedBytes = new Uint8Array(32);
   crypto.getRandomValues(seedBytes);
@@ -31,34 +31,44 @@ export async function fetchObfuscation(
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-  const res = await request<{
-    obfuscated_bytecode: string;
-    selector_mapping?: Record<string, string>;
-    original_size: number;
-    obfuscated_size: number;
-    gas_analysis?: {
-      obfuscated_gas_estimate?: number | null;
-    } | null;
-  }>(`${apiServer}/obfuscate_escrow`, {
+  const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      options: { shuffle: false, seed },
-      escrow_type: escrowType,
-    }),
-  });
+    body: JSON.stringify({ options: { seed }, escrow_type: escrowType }),
+  };
+  type EscrowCamouflageResponse = {
+    camouflaged_bytecode?: string;
+    obfuscated_bytecode?: string;
+    selector_mapping?: Record<string, string>;
+    original_size: number;
+    camouflaged_size?: number;
+    obfuscated_size?: number;
+    gas_analysis?: {
+      camouflaged_gas_estimate?: number | null;
+      obfuscated_gas_estimate?: number | null;
+    } | null;
+  };
 
-  const bytecode = res.obfuscated_bytecode.trim();
+  let res: EscrowCamouflageResponse;
+  try {
+    res = await request<EscrowCamouflageResponse>(`${apiServer}/camouflage_escrow`, init);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.statusCode !== 404) throw error;
+    res = await request<EscrowCamouflageResponse>(`${apiServer}/obfuscate_escrow`, init);
+  }
 
+  const bytecode = (res.camouflaged_bytecode ?? res.obfuscated_bytecode)?.trim();
+  const size = res.camouflaged_size ?? res.obfuscated_size;
+  if (!bytecode || size == null) {
+    throw new ApiError(502, "Escrow camouflage response is missing bytecode or size");
+  }
+  const gas = res.gas_analysis?.camouflaged_gas_estimate ?? res.gas_analysis?.obfuscated_gas_estimate;
   return {
-    obfuscatedBytecode: (bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`) as `0x${string}`,
+    camouflagedBytecode: (bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`) as `0x${string}`,
     selectorMapping: res.selector_mapping,
     originalSize: res.original_size,
-    obfuscatedSize: res.obfuscated_size,
-    deploymentGasEstimate:
-      res.gas_analysis?.obfuscated_gas_estimate == null
-        ? undefined
-        : BigInt(res.gas_analysis.obfuscated_gas_estimate),
+    camouflagedSize: size,
+    deploymentGasEstimate: gas == null ? undefined : BigInt(gas),
     seed,
   };
 }

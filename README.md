@@ -143,7 +143,7 @@ now requires an API server with the proxy configured.
 5. **signal** - Minimal encrypted Signal envelope submission to Nomad
 6. **complete** - Transfer event observed on-chain
 
-One ERC-20 row deploys `EscrowERC20`, one native row deploys `EscrowNative`, and two or more rows deploy `EscrowBatch`.
+One ERC-20 row uses `EscrowERC20`, one native row uses `EscrowNativeZK`, and two or more rows use the ZK batch variant of `EscrowBatch`. The SDK commits to each delivery when preparing the transfer. Nomad later proves that each payment matches its commitment. The proof can settle the escrow without publishing which Ethereum transaction paid the recipient. The SDK’s `complete` event means the delivery was observed. Escrow reimbursement may happen later.
 
 ### Cancellation
 

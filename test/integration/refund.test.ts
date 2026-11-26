@@ -59,7 +59,7 @@ function deploymentArtifact(name: string): Hex {
 
 // Rename instruction-aligned PUSH4 selectors in a real deployed artifact.
 // Constructor state, deadline checks and payout logic stay unchanged. This
-// verifies mapped calls without requiring the API's obfuscation service.
+// verifies mapped calls without requiring the API's camouflage service.
 function renameSelectors(code: Hex, mapping: Record<string, Hex>): Hex {
   const bytes = hexToBytes(code);
   const existing = new Set<string>();

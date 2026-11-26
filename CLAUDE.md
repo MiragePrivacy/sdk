@@ -89,7 +89,7 @@ The SDK implements the following private transfer flow:
 6. **Signal**: Encrypt a minimal Signal envelope with Nomad's attested network key and submit it to `/signal`.
 7. **Complete**: Poll and emit each recipient delivery, followed by the final completion event.
 
-A one-row ERC-20 request uses `EscrowERC20`, a one-row native request uses `EscrowNative`, and two or more rows use `EscrowBatch`. The selected type is sent to both pricing and obfuscation and is retained for compliance and resume.
+A one-row ERC-20 request uses `EscrowERC20`, a one-row native request uses `EscrowNative`, and two or more rows use `EscrowBatch`. The selected type is sent to both pricing and camouflage and is retained for compliance and resume.
 
 ### Pricing and Signal Construction
 
@@ -118,13 +118,13 @@ The encrypted Nomad envelope contains the escrow address, base blinding scalar, 
 
 - Resolves single and multi-row input
 - Builds ordered pricing Signals
-- Requests pricing and obfuscation
+- Requests pricing and camouflage
 - Coordinates approval, deployment, compliance, Signal submission, and polling
 - Validates persisted recovery data before resuming
 
 **API services** (`src/internal/api.ts`)
 
-- Fetches escrow obfuscation
+- Fetches escrow camouflage
 - Requests pricing quotes and execution approvals
 - Retrieves and verifies Nomad attestation payloads through the nomad proxy
 - Builds nomad proxy URLs (`nomadProxyUrl`)

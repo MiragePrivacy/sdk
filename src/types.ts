@@ -59,7 +59,7 @@ export interface FeeEstimate {
   serviceFee: AssetAmount;
   /** Sum of gas units for every exact ERC-20 approval required by the quote. */
   approvalGasEstimate?: bigint;
-  /** API-simulated gas units for deploying the obfuscated escrow. */
+  /** API-simulated gas units for deploying the camouflaged escrow. */
   deploymentGasEstimate?: bigint;
   /** Complete wallet gas units: approvals plus escrow deployment. */
   totalWalletGasEstimate?: bigint;
@@ -90,7 +90,7 @@ export interface TransferPreview {
    * stand-in sender. Present only when a `publicClient` was supplied.
    */
   approvalGasEstimate?: bigint;
-  /** API-simulated gas units for deploying the obfuscated escrow. */
+  /** API-simulated gas units for deploying the camouflaged escrow. */
   deploymentGasEstimate?: bigint;
   /** Complete wallet gas units: approvals plus escrow deployment. */
   totalWalletGasEstimate?: bigint;
