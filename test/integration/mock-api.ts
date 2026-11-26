@@ -19,7 +19,7 @@ import { encodeAbiParameters, keccak256, stringToHex, zeroAddress } from "viem";
 import { signedAdmission } from "../helpers/admission.js";
 import { mockPublicKeyHex } from "./mock-nomad.js";
 
-const ESCROW_DIR = path.resolve(import.meta.dirname, "../../../escrow/artifacts");
+const ESCROW_DIR = process.env.ESCROW_ARTIFACT_DIR ?? path.resolve(import.meta.dirname, "../../../escrow/artifacts");
 
 function readBytecode(filename: string): string {
   return fs.readFileSync(path.join(ESCROW_DIR, filename), "utf-8").trim();
@@ -64,23 +64,6 @@ async function proxyToNomad(
 function createServer(port: number, nomadUrl?: string): http.Server {
   // Test-only in-memory store. The production API uses a committed PostgreSQL outbox.
   const admissions = new Map<string, { receipt: ReturnType<typeof signedAdmission>; ciphertext: string }>();
-  // Lazy-load bytecode on first request
-  let erc20Deployment: string | null = null;
-  let erc20Runtime: string | null = null;
-  let nativeDeployment: string | null = null;
-  let nativeRuntime: string | null = null;
-  let batchDeployment: string | null = null;
-
-  function loadBytecode() {
-    if (!erc20Deployment) {
-      erc20Deployment = readBytecode("erc20_deployment.hex");
-      erc20Runtime = readBytecode("erc20_runtime.hex");
-      nativeDeployment = readBytecode("native_zk_deployment.hex");
-      nativeRuntime = readBytecode("native_zk_runtime.hex");
-      batchDeployment = readBytecode("batch_zk_deployment.hex");
-    }
-  }
-
   const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -149,18 +132,18 @@ function createServer(port: number, nomadUrl?: string): http.Server {
       req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
       req.on("end", () => {
         try {
-          loadBytecode();
-          const request = JSON.parse(body);
-          const bytecode =
-            request.escrow_type === "native"
-              ? nativeDeployment!
-              : request.escrow_type === "batch"
-                ? batchDeployment!
-                : erc20Deployment!;
+          const request = JSON.parse(body) as {
+            escrow_type?: "erc20" | "batch" | "native";
+            funding_mode?: "erc3009";
+          };
+          const artifact = { native: "native_zk", batch: "batch_zk", erc20: "erc20" }[request.escrow_type ?? "erc20"];
+          const suffix = request.funding_mode === "erc3009" ? "_3009" : "";
+          const bytecode = readBytecode(`${artifact}${suffix}_deployment.hex`);
           const size = (bytecode.length - 2) / 2; // minus 0x prefix, hex->bytes
 
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
+            funding_mode: request.funding_mode,
             camouflaged_bytecode: bytecode,
             original_size: size,
             camouflaged_size: size,
@@ -199,6 +182,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
             chain_id: number;
             sender?: string;
             escrow_type: "erc20" | "native" | "batch";
+            funding_mode?: "erc3009";
             blinded_signers?: string[];
             intent?: {
               commitment: string;
@@ -257,6 +241,7 @@ function createServer(port: number, nomadUrl?: string): http.Server {
               chain_id: request.chain_id,
               service_fee: { asset: rewardAsset, amount: rewardAmount.toString() },
               deployment: {
+                funding_mode: request.funding_mode,
                 escrow_type: request.escrow_type,
                 constructor_args: null,
                 quote_commitment: null,
@@ -378,8 +363,10 @@ function createServer(port: number, nomadUrl?: string): http.Server {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
             chain_id: request.chain_id,
+            expires_at: Math.floor(Date.now() / 1000) + 300,
             service_fee: { asset: rewardAsset, amount: rewardAmount.toString() },
             deployment: {
+              funding_mode: request.funding_mode,
               escrow_type: request.escrow_type,
               constructor_args: constructorArgs,
               quote_commitment: quoteCommitment,
