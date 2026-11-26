@@ -1,0 +1,17 @@
+{
+  "domain": "AdmissionReceipt(uint8 version,uint64 chainId,address escrowContract,bytes32 quoteCommitment,bytes32 payloadHash,uint64 acceptedAt,uint64 executeUntil,uint64 redeemUntil)",
+  "publicKey": "0xea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "payload": "0x70726976617465207369676e616c",
+  "digest": "0x13eaf86eb4a40cf6fb547148f28ba55757bfc7c7fe5244a60007ff7a36da439d",
+  "receipt": {
+    "version": 1,
+    "chainId": 11155111,
+    "escrowContract": "0x1111111111111111111111111111111111111111",
+    "quoteCommitment": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "payloadHash": "0x13469d703378ab8af886564bcf3e8f6bac063f74f6231510e9d974bc965de9b7",
+    "acceptedAt": 1700000060,
+    "executeUntil": 1700000900,
+    "redeemUntil": 1700001800,
+    "signature": "0xe784385190d1da272d22cca02dd2b625c580a3a5cc33e671dd2f156ff9e8996fb3f2efca336745ae900d86cde0c1958b1b8471337ed2e9a9cc6e2ce64dfa770e"
+  }
+}

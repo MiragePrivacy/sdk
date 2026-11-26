@@ -4,8 +4,11 @@ import {ApiError} from "../errors.js";
 import {bytes,canonicalJson,uint,type Json} from "./encoding";
 import {signWorkspaceChallenge,type WorkspaceChallenge} from "./challenge";
 import type {MemberKeys} from "./keys";
-import {applyPolicyOp,currentMemberKey,policyAuthorCheck,policyOpHash,replayPolicy,type InviteAcceptance,type InviteGrant,type Policy,type PolicyOp} from "./policy";
-import {verifyRecord,type EncryptedRecord,type RecordType} from "./records";
+import {applyPolicyOp,currentMemberKey,replayPolicy,type InviteAcceptance,type InviteGrant,type Policy,type PolicyOp} from "./policy";
+import {realmRecordTypes,verifyRecord,type EncryptedRecord,type Realm,type RecordType} from "./records";
+import {ApprovalSnapshotReader,type ApprovalSnapshot,type ApprovalSnapshotPage} from "./approval-snapshot";
+import {copyPolicy,verifiedAuthor,verifyPolicyResponse,type VerifiedPolicy} from "./verified-policy";
+export type {ApprovalSnapshot} from "./approval-snapshot";
 import {verifyIdentityLink,verifyIdentityRotation,linkedKeyBranches,linkHash,createIdentityUnlink,type IdentityLinkState,type SignedIdentityLink,type SignedIdentityRotation} from "./identity";
 import type {KeyEnvelope} from "./hpke";
 
@@ -14,6 +17,13 @@ export interface WorkspaceClientOptions {
   principalHash:Hex;
   principalToken:()=>Promise<string>|string;
   keys:MemberKeys;
+  /** Selects routes, session tokens, record types and direct member provisioning. */
+  realm?:Realm;
+}
+export function workspaceApiBase(apiServer:string):string {
+  const url=new URL(apiServer);
+  if(!["http:","https:"].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error("Invalid workspace API URL");
+  return url.toString().replace(/\/$/,"");
 }
 export interface WorkspaceSession {token:string;workspaceId:Hex;memberKeyId:Hex;caps:number;policyVersion:number;expiresAt:number}
 export interface PolicyResponse {policy:Policy;ops:PolicyOp[]}
@@ -28,17 +38,22 @@ const same=(a:unknown,b:unknown)=>canonicalJson(a as Json)===canonicalJson(b as 
 /** Per-sign-in client. Tokens, policy pins and keys are never persisted here. */
 export class WorkspaceClient {
   private readonly base:string;
+  readonly realm:Realm;
+  private readonly prefix:string;
   private readonly stop=new AbortController();
   private readonly sessions=new Map<Hex,Promise<WorkspaceSession>>();
-  private readonly policies=new Map<Hex,PolicyResponse>();
+  private readonly policies=new Map<Hex,VerifiedPolicy>();
+  private readonly approvalReaders=new Map<Hex,ApprovalSnapshotReader>();
   constructor(private readonly options:WorkspaceClientOptions) {
     this.options={...options,keys:{...options.keys}};
-    const url=new URL(options.apiServer);
-    if(!["http:","https:"].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error("Invalid workspace API URL");
-    this.base=url.toString().replace(/\/$/,"");bytes(options.principalHash,32);
+    this.realm=options.realm??"workspaces";
+    if(this.realm!=="workspaces"&&this.realm!=="support")throw new Error("Invalid workspace realm");
+    this.prefix=this.realm==="support"?"/support":"";
+    this.base=workspaceApiBase(options.apiServer);bytes(options.principalHash,32);
   }
+  get apiServer():string {return this.base;}
   /** Abort pending work before the caller disposes its private member keys. */
-  close():void {this.stop.abort();this.sessions.clear();this.policies.clear();}
+  close():void {this.stop.abort();this.sessions.clear();this.policies.clear();this.approvalReaders.clear();}
   private async fetch<T>(path:string,token:string,init:RequestInit={}):Promise<T> {
     this.stop.signal.throwIfAborted();
     const timeout=new AbortController();const timer=setTimeout(()=>timeout.abort(),20_000);
@@ -111,9 +126,10 @@ export class WorkspaceClient {
   }
   async discover():Promise<Discovery> {
     const key=this.options.keys.memberKeyId;
-    const challenge=await this.principal<WorkspaceChallenge>(`/identity/challenge?member=${key}`);
+    // Challenges are stored per realm; the identity registry routes stay shared.
+    const challenge=await this.principal<WorkspaceChallenge>(`${this.prefix}/identity/challenge?member=${key}`);
     const signature=signWorkspaceChallenge(challenge,this.options.keys,{purpose:"discovery",workspaceId:null,principalHash:this.options.principalHash});
-    const result=await this.principal<Discovery>(`/workspaces?member=${key}&nonce=${challenge.nonce}&signature=${signature}`);
+    const result=await this.principal<Discovery>(`${this.prefix}/workspaces?member=${key}&nonce=${challenge.nonce}&signature=${signature}`);
     if(!Array.isArray(result.workspaceIds)||!Array.isArray(result.rotations)||result.rotations.length>64)throw new Error("Invalid workspace discovery response");
     for(const workspace of result.workspaceIds)bytes(workspace,16);
     this.verifyRotations(result.rotations);
@@ -122,12 +138,12 @@ export class WorkspaceClient {
   }
   private async mint(workspace:Hex):Promise<WorkspaceSession> {
     const member=this.options.keys.memberKeyId;
-    const challenge=await this.principal<WorkspaceChallenge>(`/workspaces/${workspace}/challenge?member=${member}`);
+    const challenge=await this.principal<WorkspaceChallenge>(`${this.prefix}/workspaces/${workspace}/challenge?member=${member}`);
     const signature=signWorkspaceChallenge(challenge,this.options.keys,{purpose:"session",workspaceId:workspace,principalHash:this.options.principalHash});
-    const session=await this.principal<WorkspaceSession>(`/workspaces/${workspace}/sessions`,{method:"POST",body:JSON.stringify({memberKeyId:member,nonce:challenge.nonce,signature})});
+    const session=await this.principal<WorkspaceSession>(`${this.prefix}/workspaces/${workspace}/sessions`,{method:"POST",body:JSON.stringify({memberKeyId:member,nonce:challenge.nonce,signature})});
     const now=Math.floor(Date.now()/1000);
     uint(session.expiresAt,53,1);uint(session.caps,4);uint(session.policyVersion,53,1);
-    if(session.workspaceId!==workspace||session.memberKeyId!==member||typeof session.token!=="string"||!/^mirage_ws_[A-Za-z0-9_-]{43}$/.test(session.token)||session.expiresAt<=now||session.expiresAt>now+3630)
+    if(session.workspaceId!==workspace||session.memberKeyId!==member||typeof session.token!=="string"||!(this.realm==="support"?/^mirage_sp_(?:guest_)?[A-Za-z0-9_-]{43}$/:/^mirage_ws_[A-Za-z0-9_-]{43}$/).test(session.token)||session.expiresAt<=now||session.expiresAt>now+3630)
       throw new Error("Invalid workspace session response");
     return session;
   }
@@ -143,61 +159,93 @@ export class WorkspaceClient {
     const minted=this.mint(workspace);this.sessions.set(workspace,minted);
     try{return await minted;}catch(error){if(this.sessions.get(workspace)===minted)this.sessions.delete(workspace);throw error;}
   }
-  private async workspace<T>(workspace:Hex,path:string,init:RequestInit={}):Promise<T> {
+  private async workspace<T>(workspace:Hex,path:string,init:RequestInit={},route?:string):Promise<T> {
     const session=await this.session(workspace);
-    try{return await this.fetch<T>(`/workspaces/${workspace}${path}`,session.token,init);}
+    try{return await this.fetch<T>(`${this.prefix}${route??`/workspaces/${workspace}${path}`}`,session.token,init);}
     catch(error){if(error instanceof ApiError&&error.statusCode===401)this.sessions.delete(workspace);throw error;}
   }
-  private pin(workspace:Hex,response:PolicyResponse,allowRevoked=false):PolicyResponse {
-    const derived=replayPolicy(response.ops);
-    if(derived.workspaceId!==workspace||!same(derived,response.policy))throw new Error("Server policy does not match signed log");
-    const previous=this.policies.get(workspace);
-    if(previous&&(derived.policyVersion<previous.policy.policyVersion||policyOpHash(response.ops[previous.policy.policyVersion-1])!==previous.policy.headHash))
-      throw new Error("Workspace policy rollback or fork");
-    if(!currentMemberKey(derived,this.options.keys.memberKeyId)){
+  /** Staff index and moderation routes, authorized by a staff workspace session. */
+  async supportAdmin<T>(staffWorkspace:Hex,path:string,init:RequestInit={}):Promise<T> {
+    if(this.realm!=="support"||!/^\/workspaces(?:[/?]|$)/.test(path))throw new Error("Invalid support admin request");
+    return this.workspace<T>(staffWorkspace,"",init,`/admin${path}`);
+  }
+  private pin(workspace:Hex,response:PolicyResponse,allowRevoked=false):VerifiedPolicy {
+    const verified=verifyPolicyResponse(workspace,response,this.policies.get(workspace),undefined,this.realm);
+    this.policies.set(workspace,verified);
+    if(!currentMemberKey(verified.policy,this.options.keys.memberKeyId)){
       this.sessions.delete(workspace);
+      this.approvalReaders.delete(workspace);
       if(!allowRevoked)throw new Error("Workspace membership revoked");
     }
-    const verified={policy:derived,ops:structuredClone(response.ops)};
-    this.policies.set(workspace,verified);return structuredClone(verified);
+    return verified;
   }
   async create(op:PolicyOp):Promise<PolicyResponse> {
-    const expected=applyPolicyOp(null,op);
-    const actual=await this.principal<Policy>("/workspaces",{method:"POST",body:JSON.stringify(op)});
+    const expected=applyPolicyOp(null,op,this.realm);
+    if(this.realm==="support"&&expected.personal)throw new Error("The support realm has no personal workspaces");
+    const actual=await this.principal<Policy>(`${this.prefix}/workspaces`,{method:"POST",body:JSON.stringify(op)});
     if(!same(actual,expected))throw new Error("Invalid workspace creation response");
-    return this.pin(op.workspaceId,{policy:actual,ops:[op]});
+    return copyPolicy(this.pin(op.workspaceId,{policy:actual,ops:[op]}));
   }
-  async policy(workspace:Hex):Promise<PolicyResponse> {
+  private async readPolicy(workspace:Hex):Promise<VerifiedPolicy> {
     return this.pin(workspace,await this.workspace<PolicyResponse>(workspace,"/policy"));
   }
-  async append(op:PolicyOp):Promise<PolicyResponse> {
+  async policy(workspace:Hex):Promise<PolicyResponse> {
+    return copyPolicy(await this.readPolicy(workspace));
+  }
+  /** Refresh the complete, signed proposal and roster inventory for this member. */
+  approvalSnapshot(workspace:Hex):Promise<ApprovalSnapshot> {
+    let reader=this.approvalReaders.get(workspace);
+    if(!reader){
+      reader=new ApprovalSnapshotReader(workspace,
+        query=>this.workspace<ApprovalSnapshotPage>(workspace,`/approval-snapshot?${query}`),
+        ()=>{
+          const policy=this.policies.get(workspace);
+          if(policy&&!currentMemberKey(policy.policy,this.options.keys.memberKeyId))throw new Error("Workspace membership revoked");
+          return policy;
+        },
+        response=>this.pin(workspace,response),
+        ()=>this.stop.signal.throwIfAborted());
+      this.approvalReaders.set(workspace,reader);
+    }
+    return reader.read();
+  }
+  append(op:PolicyOp):Promise<PolicyResponse> {
+    if(op.kind==="add_support_member")throw new Error("Use addSupportMember for this operation");
+    return this.submit(op,"/policy/ops");
+  }
+  /** Support realm: provisions the support key through its dedicated route. */
+  addSupportMember(op:PolicyOp):Promise<PolicyResponse> {
+    if(this.realm!=="support"||op.kind!=="add_support_member")throw new Error("Invalid support member operation");
+    return this.submit(op,"/support-member");
+  }
+  private async submit(op:PolicyOp,route:string):Promise<PolicyResponse> {
     const previous=await this.policy(op.workspaceId);
     if(op.prevOpHash!==previous.policy.headHash||op.policyVersion!==previous.policy.policyVersion+1)throw new ApiError(409,"Workspace policy changed");
-    const expected=applyPolicyOp(previous.policy,op);
-    const policy=await this.workspace<Policy>(op.workspaceId,"/policy/ops",{method:"POST",body:JSON.stringify(op)});
+    const expected=applyPolicyOp(previous.policy,op,this.realm);
+    const policy=await this.workspace<Policy>(op.workspaceId,route,{method:"POST",body:JSON.stringify(op)});
     if(!same(policy,expected))throw new Error("Invalid policy update response");
     // A successful self-replacement returns the exact signed state that revokes
     // this client. Accept that acknowledgement and discard its cached session.
-    return this.pin(op.workspaceId,{policy,ops:[...previous.ops,op]},true);
+    return copyPolicy(this.pin(op.workspaceId,{policy,ops:[...previous.ops,op]},true));
   }
   async createInvite(workspace:Hex,grant:InviteGrant,ciphertext:InviteCiphertext,policyOp?:PolicyOp):Promise<InviteBundle> {
     const bundle=await this.workspace<InviteBundle>(workspace,"/invites",{method:"POST",body:JSON.stringify({grant,ciphertext,...(policyOp?{policyOp}:{})})});
     this.verifyInviteBundle(bundle,grant.grantId);return bundle;
   }
   async invite(grantId:Hex):Promise<InviteBundle> {
-    bytes(grantId,16);const bundle=await this.principal<InviteBundle>(`/invites/${grantId}`);
+    bytes(grantId,16);const bundle=await this.principal<InviteBundle>(`${this.prefix}/invites/${grantId}`);
     this.verifyInviteBundle(bundle,grantId);return bundle;
   }
   async acceptInvite(grantId:Hex,op:PolicyOp):Promise<PolicyResponse> {
     bytes(grantId,16);const bundle=await this.invite(grantId);
     if(op.workspaceId!==bundle.grant.workspaceId||op.kind!=="add_member")throw new Error("Invalid invite acceptance operation");
-    const expected=applyPolicyOp(bundle.policy.policy,op);
-    const actual=await this.principal<Policy>(`/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(op)});
+    const expected=applyPolicyOp(bundle.policy.policy,op,this.realm);
+    const actual=await this.principal<Policy>(`${this.prefix}/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(op)});
     if(!same(actual,expected))throw new Error("Invalid invite acceptance response");
-    return this.pin(op.workspaceId,{policy:actual,ops:[...bundle.policy.ops,op]});
+    return copyPolicy(this.pin(op.workspaceId,{policy:actual,ops:[...bundle.policy.ops,op]}));
   }
   async submitPendingInvite(grantId:Hex,acceptance:InviteAcceptance):Promise<void> {
-    bytes(grantId,16);const result=await this.principal<{status:string}>(`/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(acceptance)});
+    bytes(grantId,16);const result=await this.principal<{status:string}>(`${this.prefix}/invites/${grantId}/accept`,{method:"POST",body:JSON.stringify(acceptance)});
     if(result.status!=="pending")throw new Error("Invalid pending invite response");
   }
   async pendingInvites(workspace:Hex):Promise<PendingInvite[]> {
@@ -205,13 +253,13 @@ export class WorkspaceClient {
     if(!Array.isArray(values))throw new Error("Invalid pending invites response");return values;
   }
   async finalizeInvite(grantId:Hex,op:PolicyOp):Promise<PolicyResponse> {
-    bytes(grantId,16);const previous=await this.policy(op.workspaceId),expected=applyPolicyOp(previous.policy,op);
+    bytes(grantId,16);const previous=await this.policy(op.workspaceId),expected=applyPolicyOp(previous.policy,op,this.realm);
     const actual=await this.workspace<Policy>(op.workspaceId,`/invites/${grantId}/finalize`,{method:"POST",body:JSON.stringify(op)});
     if(!same(actual,expected))throw new Error("Invalid invite finalization response");
-    return this.pin(op.workspaceId,{policy:actual,ops:[...previous.ops,op]});
+    return copyPolicy(this.pin(op.workspaceId,{policy:actual,ops:[...previous.ops,op]}));
   }
   private verifyInviteBundle(bundle:InviteBundle,grantId:Hex):void {
-    const policy=replayPolicy(bundle.policy.ops);
+    const policy=replayPolicy(bundle.policy.ops,this.realm);
     if(!same(policy,bundle.policy.policy)||bundle.grant.grantId!==grantId||bundle.grant.workspaceId!==policy.workspaceId)throw new Error("Invalid invite bundle");
     bytes(bundle.ciphertext.nonce,12);bytes(bundle.ciphertext.ciphertext);
   }
@@ -224,36 +272,56 @@ export class WorkspaceClient {
     if(new Set(envelopes.map(e=>`${e.kind}:${e.epoch}`)).size!==envelopes.length)throw new Error("Duplicate envelope response");
     return envelopes;
   }
-  private verifyRow(workspace:Hex,row:RecordRow,policy:PolicyResponse,recordId?:Hex):void {
+  private verifyRow(workspace:Hex,row:RecordRow,policy:VerifiedPolicy,recordId?:Hex):void {
     uint(row.changeSequence,53,1);
-    if(row.record.workspaceId!==workspace||(recordId!==undefined&&row.record.recordId!==recordId)||!verifyRecord(row.record,policyAuthorCheck(policy.ops)))
+    if(row.record.workspaceId!==workspace||(recordId!==undefined&&row.record.recordId!==recordId)||!verifyRecord(row.record,verifiedAuthor(policy),this.realm))
       throw new Error("Invalid workspace record or author policy");
   }
   async record(workspace:Hex,id:Hex):Promise<RecordRow> {
-    bytes(id,32);let policy=await this.policy(workspace);
+    bytes(id,32);let policy=await this.readPolicy(workspace);
     const row=await this.workspace<RecordRow>(workspace,`/records/${id}`);
-    if(row.record.authorPolicyVersion>policy.policy.policyVersion)policy=await this.policy(workspace);
+    if(row.record.authorPolicyVersion>policy.policy.policyVersion)policy=await this.readPolicy(workspace);
     this.verifyRow(workspace,row,policy,id);return row;
   }
-  async records(workspace:Hex,since?:string,type?:RecordType):Promise<RecordPage> {
-    let policy=await this.policy(workspace);const query=new URLSearchParams();
+  async records(workspace:Hex,since?:string,type?:RecordType,policyHead?:Hex):Promise<RecordPage> {
+    if(type&&!realmRecordTypes(this.realm).includes(type))throw new Error("Invalid record type");
+    // A caller already synchronizing a signed log can reuse its verified head.
+    // The record request still authenticates live membership, and records from
+    // a later policy force another signed-log read before verification.
+    const pinned=this.policies.get(workspace);
+    let policy=pinned && pinned.policy.headHash===policyHead
+      && currentMemberKey(pinned.policy,this.options.keys.memberKeyId) ? pinned : await this.readPolicy(workspace);
+    const query=new URLSearchParams();
     if(since)query.set("since",since);if(type)query.set("type",type);
     const page=await this.workspace<RecordPage>(workspace,`/records?${query}`);
     if(!Array.isArray(page.records)||page.records.length>100||typeof page.nextCursor!=="string"||page.nextCursor.length>512||typeof page.hasMore!=="boolean")throw new Error("Invalid workspace record page");
-    if(page.records.some(row=>row.record.authorPolicyVersion>policy.policy.policyVersion))policy=await this.policy(workspace);
+    if(page.records.some(row=>row.record.authorPolicyVersion>policy.policy.policyVersion))policy=await this.readPolicy(workspace);
     let last=0;const seen=new Set<string>();
     for(const row of page.records){this.verifyRow(workspace,row,policy);if(row.changeSequence<=last||seen.has(row.record.recordId)||(type&&row.record.type!==type))throw new Error("Invalid sync ordering or type");last=row.changeSequence;seen.add(row.record.recordId);}
     if(page.hasMore&&(!page.records.length||page.nextCursor===since))throw new Error("Workspace sync did not advance");
     return page;
   }
   /** Cancellation writes include the proposal ID so the server can verify its shared execution slot. */
-  async put(record:EncryptedRecord,previousRevision:number,proposalId?:Hex):Promise<RecordRow> {
+  async put(record:EncryptedRecord,previousRevision:number,options:{expectedApprovalSequence?:number;proposalId?:Hex}|Hex={}):Promise<RecordRow> {
+    const {expectedApprovalSequence,proposalId}=typeof options==="string"
+      ? {proposalId:options,expectedApprovalSequence:undefined}
+      : options;
     if((record.type==="proposal_cancellation")!==(proposalId!==undefined))throw new Error("Proposal ID required only for cancellation");
     if(proposalId!==undefined)bytes(proposalId,32);
-    uint(previousRevision);const policy=await this.policy(record.workspaceId);
-    if(record.authorKeyId!==this.options.keys.memberKeyId||!verifyRecord(record,policyAuthorCheck(policy.ops)))throw new Error("Invalid record write authority");
+    uint(previousRevision);
+    const headers:Record<string,string>={"If-Match":String(previousRevision)};
+    let policy:VerifiedPolicy|undefined;
+    if(expectedApprovalSequence!==undefined){
+      headers["X-Mirage-Approval-Sequence"]=String(uint(expectedApprovalSequence));
+      // The snapshot has already verified the log. The server checks current
+      // policy/epoch and the sequence under the same lock as claim insertion.
+      policy=this.policies.get(record.workspaceId);
+    }
+    policy??=await this.readPolicy(record.workspaceId);
+    if(!currentMemberKey(policy.policy,this.options.keys.memberKeyId))throw new Error("Workspace membership revoked");
+    if(record.authorKeyId!==this.options.keys.memberKeyId||!verifyRecord(record,verifiedAuthor(policy),this.realm))throw new Error("Invalid record write authority");
     const query=proposalId===undefined?"":`?proposalId=${proposalId}`;
-    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}${query}`,{method:"PUT",headers:{"If-Match":String(previousRevision)},body:JSON.stringify(record)});
+    const row=await this.workspace<RecordRow>(record.workspaceId,`/records/${record.recordId}${query}`,{method:"PUT",headers,body:JSON.stringify(record)});
     this.verifyRow(record.workspaceId,row,policy,record.recordId);
     if(!same(row.record,record))throw new Error("Record write returned a different revision");return row;
   }

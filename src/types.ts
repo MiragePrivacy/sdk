@@ -162,6 +162,8 @@ export interface AttestationVerification {
 
 export interface NetworkKeyStatus {
   publicKey: string;
+  /** Admission authorities committed to by the verified attestation payload. */
+  complianceKeys?: string[];
   /** True when the node served a quote. Says nothing about its validity. */
   attested: boolean;
   debug: boolean;
@@ -234,6 +236,26 @@ export interface ApprovalCheckpoint {
   approveGasUsed: bigint;
 }
 
+/** Device-local recovery data. Store before asking the wallet to deploy. */
+export interface PendingDeployment {
+  version: 1;
+  chainId: number;
+  nonce: number;
+  /** Earliest block to consider for sender/nonce discovery, as a decimal string. */
+  fromBlock?: string;
+  /** Keccak-256 of the entire creation transaction input, including constructor arguments. */
+  inputHash: Hash;
+  createdAt: number;
+  secrets: Omit<TransferSecrets, "deployHash" | "deployedAt" | "fromBlock" | "userDeployGas" | "userGasPrice">;
+}
+
+export interface DeploymentHooks {
+  /** A rejected write prevents the wallet request. Keep this private to the originating device. */
+  onPrepared?(pending: PendingDeployment): void | Promise<void>;
+  /** Runs as soon as the wallet returns the hash, before receipt polling. */
+  onBroadcast?(hash: Hash): void | Promise<void>;
+}
+
 export type TransferStep =
   | { step: "fees"; fees: FeeEstimate }
   /** Emitted once per distinct ERC20 requiring an allowance. */
@@ -277,6 +299,26 @@ export interface ExecutionApproval {
   signature: string;
 }
 
+/** Durable permission for one exact encrypted request, with its original clocks. */
+export interface AdmissionReceipt {
+  version: number;
+  chainId: number;
+  escrowContract: Address;
+  quoteCommitment: `0x${string}`;
+  payloadHash: `0x${string}`;
+  acceptedAt: number;
+  executeUntil: number;
+  redeemUntil: number;
+  signature: string;
+}
+
+export interface ApprovalCallbacks {
+  /** Called immediately before each ERC-20 approval is handed to the wallet. */
+  onWalletRequest?: () => void;
+  /** Called when the wallet returns the hash, before waiting for the receipt. */
+  onBroadcast?: (hash: Hash) => void;
+}
+
 export interface PreparedTransfer {
   fees: FeeEstimate;
   /**
@@ -294,10 +336,13 @@ export interface PreparedTransfer {
    * calls when overrides are supplied. Throws once approval has begun.
    */
   updateTransfers(transfers: TransferRow[], overrides?: FeeRefreshOverrides): Promise<FeeEstimate>;
-  approve(walletClient: WalletClient): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
+  /** Recheck quote, screening expiry and committed escrow address before adopting a displayed quote. */
+  canReuseForApproval?(): Promise<boolean>;
+  approve(walletClient: WalletClient, callbacks?: ApprovalCallbacks): AsyncGenerator<TransferStep, ApprovalCheckpoint>;
   deploy(
     walletClient: WalletClient,
     checkpoint?: ApprovalCheckpoint,
+    hooks?: DeploymentHooks,
   ): Promise<Extract<TransferStep, { step: "deploy" }>>;
   complete(
     walletClient: WalletClient,

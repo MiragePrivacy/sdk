@@ -1,6 +1,10 @@
 # @mirageprivacy/sdk
 
-TypeScript SDK for private transfers on the Mirage protocol. It requests API-authored pricing, deploys the exact quoted escrow, obtains a quote-bound execution approval, submits the encrypted Nomad Signal, and polls recipient transfers.
+TypeScript SDK for private transfers on the Mirage protocol. It requests API-authored pricing, deploys the exact quoted escrow, obtains a quote-bound execution approval, durably admits the encrypted Nomad Signal, and polls recipient transfers.
+
+The API returns a signed admission receipt before its durable outbox delivers the request. Submission retries reuse the exact ciphertext; receipts bind its hash and the original funding deadlines. `prepared.complete()` first looks up the original receipt using the saved escrow and quote commitment, so an already admitted resume needs no refreshed screening, quote, or approval. The SDK verifies receipt signatures against compliance keys in the verified network attestation. A node HTTP acknowledgement is not proof of execution.
+
+This client requires the matching durable-admission API, Nomad receipt verification/backlog, and fixed-window escrow artifact release. Publish those services before releasing this SDK and updating the frontend dependency. Previously funded contracts with the old renewable lease are not migrated by a client upgrade.
 
 ## Install
 
@@ -92,6 +96,20 @@ The latter includes the blinding scalar, quote commitment, and opaque sealed
 pricing authorization. Persist it immediately: a reload must submit the same
 authorization that produced the deployed constructor.
 
+To recover a deployment across a reload or a lost wallet response, pass a third
+argument to `prepared.deploy` with `onPrepared(pending)` and `onBroadcast(hash)`.
+The SDK awaits the first callback before asking the wallet to send. Save
+`pending` in device-local storage with a serializer that preserves bigint
+values, then attach the hash to the same record in the second callback.
+Treat the checkpoint as private transfer material.
+
+After reopening, call `recoverDeployment({ publicClient, pending, hash })` on
+the original chain. The hash is optional. Without it, the SDK looks for the
+original sender and nonce. On RPCs without historical state, supply the
+creation hash from the wallet. Recovery verifies the mined creation against
+the checkpoint and returns the deployment step for `prepared.complete`.
+Recovery only reads from the chain.
+
 ## Networks
 
 Built-in configs for `ethereum` and `sepolia`:
@@ -144,6 +162,12 @@ controller.abort();
 ```
 
 If aborted before any transactions are sent, `TransferAbortedError` is thrown with no `escrowAddress`. If aborted after escrow deployment, the error includes `escrowAddress` for manual recovery.
+
+Aborting the SDK does not unlock funds on-chain. Fixed-window escrows allow refunds of remaining funds 30 minutes after the escrow was funded. `getEscrowStatus({ escrowAddress, publicClient, selectorMapping })` checks the contract's refund deadline against the latest chain timestamp, including when no node has reserved the escrow. Preserve the complete selector mapping returned for that deployment.
+
+For a known older or plaintext escrow without a fixed refund window, explicitly pass `refundPolicy: "legacy"` to `getEscrowStatus`. Do not select legacy mode to work around an RPC or mapping error. The default rejects failed deadline reads and reports an uninitialized deadline as ineligible.
+
+`cancelTransfer({ escrowAddress, publicClient, walletClient, account, selectorMapping })` simulates the user's exact withdrawal before asking the wallet to submit it, and uses the gas estimate plus 20% headroom. Status describes reservation and deadline eligibility; the simulation also checks the caller and remaining funds. A state change between simulation and inclusion can still cause a revert.
 
 ### Resuming a transfer
 

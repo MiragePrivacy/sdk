@@ -1,6 +1,7 @@
 // Public API
 export { networks, createNetworkConfig, MIRAGE_MRSIGNER } from "./networks.js";
 export { prepareTransfer, previewTransfer, executeTransfer } from "./transfer.js";
+export { recoverDeployment } from "./recoverDeployment.js";
 export type { TransferParams, PreviewParams } from "./transfer.js";
 export type {
   ApiHealth,
@@ -56,7 +57,10 @@ export type {
   TransferSecrets,
   TransferStep,
   PreparedTransfer,
+  PendingDeployment,
+  DeploymentHooks,
   ApprovalCheckpoint,
+  ApprovalCallbacks,
   NetworkKeyStatus,
   AttestationPayload,
   AttestationVerification,
@@ -64,6 +68,7 @@ export type {
   TokenMetadata,
   GasPrice,
   ExecutionApproval,
+  AdmissionReceipt,
 } from "./types.js";
 
 export type { TransferAdmission, AddressScreeningReceipt } from "./internal/api.js";
