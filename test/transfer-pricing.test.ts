@@ -8,6 +8,7 @@ import { recoverDeployment } from "../src/recoverDeployment.js";
 import type { PendingDeployment } from "../src/types.js";
 import { createNetworkConfig } from "../src/networks.js";
 import { NATIVE_TOKEN_ADDRESS } from "../src/token.js";
+import { complianceKey, signedAdmission } from "./helpers/admission.js";
 
 const SENDER = "0x0000000000000000000000000000000000000001" as const;
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as const;
@@ -72,7 +73,7 @@ beforeEach(() => {
       return {
         ok: true,
         json: async () => ({
-          payload: { publicKey: networkKey, chainId: attestedChainId, pricingKeys: [] },
+          payload: { publicKey: networkKey, chainId: attestedChainId, pricingKeys: [], complianceKeys: [complianceKey] },
           attestation: null,
           isDebug: true,
         }),
@@ -190,6 +191,50 @@ describe("deployment checkpoints", () => {
     expect(f.onBroadcast).not.toHaveBeenCalled();
     await expect(f.recover()).resolves.toMatchObject({ hash: DEPLOY_HASH, secrets: { senderAddress: SENDER } });
     expect(f.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("completes an admitted recovered deployment after quote expiry without another submission", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      const f = await fixture();
+      f.send.mockRejectedValueOnce(new Error("wallet timeout"));
+      await expect(f.deploy()).rejects.toThrow("wallet timeout");
+      now.mockReturnValue(1_700_000_301_000);
+      expect(Date.now()).toBeGreaterThan(f.onPrepared.mock.calls[0][0].createdAt + 300_000);
+      const recovered = await f.recover();
+      const receipt = signedAdmission({ escrowContract: recovered.escrowAddress });
+      const originalFetch = globalThis.fetch;
+      const resumedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/attest")) return originalFetch(input, init);
+        if (url.endsWith("/admission/lookup")) {
+          return { ok: true, status: 200, json: async () => ({ status: "admitted", admissionReceipt: receipt }) } as Response;
+        }
+        throw new Error(`Unexpected reauthorization or submission: ${url}`);
+      });
+      globalThis.fetch = resumedFetch as typeof fetch;
+      const resumed = await prepareTransfer({ tokenAddress: NATIVE_TOKEN_ADDRESS,
+        recipientAddress: RECIPIENT_A, amount: 100n, network, publicClient: f.rpc as any,
+        resume: recovered.secrets });
+      await expect(resumed.deploy(f.wallet)).resolves.toEqual(recovered);
+      f.rpc.getBlockNumber.mockResolvedValue(20n);
+      f.rpc.getBlock.mockResolvedValue({ number: 20n, hash: blockHash, timestamp: 1_700_000_302n,
+        transactions: [{ hash: replacementHash, from: RECIPIENT_B, to: RECIPIENT_A, value: 100n }] });
+
+      const steps = [];
+      for await (const step of resumed.complete(f.wallet)) steps.push(step);
+      expect(steps.map(step => step.step)).toEqual(["signal", "transfer", "complete"]);
+      expect(steps[0]).toEqual({ step: "signal", response: JSON.stringify({ status: "admitted", admissionReceipt: receipt }) });
+      expect(resumedFetch.mock.calls.map(([url]) => String(url))).toEqual([
+        "https://api.test/nomad/31337/attest", "https://api.test/nomad/31337/admission/lookup",
+      ]);
+      expect(JSON.parse(String(resumedFetch.mock.calls[1][1]?.body))).toEqual({
+        escrowContract: recovered.escrowAddress, quoteCommitment: COMMITMENT,
+      });
+      expect(f.send).toHaveBeenCalledTimes(1);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("allows another wallet request only after explicit user rejection", async () => {
@@ -549,6 +594,20 @@ describe("prepareTransfer pricing flow", () => {
       code: "API_ERROR",
       statusCode: 403,
     });
+  });
+
+  it("resumes an admitted request without recertifying or re-encrypting after quote expiry", async () => {
+    const prepared = await prepareTransfer({ tokenAddress: USDC, recipientAddress: RECIPIENT_A,
+      amount: 100n, publicClient: {} as any, network, resume: VALID_RESUME });
+    const receipt = signedAdmission({ escrowContract: SENDER });
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ status: "admitted", admissionReceipt: receipt }) }) as any;
+    const completion = prepared.complete({ account: { address: SENDER } } as any);
+    const next = await completion.next();
+    expect(next.value).toEqual({ step: "signal", response: JSON.stringify({ status: "admitted", admissionReceipt: receipt }) });
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[0][0])).toMatch(/admission\/lookup$/);
+    await completion.return(undefined);
   });
 });
 

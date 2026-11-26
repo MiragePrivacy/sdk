@@ -4,6 +4,7 @@ import {
   type PublicClient,
   type WalletClient,
   decodeErrorResult,
+  decodeFunctionResult,
   encodeFunctionData,
   erc20Abi,
   getAddress,
@@ -26,7 +27,10 @@ export function bufferedGasLimit(estimate: bigint): bigint {
   );
 }
 
-const escrowAbi = parseAbi(["function is_bonded() external view returns (bool)"]);
+const escrowAbi = parseAbi([
+  "function is_bonded() external view returns (bool)",
+  "function collectionDeadline() external view returns (uint256)",
+]);
 
 const CANCEL_ABI = [
   {
@@ -39,6 +43,8 @@ const CANCEL_ABI = [
   { name: "OnlyDeployer", type: "error" as const, inputs: [] },
   { name: "NotFunded", type: "error" as const, inputs: [] },
   { name: "BondActive", type: "error" as const, inputs: [] },
+  { name: "BidActive", type: "error" as const, inputs: [] },
+  { name: "RedemptionWindowActive", type: "error" as const, inputs: [] },
   { name: "CancellationRequested", type: "error" as const, inputs: [] },
   { name: "NoWithdrawableFunds", type: "error" as const, inputs: [] },
   { name: "TokenTransferFailed", type: "error" as const, inputs: [] },
@@ -47,6 +53,8 @@ const CANCEL_ABI = [
 
 const CANCEL_REASON_MESSAGES: Record<string, string> = {
   BondActive: "a node has already bonded",
+  BidActive: "a node still has an active batch reservation",
+  RedemptionWindowActive: "refunds unlock 30 minutes after the escrow was funded",
   NotFunded: "escrow is not funded",
   OnlyDeployer: "only the deployer can cancel",
   NoWithdrawableFunds: "no funds to withdraw",
@@ -54,6 +62,33 @@ const CANCEL_REASON_MESSAGES: Record<string, string> = {
   TokenTransferFailed: "token transfer back to deployer failed",
   ETHTransferFailed: "ETH transfer back to deployer failed",
 };
+
+function cancellationReason(error: unknown): string | undefined {
+  const visited = new Set<unknown>();
+  while (error && typeof error === "object" && !visited.has(error)) {
+    visited.add(error);
+    const { data, cause } = error as { data?: unknown; cause?: unknown };
+    if (typeof data === "string" && /^0x[0-9a-f]+$/i.test(data)) {
+      try {
+        const { errorName } = decodeErrorResult({ abi: CANCEL_ABI, data: data as `0x${string}` });
+        return CANCEL_REASON_MESSAGES[errorName] ?? errorName;
+      } catch {
+        return data;
+      }
+    }
+    error = cause;
+  }
+  return undefined;
+}
+
+function mappedEscrowCall(data: `0x${string}`, mapping?: Record<string, string>): `0x${string}` {
+  if (!mapping) return data;
+  const token = mapping[data.slice(0, 10)];
+  if (!token || !/^0x(?:[0-9a-f]{2})+$/i.test(token)) {
+    throw new ContractError(`Missing or invalid escrow selector mapping for ${data.slice(0, 10)}`);
+  }
+  return `${token}${data.slice(10)}` as `0x${string}`;
+}
 
 export function predictContractAddress(deployerAddress: Address, nonce: number): Address {
   const rlpEncoded = toRlp([deployerAddress, nonce === 0 ? "0x" : toHex(nonce)]);
@@ -266,16 +301,26 @@ export async function withdrawFromEscrow(params: {
     functionName: "cancelAndWithdraw",
     args: [],
   });
-  const obfuscatedSelector = selectorMapping?.[standardData.slice(0, 10)];
-  const data = obfuscatedSelector
-    ? (`${obfuscatedSelector}${standardData.slice(10)}` as `0x${string}`)
-    : standardData;
+  const data = mappedEscrowCall(standardData, selectorMapping);
+  // Keep the alias supported by the SDK's full viem ^2.0 peer range.
+  const code = await publicClient.getBytecode({ address: escrowAddress });
+  if (!code || code === "0x") throw new ContractError("No escrow contract at this address");
+  // Simulate the exact mapped call as the user before requesting a wallet
+  // signature. RPC failures also abort; they never authorize a submission.
+  let gasEstimate: bigint;
+  try {
+    gasEstimate = await publicClient.estimateGas({ account, to: escrowAddress, data });
+  } catch (error) {
+    const reason = cancellationReason(error);
+    if (reason === undefined) throw error;
+    throw new ContractError(`cancelAndWithdraw reverted: ${reason}`, { cause: error });
+  }
   const hash = await walletClient.sendTransaction({
     account,
     to: escrowAddress,
     data,
     chain: walletClient.chain,
-    gas: 500_000n,
+    gas: bufferedGasLimit(gasEstimate),
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status === "success") return hash;
@@ -284,36 +329,40 @@ export async function withdrawFromEscrow(params: {
   try {
     await publicClient.call({ to: escrowAddress, data, account });
   } catch (simulationError) {
-    const error = simulationError as {
-      data?: `0x${string}`;
-      cause?: { data?: `0x${string}` };
-    };
-    const revertData = error.data ?? error.cause?.data;
-    if (revertData) {
-      try {
-        reason = decodeErrorResult({ abi: CANCEL_ABI, data: revertData }).errorName;
-      } catch {
-        reason = revertData;
-      }
-    }
+    reason = cancellationReason(simulationError) ?? reason;
   }
   throw new ContractError(
-    `cancelAndWithdraw reverted: ${CANCEL_REASON_MESSAGES[reason] ?? reason}`,
+    `cancelAndWithdraw reverted: ${reason}`,
     { txHash: hash },
   );
 }
 
+/**
+ * Reports reservation and refund-window eligibility at the latest chain block.
+ * Select legacy only for known older/plaintext escrows without a fixed window.
+ * Cancellation still simulates the caller and remaining funds before submission.
+ */
 export async function getEscrowStatus(params: {
   escrowAddress: Address;
   publicClient: PublicClient;
   selectorMapping?: Record<string, string>;
+  refundPolicy?: "fixed-window" | "legacy";
 }): Promise<{ bonded: boolean; cancellable: boolean }> {
-  const standardData = encodeFunctionData({ abi: escrowAbi, functionName: "is_bonded" });
-  const mapped = params.selectorMapping?.[standardData.slice(0, 10)];
-  const data = mapped ? (`${mapped}${standardData.slice(10)}` as `0x${string}`) : standardData;
-  const result = await params.publicClient.call({ to: params.escrowAddress, data });
-  const bonded = BigInt(result.data ?? "0x0") !== 0n;
-  return { bonded, cancellable: !bonded };
+  const { escrowAddress, publicClient, selectorMapping, refundPolicy = "fixed-window" } = params;
+  const block = await publicClient.getBlock({ blockTag: "latest" });
+  async function read(functionName: "is_bonded" | "collectionDeadline") {
+    const standardData = encodeFunctionData({ abi: escrowAbi, functionName });
+    const data = mappedEscrowCall(standardData, selectorMapping);
+    const result = await publicClient.call({ to: escrowAddress, data, blockNumber: block.number });
+    return decodeFunctionResult({ abi: escrowAbi, functionName, data: result.data ?? "0x" });
+  }
+  const bonded = await read("is_bonded") as boolean;
+  if (refundPolicy === "legacy") return { bonded, cancellable: !bonded };
+
+  // No fallback on failed/missing getters: a broken mapping or RPC is not
+  // evidence of a legacy contract. A zero deadline has no initialized window.
+  const deadline = await read("collectionDeadline") as bigint;
+  return { bonded, cancellable: !bonded && deadline > 0n && block.timestamp >= deadline };
 }
 
 export const cancelTransfer = withdrawFromEscrow;

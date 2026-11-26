@@ -66,8 +66,8 @@ export async function fetchObfuscation(
 export type ComplianceApproval = ExecutionApproval;
 
 /**
- * Compliance approvals are rejected by the node once stale, so a resumed or
- * retried signal must re-request one.
+ * Fresh approvals are required for first admission. Once admitted, resume
+ * uses the immutable signed receipt without refreshing this approval.
  */
 export const APPROVAL_MAX_AGE_SECS = 300;
 
@@ -391,6 +391,7 @@ export async function fetchNetworkKey(
 
   const status: NetworkKeyStatus = {
     publicKey,
+    complianceKeys: res.payload?.complianceKeys,
     attested: res.attestation !== null && res.attestation !== undefined,
     debug: res.isDebug ?? res.is_debug ?? false,
     chainId: Number(res.payload?.chainId ?? res.chainId ?? res.chain_id ?? 0),

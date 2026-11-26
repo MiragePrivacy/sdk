@@ -68,6 +68,7 @@ export type {
   TokenMetadata,
   GasPrice,
   ExecutionApproval,
+  AdmissionReceipt,
 } from "./types.js";
 
 export type { TransferAdmission, AddressScreeningReceipt } from "./internal/api.js";

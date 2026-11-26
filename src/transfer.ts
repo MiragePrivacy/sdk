@@ -56,6 +56,7 @@ import { deriveBlindedSigners } from "./internal/bond.js";
 import { deriveSalt, intentCommitment, randomBytes32 } from "./internal/zk.js";
 import type { IntentOpening as ZkIntentOpening } from "./internal/zk.js";
 import { submitSignal } from "./internal/nomad.js";
+import { lookupAdmission } from "./internal/admission.js";
 import { pollTransfers } from "./internal/poll.js";
 import { checkAbort } from "./internal/abort.js";
 import { assertAccountUnchanged, getAccount } from "./internal/account.js";
@@ -897,51 +898,62 @@ async function* completeTransfer(
 
   checkAbort(params.abortSignal, { escrowAddress: escrow });
   assertAccountUnchanged(walletClient, account, escrow);
-  const screeningReceipts = context.screeningReceipts?.every(receipt => receipt.expires_at > Date.now()/1000 + 15)
-    ? context.screeningReceipts
-    : await screenAddresses(network.apiServer, network.chainId,
-        [context.sender, ...context.rows.map(row => row.recipientAddress)]);
-  const executionApproval = await fetchComplianceApproval(network.apiServer, {
-    txHash: resume.deployHash,
-    chainId: network.chainId,
-    seed: resume.seed,
-    escrowType: resume.escrowType,
-    quoteCommitment: resume.quoteCommitment,
-    screeningReceipts,
+  const admitted = await lookupAdmission({
+    apiServer: network.apiServer, chainId: network.chainId, escrowAddress: escrow,
+    quoteCommitment: resume.quoteCommitment, networkKey: context.networkKey,
+    abortSignal: params.abortSignal,
   });
-  if (
-    executionApproval.chainId !== network.chainId ||
-    executionApproval.escrowContract.toLowerCase() !== escrow.toLowerCase() ||
-    executionApproval.deploymentTxHash.toLowerCase() !==
-      resume.deployHash.toLowerCase() ||
-    executionApproval.quoteCommitment.toLowerCase() !==
-      resume.quoteCommitment.toLowerCase()
-  ) {
-    throw new MirageError(
-      "INVALID_APPROVAL",
-      "API execution approval does not match deployment",
-    );
-  }
-  yield { step: "compliance", approval: executionApproval };
+  if (admitted) {
+    yield { step: "signal", response: JSON.stringify({ status: "admitted", admissionReceipt: admitted }) };
+  } else {
+    const screeningReceipts = context.screeningReceipts?.every(receipt => receipt.expires_at > Date.now()/1000 + 15)
+      ? context.screeningReceipts
+      : await screenAddresses(network.apiServer, network.chainId,
+          [context.sender, ...context.rows.map(row => row.recipientAddress)]);
+    const executionApproval = await fetchComplianceApproval(network.apiServer, {
+      txHash: resume.deployHash,
+      chainId: network.chainId,
+      seed: resume.seed,
+      escrowType: resume.escrowType,
+      quoteCommitment: resume.quoteCommitment,
+      screeningReceipts,
+    });
+    if (
+      executionApproval.chainId !== network.chainId ||
+      executionApproval.escrowContract.toLowerCase() !== escrow.toLowerCase() ||
+      executionApproval.deploymentTxHash.toLowerCase() !==
+        resume.deployHash.toLowerCase() ||
+      executionApproval.quoteCommitment.toLowerCase() !==
+        resume.quoteCommitment.toLowerCase()
+    ) {
+      throw new MirageError(
+        "INVALID_APPROVAL",
+        "API execution approval does not match deployment",
+      );
+    }
+    yield { step: "compliance", approval: executionApproval };
 
-  checkAbort(params.abortSignal, { escrowAddress: escrow });
-  assertAccountUnchanged(walletClient, account, escrow);
-  const response = await submitSignal({
-    escrowType: resume.escrowType,
-    escrowAddress: escrow,
-    blindingScalar: resume.blindingScalar,
-    sealedPricingAuthorization: resume.sealedPricingAuthorization,
-    executionApproval,
-    selectorMapping: resume.selectorMapping,
-    deployedAt: resume.deployedAt,
-    userApproveGas: resume.userApproveGas,
-    userDeployGas: resume.userDeployGas,
-    userGasPrice: resume.userGasPrice,
-    apiServer: network.apiServer,
-    chainId: network.chainId,
-    networkKey: context.networkKey,
-  });
-  yield { step: "signal", response };
+    checkAbort(params.abortSignal, { escrowAddress: escrow });
+    assertAccountUnchanged(walletClient, account, escrow);
+    const response = await submitSignal({
+      seed: resume.seed,
+      escrowType: resume.escrowType,
+      escrowAddress: escrow,
+      blindingScalar: resume.blindingScalar,
+      sealedPricingAuthorization: resume.sealedPricingAuthorization,
+      executionApproval,
+      selectorMapping: resume.selectorMapping,
+      deployedAt: resume.deployedAt,
+      userApproveGas: resume.userApproveGas,
+      userDeployGas: resume.userDeployGas,
+      userGasPrice: resume.userGasPrice,
+      apiServer: network.apiServer,
+      chainId: network.chainId,
+      networkKey: context.networkKey,
+      abortSignal: params.abortSignal,
+    });
+    yield { step: "signal", response };
+  }
 
   const fromBlock =
     resume.fromBlock ??

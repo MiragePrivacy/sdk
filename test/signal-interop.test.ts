@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { submitSignal } from "../src/internal/nomad.js";
+import { complianceKey, signedAdmission } from "./helpers/admission.js";
 
 vi.mock("eciesjs", async (importOriginal) => ({
   encrypt: undefined,
@@ -11,7 +12,8 @@ afterEach(() => vi.unstubAllGlobals());
 it("encrypts a decryptable signal with a default-only CommonJS namespace", async () => {
   const { PrivateKey, decrypt } = await vi.importActual<typeof import("eciesjs")>("eciesjs");
   const key = new PrivateKey();
-  const fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => "accepted" });
+  const fetch = vi.fn(async (_url, init) => ({ ok: true, status: 200, json: async () => ({ status: "admitted",
+    admissionReceipt: signedAdmission({ chainId: 11155111, quoteCommitment: `0x${"33".repeat(32)}` }, JSON.parse(init.body).payload) }) }));
   vi.stubGlobal("fetch", fetch);
   const escrowAddress = "0x00000000000000000000000000000000000000ff" as const;
   const executionApproval = {
@@ -27,6 +29,7 @@ it("encrypts a decryptable signal with a default-only CommonJS namespace", async
   const blindingScalar = `0x${"55".repeat(32)}` as `0x${string}`;
   const sealedPricingAuthorization = `0x${"66".repeat(32)}` as `0x${string}`;
   await expect(submitSignal({
+    seed: `0x${"77".repeat(32)}`,
     escrowType: "native",
     escrowAddress,
     blindingScalar,
@@ -34,11 +37,11 @@ it("encrypts a decryptable signal with a default-only CommonJS namespace", async
     executionApproval,
     apiServer: "https://api.test",
     chainId: 11155111,
-    networkKey: { publicKey: key.publicKey.toHex(), attested: true, debug: true, chainId: 11155111 },
-  })).resolves.toBe("accepted");
+    networkKey: { complianceKeys: [complianceKey], publicKey: key.publicKey.toHex(), attested: true, debug: true, chainId: 11155111 },
+  })).resolves.toContain("admitted");
   const [url, init] = fetch.mock.calls[0];
   expect(url).toBe("https://api.test/nomad/11155111/signal");
-  const ciphertext = JSON.parse(init.body) as string;
+  const ciphertext = JSON.parse(init.body).payload as string;
   const plaintext = decrypt(key.toHex(), Buffer.from(ciphertext.slice(2), "hex"));
   expect(JSON.parse(plaintext.toString())).toEqual({
     escrowType: "native", escrowContract: escrowAddress,
