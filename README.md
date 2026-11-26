@@ -1,6 +1,8 @@
 # @mirageprivacy/sdk
 
-TypeScript SDK for private transfers on the Mirage protocol. It requests API-authored pricing, deploys the exact quoted escrow, obtains a quote-bound execution approval, durably admits the encrypted Nomad Signal, and polls recipient transfers.
+Use the Mirage TypeScript SDK to add private stablecoin payments to an Ethereum wallet or application. A sender can pay an ordinary Ethereum address in USDC or USDT. The sender funds an escrow and a Nomad node pays the recipient from its own liquidity. Both onchain transactions are public. Neither transaction records a direct payment from the sender to the recipient.
+
+The signed pricing request shares the sender, recipients, assets, and amounts with the Mirage API. The SDK encrypts the later execution signal for the attested node. See the [SDK overview](https://docs.mirageprivacy.com/developers/sdk/overview/) and [supported tokens and networks](https://docs.mirageprivacy.com/learn/help/tokens-and-networks/).
 
 The API returns a signed admission receipt before its durable outbox delivers the request. Submission retries reuse the exact ciphertext; receipts bind its hash and the original funding deadlines. `prepared.complete()` first looks up the original receipt using the saved escrow and quote commitment, so an already admitted resume needs no refreshed screening, quote, or approval. The SDK verifies receipt signatures against compliance keys in the verified network attestation. A node HTTP acknowledgement is not proof of execution.
 
@@ -14,48 +16,49 @@ npm install @mirageprivacy/sdk viem
 
 `viem` is a peer dependency.
 
-## Quick start
+## Prepare a USDC payment on Ethereum
+
+Call this function from your payment form with the wallet's EIP-1193 provider, the recipient address, and the amount in USDC. Preparing the payment requests a signed quote before the wallet authorizes any spending.
 
 ```ts
-import { networks, prepareTransfer, getTokenMetadata, getTokenBalance } from "@mirageprivacy/sdk";
-import { createPublicClient, createWalletClient, http, custom, parseUnits, formatUnits } from "viem";
+import { getTokenMetadata, networks, prepareTransfer } from "@mirageprivacy/sdk";
+import {
+  createPublicClient, createWalletClient, custom, formatUnits, http, parseUnits,
+  type Address, type EIP1193Provider,
+} from "viem";
 import { mainnet } from "viem/chains";
 
+const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const publicClient = createPublicClient({ chain: mainnet, transport: http() });
-const walletClient = createWalletClient({ chain: mainnet, transport: custom(window.ethereum) });
 
-const TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC
-const RECIPIENT = "0x...";
+export async function quoteUsdcPayment(
+  provider: EIP1193Provider,
+  recipient: Address,
+  amountInUsdc: string,
+) {
+  const [account] = await provider.request({ method: "eth_requestAccounts" });
+  if (!account) throw new Error("Connect a wallet to prepare a payment.");
 
-const token = await getTokenMetadata(TOKEN, publicClient);
-const balance = await getTokenBalance(TOKEN, walletClient.account.address, publicClient);
-const amount = parseUnits("100", token.decimals);
-
-// 1. Preview fees
-const prepared = await prepareTransfer({
-  tokenAddress: TOKEN,
-  recipientAddress: RECIPIENT,
-  amount,
-  walletClient,
-  publicClient,
-  network: networks.ethereum,
-});
-
-console.log(
-  `Service fee: ${formatUnits(prepared.fees.serviceFee.amount, token.decimals)} ${token.symbol}`,
-);
-
-// 2. Execute transfer
-for await (const event of prepared.execute()) {
-  switch (event.step) {
-    case "fees":    console.log("Fees calculated");                          break;
-    case "approve": console.log(`Approved: ${event.hash}`);                  break;
-    case "deploy":  console.log(`Escrow: ${event.escrowAddress}`);           break;
-    case "signal":  console.log(`Signal sent: ${event.response}`);           break;
-    case "complete": console.log(`Delivered ${event.transfers.length} row(s)`); break;
+  const walletClient = createWalletClient({ account, chain: mainnet, transport: custom(provider) });
+  if (await walletClient.getChainId() !== mainnet.id) {
+    throw new Error("Switch the wallet to Ethereum mainnet.");
   }
+
+  const token = await getTokenMetadata(USDC, publicClient);
+  const prepared = await prepareTransfer({
+    tokenAddress: USDC,
+    recipientAddress: recipient,
+    amount: parseUnits(amountInUsdc, token.decimals),
+    walletClient,
+    publicClient,
+    network: networks.ethereum,
+  });
+
+  return { prepared, serviceFeeInUsdc: formatUnits(prepared.fees.serviceFee.amount, token.decimals) };
 }
 ```
+
+Show the recipient, amount, and quoted fee. After the sender confirms, iterate over `prepared.execute()` to request the wallet transactions and track delivery. Save `event.secrets` in private, durable storage when the SDK yields the `deploy` event so you can resume after a reload. The [transfer guide](https://docs.mirageprivacy.com/developers/sdk/transfers/) shows the event loop and recovery data.
 
 ## Staged execution
 

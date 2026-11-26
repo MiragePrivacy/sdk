@@ -1,7 +1,13 @@
 {
   "name": "@mirageprivacy/sdk",
   "version": "0.6.1",
-  "description": "SDK for private transfers on Mirage",
+  "description": "TypeScript SDK for private USDC and USDT stablecoin transfers on Ethereum with Mirage",
+  "keywords": ["ethereum", "stablecoin", "payments", "privacy", "usdc", "usdt"],
+  "homepage": "https://docs.mirageprivacy.com/developers/sdk/overview/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MiragePrivacy/sdk.git"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
