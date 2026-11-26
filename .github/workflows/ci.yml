@@ -74,7 +74,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: MiragePrivacy/escrow
-          ref: 347bfd8ea3d05ffa3e2ea5e66fcb6fd2be5c307d
+          ref: 704efd1a1ff4e3ecf6a91c7dad976455892f2ded
           path: escrow
 
       - uses: actions/setup-node@v4

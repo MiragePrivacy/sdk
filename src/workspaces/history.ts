@@ -29,7 +29,7 @@ function amount(value:string):string {
   const [whole,fraction]=value.split(".");const tail=fraction?.replace(/0+$/,"");return tail?`${whole}.${tail}`:whole;
 }
 const usdFields=["totalFeeUsd","networkFeeUsd","tokenTotalUsd","transfersTotalUsd"] as const;
-function usdSnapshot(value:number):string {
+export function usdSnapshot(value:number):string {
   if(typeof value!=="number"||!Number.isFinite(value)||value<0)throw new Error("Invalid history USD snapshot");
   const text=String(value);if(!text.includes("e"))return amount(text);
   const [mantissa,power]=text.split("e"),[whole,fraction=""]=mantissa.split("."),digits=whole+fraction,point=whole.length+Number(power);

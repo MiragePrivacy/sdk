@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { encrypt } from "eciesjs";
 import { encodeAbiParameters, keccak256, stringToHex, zeroAddress } from "viem";
+import { signedAdmission } from "../helpers/admission.js";
 import { mockPublicKeyHex } from "./mock-nomad.js";
 
 const ESCROW_DIR = path.resolve(import.meta.dirname, "../../../escrow/artifacts");
@@ -61,6 +62,8 @@ async function proxyToNomad(
 }
 
 function createServer(port: number, nomadUrl?: string): http.Server {
+  // Test-only in-memory store. The production API uses a committed PostgreSQL outbox.
+  const admissions = new Map<string, { receipt: ReturnType<typeof signedAdmission>; ciphertext: string }>();
   // Lazy-load bytecode on first request
   let erc20Deployment: string | null = null;
   let erc20Runtime: string | null = null;
@@ -86,6 +89,38 @@ function createServer(port: number, nomadUrl?: string): http.Server {
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    const admissionRoute = /^\/nomad\/(\d+)\/(signal|admission|admission\/lookup)$/.exec(req.url ?? "");
+    if (req.method === "POST" && admissionRoute) {
+      try {
+        let body = "";
+        for await (const chunk of req) body += chunk.toString();
+        const request = JSON.parse(body);
+        const chainId = Number(admissionRoute[1]);
+        const lookup = admissionRoute[2] === "admission/lookup";
+        const escrow = lookup ? request.escrowContract : request.executionApproval.escrowContract;
+        const key = chainId + ":" + escrow.toLowerCase();
+        const quote = lookup ? request.quoteCommitment : request.executionApproval.quoteCommitment;
+        let stored = admissions.get(key);
+        if (lookup) {
+          if (!stored || stored.receipt.quoteCommitment !== quote) { res.writeHead(404); res.end(); return; }
+        } else if (stored && (stored.receipt.payloadHash !== keccak256(request.payload) || stored.receipt.quoteCommitment !== quote)) {
+          res.writeHead(409); res.end(); return;
+        } else if (!stored) {
+          const acceptedAt = Math.floor(Date.now()/1000);
+          const receipt = signedAdmission({ chainId, escrowContract: escrow, quoteCommitment: quote,
+            acceptedAt, executeUntil: acceptedAt+899, redeemUntil: acceptedAt+1799 }, request.payload);
+          const ciphertext = "0x" + Buffer.from(encrypt(mockPublicKeyHex.replace(/^0x/, ""),
+            Buffer.from(JSON.stringify({ type: "admittedSignal", version: 1, payload: request.payload, admissionReceipt: receipt })))).toString("hex");
+          stored = { receipt, ciphertext }; admissions.set(key, stored);
+          const target = nomadUrl ?? "http://127.0.0.1:"+(process.env.NOMAD_PORT || "8111");
+          await fetch(target+"/nomad/"+chainId+"/signal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ciphertext) });
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "admitted", admissionReceipt: stored!.receipt }));
+      } catch (error) { res.writeHead(500); res.end(JSON.stringify({ error: String(error) })); }
       return;
     }
 

@@ -21,6 +21,8 @@ import {
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { complianceKey } from "../helpers/admission.js";
+import { verifyAdmissionReceipt } from "../../src/internal/admission.js";
 import { anvilChain } from "./setup.js";
 
 // Fixed key pair — deterministic so tests can rely on the public key
@@ -115,7 +117,7 @@ function createServer(port: number): http.Server {
       res.end(
         JSON.stringify({
           // Current nodes nest these in a hash-committed payload.
-          payload: { publicKey: mockPublicKeyHex, chainId },
+          payload: { publicKey: mockPublicKeyHex, chainId, complianceKeys: [complianceKey] },
           attestation: null,
           isDebug: true,
         }),
@@ -137,7 +139,15 @@ function createServer(port: number): http.Server {
           // Decrypt with our private key
           const decrypted = decrypt(MOCK_PRIVATE_KEY_HEX, encryptedBytes);
           const signalJson = new TextDecoder().decode(decrypted);
-          const signal: SignalEnvelope = JSON.parse(signalJson);
+          const envelope = JSON.parse(signalJson);
+          let signal: SignalEnvelope;
+          if (envelope.type === "admittedSignal") {
+            verifyAdmissionReceipt(envelope.admissionReceipt, { chainId,
+              escrowAddress: envelope.admissionReceipt.escrowContract,
+              quoteCommitment: envelope.admissionReceipt.quoteCommitment, payload: envelope.payload,
+              networkKey: { publicKey: mockPublicKeyHex, complianceKeys: [complianceKey], attested: true, debug: true, chainId } });
+            signal = JSON.parse(new TextDecoder().decode(decrypt(MOCK_PRIVATE_KEY_HEX, Buffer.from(envelope.payload.slice(2), "hex"))));
+          } else signal = envelope;
           if (!signal.blindingScalar) throw new Error("missing field blindingScalar");
           const sealed = Buffer.from(signal.sealedPricingAuthorization.replace(/^0x/, ""), "hex");
           const authorization = JSON.parse(
