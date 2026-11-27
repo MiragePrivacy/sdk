@@ -140,6 +140,35 @@ describe("quoted escrow transactions", () => {
     ]);
   });
 
+  it("waits without a deadline and follows only repriced replacements", async () => {
+    const submitted = `0x${"11".repeat(32)}` as const;
+    const replacement = `0x${"44".repeat(32)}` as const;
+    const run = async (reason?: string) => {
+      const waitForTransactionReceipt = vi.fn(async ({ onReplaced }) => {
+        if (reason) onReplaced({ reason, transaction: { hash: replacement } });
+        return { status: "success", gasUsed: 50_000n };
+      });
+      const iterator = approveQuotedForDeployment({
+        depositByAsset: { [USDC]: 1_025n },
+        walletClient: { chain: undefined, writeContract: vi.fn(async () => submitted) } as any,
+        publicClient: {
+          getTransactionCount: vi.fn(async () => 5),
+          estimateContractGas: vi.fn(async () => 40_000n),
+          waitForTransactionReceipt,
+        } as any,
+        account: DEPLOYER,
+      });
+      const step = await iterator.next();
+      expect(waitForTransactionReceipt).toHaveBeenCalledWith(expect.objectContaining({ hash: submitted, timeout: 0 }));
+      return step.value;
+    };
+
+    expect(await run()).toMatchObject({ hash: submitted });
+    expect(await run("repriced")).toMatchObject({ hash: replacement });
+    await expect(run("cancelled")).rejects.toMatchObject({ code: "CONTRACT_ERROR", txHash: replacement });
+    await expect(run("replaced")).rejects.toMatchObject({ code: "CONTRACT_ERROR", txHash: replacement });
+  });
+
   it("appends the exact constructor suffix and uses quoted msg.value", async () => {
     const hash = `0x${"33".repeat(32)}` as const;
     const predicted = predictContractAddress(DEPLOYER, 5);
