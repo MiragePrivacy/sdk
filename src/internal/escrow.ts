@@ -20,6 +20,28 @@ import type { ApprovalCallbacks, ApprovalCheckpoint, GasPrice } from "../types.j
 const GAS_BUFFER_NUMERATOR = 12n;
 const GAS_BUFFER_DENOMINATOR = 10n;
 
+/**
+ * Wait for inclusion with no deadline, so an underpriced transaction is never
+ * abandoned. A wallet speed-up confirms under its new hash; a cancellation or
+ * any other transaction that takes the nonce fails.
+ */
+async function waitForInclusion(publicClient: PublicClient, submitted: Hash, action: string) {
+  let hash = submitted;
+  let repriced = true;
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: submitted,
+    timeout: 0,
+    onReplaced: ({ reason, transaction }) => {
+      hash = transaction.hash;
+      repriced = reason === "repriced";
+    },
+  });
+  if (!repriced) {
+    throw new ContractError(`${action} was replaced by another transaction from the wallet`, { txHash: hash });
+  }
+  return { hash, receipt };
+}
+
 /** Add 20% headroom to simulated wallet transaction gas limits. */
 export function bufferedGasLimit(estimate: bigint): bigint {
   return (
@@ -150,7 +172,7 @@ async function approveToken(params: ApprovalCallbacks & {
     account,
   });
   params.onWalletRequest?.();
-  const hash = await walletClient.writeContract({
+  const submitted = await walletClient.writeContract({
     address: tokenAddress,
     abi: erc20Abi,
     functionName: "approve",
@@ -160,8 +182,8 @@ async function approveToken(params: ApprovalCallbacks & {
     gas: bufferedGasLimit(gasEstimate),
     ...gasPrice,
   });
-  params.onBroadcast?.(hash);
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  params.onBroadcast?.(submitted);
+  const { hash, receipt } = await waitForInclusion(publicClient, submitted, "Token approval");
   if (receipt.status !== "success") {
     throw new ContractError("Token approval failed", { txHash: hash });
   }
@@ -315,14 +337,13 @@ export async function withdrawFromEscrow(params: {
     if (reason === undefined) throw error;
     throw new ContractError(`cancelAndWithdraw reverted: ${reason}`, { cause: error });
   }
-  const hash = await walletClient.sendTransaction({
+  const { hash, receipt } = await waitForInclusion(publicClient, await walletClient.sendTransaction({
     account,
     to: escrowAddress,
     data,
     chain: walletClient.chain,
     gas: bufferedGasLimit(gasEstimate),
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  }), "cancelAndWithdraw");
   if (receipt.status === "success") return hash;
 
   let reason = "unknown reason";
